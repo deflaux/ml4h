@@ -7,6 +7,7 @@ import logging
 import cProfile
 import numpy as np
 from functools import reduce
+from pstats import SortKey
 from timeit import default_timer as timer
 from collections import Counter, defaultdict
 
@@ -107,7 +108,7 @@ def profile_training(args):
     cProfile.runctx('train_model_from_generators(model, generate_train, generate_valid, training_steps, validation_steps, batch_size, epochs, patience, output_folder, id, inspect_model, inspect_show_labels)',
                  globals(), {'model': model, 'generate_train': generate_train, 'generate_valid': generate_valid, 'training_steps': args.training_steps, 'validation_steps': args.validation_steps,
                              'batch_size': args.batch_size, 'epochs': args.epochs, 'patience': args.patience, 'output_folder': args.output_folder, 'id': args.id, 'inspect_model': args.inspect_model,
-                             'inspect_show_labels': args.inspect_show_labels})
+                             'inspect_show_labels': args.inspect_show_labels}, sort=SortKey.CUMULATIVE)
 
 def test_multimodal_multitask(args):
     _, _, generate_test = test_train_valid_tensor_generators(args.tensor_maps_in, args.tensor_maps_out, args.tensors, args.batch_size,
