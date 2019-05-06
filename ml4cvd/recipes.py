@@ -104,8 +104,10 @@ def profile_training(args):
                                                 args.pool_x, args.pool_y,
                                                 args.pool_z, args.padding, args.learning_rate)
 
-    cProfile.run('train_model_from_generators(model, generate_train, generate_valid, args.training_steps, args.validation_steps, args.batch_size, args.epochs, args.patience, args.output_folder, args.id, args.inspect_model, args.inspect_show_labels)',
-                 os.path.join(args.output_folder, args.id, "txt"))
+    cProfile.runctx('train_model_from_generators(model, generate_train, generate_valid, training_steps, validation_steps, batch_size, epochs, patience, output_folder, id, inspect_model, inspect_show_labels)',
+                 globals(), {'model': model, 'generate_train': generate_train, 'generate_valid': generate_valid, 'training_steps': args.training_steps, 'validation_steps': args.validation_steps,
+                             'batch_size': args.batch_size, 'epochs': args.epochs, 'patience': args.patience, 'output_folder': args.output_folder, 'id': args.id, 'inspect_model': args.inspect_model,
+                             'inspect_show_labels': args.inspect_show_labels}, os.path.join(args.output_folder, args.id, "txt"))
 
 def test_multimodal_multitask(args):
     _, _, generate_test = test_train_valid_tensor_generators(args.tensor_maps_in, args.tensor_maps_out, args.tensors, args.batch_size,
