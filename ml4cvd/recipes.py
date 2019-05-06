@@ -106,7 +106,7 @@ def profile_training(args):
 
     profile.run(train_model_from_generators(model, generate_train, generate_valid, args.training_steps, args.validation_steps, args.batch_size,
                                         args.epochs, args.patience, args.output_folder, args.id, args.inspect_model, args.inspect_show_labels),
-                os.path.join(args.output_folder, args.run_id, ".txt"))
+                os.path.join(args.output_folder, args.id, ".txt"))
 
 def test_multimodal_multitask(args):
     _, _, generate_test = test_train_valid_tensor_generators(args.tensor_maps_in, args.tensor_maps_out, args.tensors, args.batch_size,
