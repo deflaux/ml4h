@@ -4,7 +4,7 @@
 import os
 import csv
 import logging
-import profile
+import cProfile
 import numpy as np
 from functools import reduce
 from timeit import default_timer as timer
@@ -104,9 +104,8 @@ def profile_training(args):
                                                 args.pool_x, args.pool_y,
                                                 args.pool_z, args.padding, args.learning_rate)
 
-    profile.run(train_model_from_generators(model, generate_train, generate_valid, args.training_steps, args.validation_steps, args.batch_size,
-                                        args.epochs, args.patience, args.output_folder, args.id, args.inspect_model, args.inspect_show_labels),
-                os.path.join(args.output_folder, args.id, ".txt"))
+    cProfile.run('train_model_from_generators(model, generate_train, generate_valid, args.training_steps, args.validation_steps, args.batch_size, args.epochs, args.patience, args.output_folder, args.id, args.inspect_model, args.inspect_show_labels)',
+                 os.path.join(args.output_folder, args.id, "txt"))
 
 def test_multimodal_multitask(args):
     _, _, generate_test = test_train_valid_tensor_generators(args.tensor_maps_in, args.tensor_maps_out, args.tensors, args.batch_size,
