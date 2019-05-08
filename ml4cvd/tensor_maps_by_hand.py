@@ -321,6 +321,18 @@ TMAPS['random-forest-fields'] = TensorMap('top-80-class', group='categorical',
                                                'Adopted-as-a-child_Prefer-not-to-answer': 31
                                                })
 
+TMAPS['compare-merged'] = TensorMap('compare-merged', group='categorical',
+                                    channel_map={'Sex_Female': 0,
+                                               'Sex_Male': 1,
+                                               'Mother-still-alive_Yes': 2,
+                                               'Mother-still-alive_No': 3,
+                                               'Mother-still-alive_Do-not-know': 4,
+                                               'Mother-still-alive_Prefer-not-to-answer': 5,
+                                               'Father-still-alive_Yes': 6,
+                                               'Father-still-alive_No': 7,
+                                               'Father-still-alive_Do-not-know': 8,
+                                               'Father-still-alive_Prefer-not-to-answer': 9})
+
 TMAPS['categorical-phenotypes-22'] = TensorMap('categorical-phenotypes-22', group='categorical',
                                            channel_map={'Adopted-as-a-child_No_0_0': 0, 'Adopted-as-a-child_No_2_0': 1,
                                                         'Cancer-diagnosed-by-doctor_No_0_0': 2,
