@@ -109,7 +109,7 @@ def profile_training(args):
     #                         'batch_size': args.batch_size, 'epochs': args.epochs, 'patience': args.patience, 'output_folder': args.output_folder, 'id': args.id, 'inspect_model': args.inspect_model,
     #                         'inspect_show_labels': args.inspect_show_labels}, sort="cumulative")
 
-    cProfile.runctx(step_by_step_train_profile(generate_train, model),
+    cProfile.runctx("step_by_step_train_profile(generate_train, model)",
                     globals(), {'generate_train': generate_train, 'model': model}, os.path.join(args.output_folder, args.id, args.id + ".prof"))
 
 def step_by_step_train_profile(generate_train, model):
