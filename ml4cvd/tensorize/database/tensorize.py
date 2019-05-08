@@ -79,8 +79,12 @@ def tensorize_categorical_continuous_fields(pipeline: Pipeline,
 
 # Defining this in global scope because passing it explicitly into a method used by beam.Map()
 # gives a 'client not picklable` error.
-gcs_client = storage.Client()
-output_bucket = gcs_client.get_bucket(GCS_BUCKET)
+try:
+    gcs_client = storage.Client()
+    output_bucket = gcs_client.get_bucket(GCS_BUCKET)
+except OSError as e:
+    output_bucket = 'Not defined'
+    logging.warning(f"Could not instantiate the GCS client: {e}")
 
 
 def write_tensor_from_sql(sampleid_to_rows, output_path, tensor_type):
