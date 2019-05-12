@@ -7,6 +7,7 @@ from apache_beam.options.pipeline_options import PipelineOptions, GoogleCloudOpt
 
 from ml4cvd.defines import GCS_BUCKET
 from ml4cvd.tensorize.database import tensorize
+from ml4cvd.tensorize.mri.mri import tensorize_mri
 
 
 def parse_args():
@@ -70,6 +71,7 @@ if __name__ == "__main__":
                                                           args.bigquery_dataset,
                                                           args.tensor_type)
     elif args.tensor_type == 'mri':
+        tensorize_mri(pipeline, None)
         pass
     else:
         raise ValueError('Unsupported tensor type:', args.tensor_type)
