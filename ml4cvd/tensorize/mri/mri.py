@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt  # First import matplotlib, then use Agg, then i
 from PIL import Image, ImageDraw  # Polygon to mask
 from scipy.ndimage.morphology import binary_closing  # Morphological operator
 
-from ml4cvd.defines import IMAGE_EXT, TENSOR_EXT, DICOM_EXT, JOIN_CHAR, CONCAT_CHAR, HD5_GROUP_CHAR, GCS_BUCKET
+from ml4cvd.defines import IMAGE_EXT, TENSOR_EXT, DICOM_EXT, CONCAT_CHAR, HD5_GROUP_CHAR, GCS_BUCKET, JOIN_CHAR
 from ml4cvd.defines import MRI_DATE, MRI_FRAMES, MRI_SEGMENTED, MRI_TO_SEGMENT, MRI_ZOOM_INPUT, MRI_ZOOM_MASK
 
 MRI_PIXEL_WIDTH = 'mri_pixel_width'
@@ -30,6 +30,10 @@ MRI_SERIES_TO_WRITE = ['cine_segmented_lax_2ch', 'cine_segmented_lax_3ch', 'cine
                        'cine_segmented_sax_inlinevf']
 ALLOWED_MRI_FIELD_IDS = ['20208', '20209']
 
+TEMP_ZIPPED = 'temp_zipped'
+TEMP_DICOMS = 'temp_dicoms'
+OUTPUT_TENSORS = 'output_tensors'
+
 
 def tensorize_mri(pipeline: Pipeline, output_file: str):
     # Query bucket in BQ
@@ -38,7 +42,6 @@ def tensorize_mri(pipeline: Pipeline, output_file: str):
     bucket = storage_client.get_bucket(GCS_BUCKET)
     blobs = bucket.list_blobs(prefix="projects/pbatra/mri_test/")
 
-    # output_file = 'gs://ml4cvd/projects/pbatra/temp/%s.csv' % RUN_NAME
     output_file = '/Users/kyuksel/ml4cvd/tensors/dataflow_tensors/tensors_test_mri/mri_tensor'
 
     all_files = (
@@ -62,7 +65,7 @@ try:
     bucket = storage_client.get_bucket("ml4cvd")
 except OSError:
     bucket = 'whoops'
-    logging.warning(f"GCS storage client could not be instantiated!")
+    logging.warning("GCS storage client could not be instantiated!")
 
 
 def _write_tensors_from_zipped_dicoms(zip_location,
@@ -77,13 +80,15 @@ def _write_tensors_from_zipped_dicoms(zip_location,
                                       write_pngs=False,
                                       #hd5,
                                       ) -> None:
-    # Parse field_id and sample_id from file_name, assume file name is .../sampleid_fieldid_stuff.zip
-    zipped_folder, tensors_folder, dicom_folder = os.path.join(root_folder, 'temp_zipped'), os.path.join(root_folder, 'output_tensors'), os.path.join(root_folder, 'temp_dicoms')
+    zipped_folder = os.path.join(root_folder, TEMP_ZIPPED)
+    dicom_folder = os.path.join(root_folder, TEMP_DICOMS)
+    tensors_folder = os.path.join(root_folder, OUTPUT_TENSORS)
 
-    parsed_file_name = os.path.basename(zip_location).split('_')
+    # Parse field_id and sample_id from file_name, assume file name is .../sampleid_fieldid_stuff.zip
+    parsed_file_name = os.path.basename(zip_location).split(JOIN_CHAR)
     sample_id, field_id = parsed_file_name[0], parsed_file_name[1]
     if field_id not in ALLOWED_MRI_FIELD_IDS:
-        print(f'skipping this file {zip_location}, because field_id {field_id} not in {ALLOWED_MRI_FIELD_IDS}')
+        logging.info(f'Skipping this file {zip_location}, because field_id {field_id} not in {ALLOWED_MRI_FIELD_IDS}')
         return
 
     for folder in [zipped_folder, tensors_folder, dicom_folder]:
