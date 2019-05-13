@@ -37,17 +37,19 @@ OUTPUT_TENSORS = 'output_tensors'
 
 def tensorize_mri(pipeline: Pipeline, output_file: str):
     # Query bucket in BQ
-    # blobs=["projects/pbatra/mri_test/2345370_20211_2_0.zip", "projects/pbatra/mri_test/2345370_20212_2_0.zip"]
     storage_client = storage.Client()
     bucket = storage_client.get_bucket(GCS_BUCKET)
-    blobs = bucket.list_blobs(prefix="projects/pbatra/mri_test/")
+    # blobs = bucket.list_blobs(prefix="projects/pbatra/mri_test/")
+    # blobs = ["projects/pbatra/mri_test/2345370_20211_2_0.zip", "projects/pbatra/mri_test/2345370_20212_2_0.zip"]
+    blobs = ["projects/pbatra/mri_test/2345032_20207_2_0.zip", "projects/pbatra/mri_test/2345032_20208_2_0.zip"]
 
     output_file = '/Users/kyuksel/ml4cvd/tensors/dataflow_tensors/tensors_test_mri/mri_tensor'
 
     all_files = (
         pipeline
         # create a list of files to read
-        | 'create_file_path_tuple' >> beam.Create([blob.name for blob in blobs])
+        | 'create_file_path_tuple' >> beam.Create([blob for blob in blobs])
+        # | 'create_file_path_tuple' >> beam.Create([blob.name for blob in blobs])
 
         | 'process_file' >> beam.Map(_write_tensors_from_zipped_dicoms)
 
@@ -59,7 +61,8 @@ def tensorize_mri(pipeline: Pipeline, output_file: str):
 
 
 # root_folder = '/Users/kyuksel/broad/ml/tensorize/tensorize/MRI/outputs/'
-root_folder = '/Users/kyuksel/ml4cvd/tensors/dataflow_tensors/tensors_test_mri/outputs/'
+# root_folder = '/Users/kyuksel/ml4cvd/tensors/dataflow_tensors/tensors_test_mri/outputs/'
+root_folder = '/Users/kyuksel/ml4cvd/tensors/dataflow_tensors/tensors_test_mri'
 try:
     storage_client = storage.Client()
     bucket = storage_client.get_bucket("ml4cvd")
