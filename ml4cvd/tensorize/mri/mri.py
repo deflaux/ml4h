@@ -36,14 +36,8 @@ OUTPUT_TENSORS = 'output_tensors'
 
 
 def tensorize_mri(pipeline: Pipeline, output_file: str):
-    # Query bucket in BQ
-    storage_client = storage.Client()
-    bucket = storage_client.get_bucket(GCS_BUCKET)
     # blobs = bucket.list_blobs(prefix="projects/pbatra/mri_test/")
-    # blobs = ["projects/pbatra/mri_test/2345370_20211_2_0.zip", "projects/pbatra/mri_test/2345370_20212_2_0.zip"]
-    blobs = ["projects/pbatra/mri_test/2345032_20207_2_0.zip", "projects/pbatra/mri_test/2345032_20208_2_0.zip"]
-
-    output_file = '/Users/kyuksel/ml4cvd/tensors/dataflow_tensors/tensors_test_mri/mri_tensor'
+    blobs = ["projects/pbatra/mri_test/2345032_20208_2_0.zip", "projects/pbatra/mri_test/2345032_20209_2_0.zip"]
 
     all_files = (
         pipeline
@@ -52,20 +46,16 @@ def tensorize_mri(pipeline: Pipeline, output_file: str):
         # | 'create_file_path_tuple' >> beam.Create([blob.name for blob in blobs])
 
         | 'process_file' >> beam.Map(_write_tensors_from_zipped_dicoms)
-
-        | 'Writing to file %s' % output_file >> beam.io.WriteToText(output_file)
     )
 
     result = pipeline.run()
     result.wait_until_finish()
 
 
-# root_folder = '/Users/kyuksel/broad/ml/tensorize/tensorize/MRI/outputs/'
-# root_folder = '/Users/kyuksel/ml4cvd/tensors/dataflow_tensors/tensors_test_mri/outputs/'
 root_folder = '/Users/kyuksel/ml4cvd/tensors/dataflow_tensors/tensors_test_mri'
 try:
     storage_client = storage.Client()
-    bucket = storage_client.get_bucket("ml4cvd")
+    bucket = storage_client.get_bucket(GCS_BUCKET)
 except OSError:
     bucket = 'whoops'
     logging.warning("GCS storage client could not be instantiated!")
@@ -91,16 +81,20 @@ def _write_tensors_from_zipped_dicoms(zip_location,
     parsed_file_name = os.path.basename(zip_location).split(JOIN_CHAR)
     sample_id, field_id = parsed_file_name[0], parsed_file_name[1]
     if field_id not in ALLOWED_MRI_FIELD_IDS:
-        logging.info(f'Skipping this file {zip_location}, because field_id {field_id} not in {ALLOWED_MRI_FIELD_IDS}')
+        logging.info(f"Skipping this file {zip_location}, because field_id {field_id} not in {ALLOWED_MRI_FIELD_IDS}")
         return
 
     for folder in [zipped_folder, tensors_folder, dicom_folder]:
         if not os.path.exists(folder):
             os.makedirs(folder)
-    zipped = os.path.join(zipped_folder, f'{sample_id}_{field_id}.zip')
+
+    zip_file = f"{sample_id}_{field_id}.zip"
+    tensor_file = f"{sample_id}_{field_id}{TENSOR_EXT}"
+
+    zipped = os.path.join(zipped_folder, zip_file)
     storage.blob.Blob(zip_location, bucket).download_to_filename(zipped)
 
-    with h5py.File(os.path.join(tensors_folder, f'{sample_id}_{field_id}{TENSOR_EXT}'), 'w') as hd5:
+    with h5py.File(os.path.join(tensors_folder, tensor_file), 'w') as hd5:
         with zipfile.ZipFile(zipped, "r") as zip_ref:
             zip_ref.extractall(dicom_folder)
             _write_tensors_from_dicoms(x, y, z, include_heart_zoom, zoom_x, zoom_y, zoom_width, zoom_height,
