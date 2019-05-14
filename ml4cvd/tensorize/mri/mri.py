@@ -2,6 +2,7 @@ import datetime
 import logging
 import os
 import shutil
+import tempfile
 import zipfile
 from collections import Counter, defaultdict
 from typing import Tuple
@@ -35,9 +36,10 @@ TEMP_DICOMS = 'temp_dicoms'
 OUTPUT_TENSORS = 'output_tensors'
 
 
-def tensorize_mri(pipeline: Pipeline, output_file: str):
+def tensorize_mri(pipeline: Pipeline, output_path: str):
     # blobs = bucket.list_blobs(prefix="projects/pbatra/mri_test/")
-    blobs = ["projects/pbatra/mri_test/2345032_20208_2_0.zip", "projects/pbatra/mri_test/2345032_20209_2_0.zip"]
+    # blobs = ["projects/pbatra/mri_test/2345032_20208_2_0.zip", "projects/pbatra/mri_test/2345032_20209_2_0.zip"]
+    blobs = ["projects/pbatra/mri_test/2345032_20208_2_0.zip", "projects/pbatra/mri_test/2345370_20208_2_0.zip"]
 
     all_files = (
         pipeline
@@ -45,14 +47,13 @@ def tensorize_mri(pipeline: Pipeline, output_file: str):
         | 'create_file_path_tuple' >> beam.Create([blob for blob in blobs])
         # | 'create_file_path_tuple' >> beam.Create([blob.name for blob in blobs])
 
-        | 'process_file' >> beam.Map(_write_tensors_from_zipped_dicoms)
+        | 'process_file' >> beam.Map(_write_tensors_from_zipped_dicoms, output_path)
     )
 
     result = pipeline.run()
     result.wait_until_finish()
 
 
-root_folder = '/Users/kyuksel/ml4cvd/tensors/dataflow_tensors/tensors_test_mri'
 try:
     storage_client = storage.Client()
     bucket = storage_client.get_bucket(GCS_BUCKET)
@@ -62,6 +63,7 @@ except OSError:
 
 
 def _write_tensors_from_zipped_dicoms(zip_location,
+                                      output_path,
                                       x=256,
                                       y=256,
                                       z=48,
@@ -70,37 +72,49 @@ def _write_tensors_from_zipped_dicoms(zip_location,
                                       zoom_y=35,
                                       zoom_width=96,
                                       zoom_height=96,
-                                      write_pngs=False,
-                                      #hd5,
+                                      write_pngs=False
                                       ) -> None:
-    zipped_folder = os.path.join(root_folder, TEMP_ZIPPED)
-    dicom_folder = os.path.join(root_folder, TEMP_DICOMS)
-    tensors_folder = os.path.join(root_folder, OUTPUT_TENSORS)
+    try:
+        with tempfile.TemporaryDirectory() as root_folder:
+            zip_folder = os.path.join(root_folder, TEMP_ZIPPED)
+            dicom_folder = os.path.join(root_folder, TEMP_DICOMS)
+            tensors_folder = os.path.join(root_folder, OUTPUT_TENSORS)
 
-    # Parse field_id and sample_id from file_name, assume file name is .../sampleid_fieldid_stuff.zip
-    parsed_file_name = os.path.basename(zip_location).split(JOIN_CHAR)
-    sample_id, field_id = parsed_file_name[0], parsed_file_name[1]
-    if field_id not in ALLOWED_MRI_FIELD_IDS:
-        logging.info(f"Skipping this file {zip_location}, because field_id {field_id} not in {ALLOWED_MRI_FIELD_IDS}")
-        return
+            # Parse field_id and sample_id from file_name
+            # Assume the file name is in the format <sample_id>_<field_id>_*.zip
+            parsed_file_name = os.path.basename(zip_location).split(JOIN_CHAR)
+            sample_id, field_id = parsed_file_name[0], parsed_file_name[1]
 
-    for folder in [zipped_folder, tensors_folder, dicom_folder]:
-        if not os.path.exists(folder):
-            os.makedirs(folder)
+            if field_id not in ALLOWED_MRI_FIELD_IDS:
+                logging.info(f"Skipping file {zip_location}, because field_id {field_id} is not one of '{ALLOWED_MRI_FIELD_IDS}'")
+                return
 
-    zip_file = f"{sample_id}_{field_id}.zip"
-    tensor_file = f"{sample_id}_{field_id}{TENSOR_EXT}"
+            zip_file_name = f"{sample_id}_{field_id}.zip"
+            zip_path = os.path.join(zip_folder, zip_file_name)
+            tensor_file_name = f"{sample_id}_{field_id}{TENSOR_EXT}"
+            tensor_path = os.path.join(tensors_folder, tensor_file_name)
+            output_blob = bucket.blob(f"{output_path}/{tensor_file_name}")
 
-    zipped = os.path.join(zipped_folder, zip_file)
-    storage.blob.Blob(zip_location, bucket).download_to_filename(zipped)
+            logging.info(f"Writing tensor {tensor_file_name} to {output_blob.public_url} ...")
 
-    with h5py.File(os.path.join(tensors_folder, tensor_file), 'w') as hd5:
-        with zipfile.ZipFile(zipped, "r") as zip_ref:
-            zip_ref.extractall(dicom_folder)
-            _write_tensors_from_dicoms(x, y, z, include_heart_zoom, zoom_x, zoom_y, zoom_width, zoom_height,
-                                       write_pngs, tensors_folder, dicom_folder, hd5, Counter())
-    shutil.rmtree(zipped_folder)
-    shutil.rmtree(dicom_folder)
+            for folder in [zip_folder, tensors_folder, dicom_folder]:
+                if not os.path.exists(folder):
+                    os.makedirs(folder)
+
+            bucket.blob(zip_location).download_to_filename(zip_path)
+
+            with h5py.File(tensor_path, 'w') as hd5:
+                with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                    zip_ref.extractall(dicom_folder)
+                    _write_tensors_from_dicoms(x, y, z, include_heart_zoom, zoom_x, zoom_y, zoom_width, zoom_height,
+                                               write_pngs, tensors_folder, dicom_folder, hd5, Counter())
+
+            output_blob.upload_from_filename(tensor_path)
+
+            shutil.rmtree(zip_folder)
+            shutil.rmtree(dicom_folder)
+    except:
+        logging.exception(f"Problem with mri tensorization for sample id '{sample_id}'")
 
 
 def _write_tensors_from_dicoms(x,

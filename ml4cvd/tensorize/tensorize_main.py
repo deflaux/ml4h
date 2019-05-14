@@ -71,7 +71,7 @@ if __name__ == "__main__":
                                                           args.bigquery_dataset,
                                                           args.tensor_type)
     elif args.tensor_type == 'mri':
-        tensorize_mri(pipeline, None)
+        tensorize_mri(pipeline, args.gcs_output_path)
         pass
     else:
         raise ValueError('Unsupported tensor type:', args.tensor_type)

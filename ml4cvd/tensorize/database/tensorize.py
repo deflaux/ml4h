@@ -124,4 +124,4 @@ def write_tensor_from_sql(sampleid_to_rows, output_path, tensor_type):
             gcs_blob.upload_from_filename(tensor_path)
 
     except:
-        logging.exception(f"Problem with processing sample id '{sample_id}'")
+        logging.exception(f"Problem with SQL tensorization for sample id '{sample_id}'")
