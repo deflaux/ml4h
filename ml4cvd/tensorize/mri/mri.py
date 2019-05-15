@@ -14,10 +14,10 @@ import pydicom
 from apache_beam import Pipeline
 from google.cloud import storage
 
-import matplotlib
-matplotlib.use('Agg')  # Need this to write images from the GSA servers.  Order matters:
-import matplotlib.pyplot as plt  # First import matplotlib, then use Agg, then import plt
-from PIL import Image, ImageDraw  # Polygon to mask
+# import matplotlib
+# matplotlib.use('Agg')  # Need this to write images from the GSA servers.  Order matters:
+# import matplotlib.pyplot as plt  # First import matplotlib, then use Agg, then import plt
+# from PIL import Image, ImageDraw  # Polygon to mask
 from scipy.ndimage.morphology import binary_closing  # Morphological operator
 
 from ml4cvd.defines import IMAGE_EXT, TENSOR_EXT, DICOM_EXT, CONCAT_CHAR, HD5_GROUP_CHAR, GCS_BUCKET, JOIN_CHAR
@@ -207,16 +207,16 @@ def _write_tensors_from_dicoms(x,
                         zoom_mask = full_mask[zoom_x: zoom_x + zoom_width, zoom_y: zoom_y + zoom_height]
                         hd5.create_dataset(MRI_ZOOM_INPUT + HD5_GROUP_CHAR + str(slicer.InstanceNumber), data=zoom_slice, compression='gzip')
                         hd5.create_dataset(MRI_ZOOM_MASK + HD5_GROUP_CHAR + str(slicer.InstanceNumber), data=zoom_mask, compression='gzip')
-                    if write_pngs:
-                        overlay = np.ma.masked_where(overlay != 0, slicer.pixel_array)
-                        # Note that plt.imsave renders the first dimension (our x) as vertical and our y as horizontal
-                        plt.imsave(tensors_folder + v + '_{0:3d}'.format(slicer.InstanceNumber) + '_mask' + IMAGE_EXT, mask)
-                        plt.imsave(tensors_folder + v + '_{0:3d}'.format(slicer.InstanceNumber) + '_overlay' + IMAGE_EXT, overlay)
-                        if include_heart_zoom:
-                            plt.imsave(tensors_folder + v + '_{}'.format(slicer.InstanceNumber) + '_zslice' + IMAGE_EXT, zoom_slice)
-                            plt.imsave(tensors_folder + v + '_{}'.format(slicer.InstanceNumber) + '_zmask' + IMAGE_EXT, zoom_mask)
-                if write_pngs:
-                    plt.imsave(tensors_folder + v + '_' + str(slicer.InstanceNumber) + IMAGE_EXT, slicer.pixel_array)
+                #     if write_pngs:
+                #         overlay = np.ma.masked_where(overlay != 0, slicer.pixel_array)
+                #         # Note that plt.imsave renders the first dimension (our x) as vertical and our y as horizontal
+                #         plt.imsave(tensors_folder + v + '_{0:3d}'.format(slicer.InstanceNumber) + '_mask' + IMAGE_EXT, mask)
+                #         plt.imsave(tensors_folder + v + '_{0:3d}'.format(slicer.InstanceNumber) + '_overlay' + IMAGE_EXT, overlay)
+                #         if include_heart_zoom:
+                #             plt.imsave(tensors_folder + v + '_{}'.format(slicer.InstanceNumber) + '_zslice' + IMAGE_EXT, zoom_slice)
+                #             plt.imsave(tensors_folder + v + '_{}'.format(slicer.InstanceNumber) + '_zmask' + IMAGE_EXT, zoom_mask)
+                # if write_pngs:
+                #     plt.imsave(tensors_folder + v + '_' + str(slicer.InstanceNumber) + IMAGE_EXT, slicer.pixel_array)
 
         if v == MRI_TO_SEGMENT:
             # if len(diastoles) == 0:
@@ -228,9 +228,9 @@ def _write_tensors_from_dicoms(x,
                 overlay, full_mask[:sx, :sy] = _get_overlay_from_dicom(diastoles[angle])
                 hd5.create_dataset('diastole_frame_b' + str(angle), data=full_slice, compression='gzip')
                 hd5.create_dataset('diastole_mask_b' + str(angle), data=full_mask, compression='gzip')
-                if write_pngs:
-                    plt.imsave(tensors_folder + 'diastole_frame_b' + str(angle) + IMAGE_EXT, full_slice)
-                    plt.imsave(tensors_folder + 'diastole_mask_b' + str(angle) + IMAGE_EXT, full_mask)
+                # if write_pngs:
+                #     plt.imsave(tensors_folder + 'diastole_frame_b' + str(angle) + IMAGE_EXT, full_slice)
+                #     plt.imsave(tensors_folder + 'diastole_mask_b' + str(angle) + IMAGE_EXT, full_mask)
 
                 sx = min(systoles[angle].Rows, x)
                 sy = min(systoles[angle].Columns, y)
@@ -238,9 +238,9 @@ def _write_tensors_from_dicoms(x,
                 overlay, full_mask[:sx, :sy] = _get_overlay_from_dicom(systoles[angle])
                 hd5.create_dataset('systole_frame_b' + str(angle), data=full_slice, compression='gzip')
                 hd5.create_dataset('systole_mask_b' + str(angle), data=full_mask, compression='gzip')
-                if write_pngs:
-                    plt.imsave(tensors_folder + 'systole_frame_b' + str(angle) + IMAGE_EXT, full_slice)
-                    plt.imsave(tensors_folder + 'systole_mask_b' + str(angle) + IMAGE_EXT, full_mask)
+                # if write_pngs:
+                #     plt.imsave(tensors_folder + 'systole_frame_b' + str(angle) + IMAGE_EXT, full_slice)
+                #     plt.imsave(tensors_folder + 'systole_mask_b' + str(angle) + IMAGE_EXT, full_mask)
         else:
             hd5.create_dataset(v, data=mri_data, compression='gzip')
 
@@ -307,14 +307,6 @@ def _get_overlay_from_dicom(d) -> Tuple[np.ndarray, np.ndarray]:
 def _unit_disk(r) -> np.ndarray:
     y, x = np.ogrid[-r: r + 1, -r: r + 1]
     return (x ** 2 + y ** 2 <= r ** 2).astype(np.int)
-
-
-def _outline_to_mask(labeled_outline, idx) -> np.ndarray:
-    idx = np.where(labeled_outline == idx)
-    poly = list(zip(idx[1].tolist(), idx[0].tolist()))
-    img = Image.new("L", [labeled_outline.shape[1], labeled_outline.shape[0]], 0)
-    ImageDraw.Draw(img).polygon(poly, outline=1, fill=1)
-    return np.array(img)
 
 
 def _str2date(d) -> datetime.date:
