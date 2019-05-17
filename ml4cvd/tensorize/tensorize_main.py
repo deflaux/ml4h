@@ -50,8 +50,7 @@ if __name__ == "__main__":
     logging.getLogger().setLevel(args.logging_level)
 
     packaging_args = [
-        # '--requirements_file={}'.format(f"{args.repo_root}/env/requirements_ml4cvd_dataflow.txt"),
-        '--requirements_file={}'.format(f"{args.repo_root}/env/requirements_ml4cvd_dataflow_scipy121.txt"),
+        '--requirements_file={}'.format(f"{args.repo_root}/env/requirements_ml4cvd_dataflow.txt"),
         '--setup_file={}'.format(f"{args.repo_root}/setup.py")
     ]
 

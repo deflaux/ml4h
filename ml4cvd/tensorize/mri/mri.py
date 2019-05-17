@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import zipfile
 from collections import Counter, defaultdict
-from typing import Tuple
+from typing import Tuple, List, Iterator
 
 import apache_beam as beam
 import h5py
@@ -18,6 +18,7 @@ from google.cloud import storage
 # matplotlib.use('Agg')  # Need this to write images from the GSA servers.  Order matters:
 # import matplotlib.pyplot as plt  # First import matplotlib, then use Agg, then import plt
 # from PIL import Image, ImageDraw  # Polygon to mask
+from google.cloud.storage import Blob
 from scipy.ndimage.morphology import binary_closing  # Morphological operator
 
 from ml4cvd.defines import IMAGE_EXT, TENSOR_EXT, DICOM_EXT, CONCAT_CHAR, HD5_GROUP_CHAR, GCS_BUCKET, JOIN_CHAR
@@ -38,16 +39,19 @@ OUTPUT_TENSORS = 'output_tensors'
 
 def tensorize_mri(pipeline: Pipeline, output_path: str):
     # blobs = bucket.list_blobs(prefix="projects/pbatra/mri_test/")
-    # blobs = ["projects/pbatra/mri_test/2345032_20208_2_0.zip", "projects/pbatra/mri_test/2345032_20209_2_0.zip"]
-    blobs = ["projects/pbatra/mri_test/2345032_20208_2_0.zip", "projects/pbatra/mri_test/2345370_20208_2_0.zip"]
+    mri_zip_blobs = bucket.list_blobs(prefix="data/mris/cardiac/2")
+    zips_with_allowed_field_ids = _filter_by_field_id(mri_zip_blobs, ALLOWED_MRI_FIELD_IDS)
 
+    # blobs = ["projects/pbatra/mri_test/2345032_20208_2_0.zip", "projects/pbatra/mri_test/2345032_20209_2_0.zip"]
+    # blobs = ["projects/pbatra/mri_test/2345032_20208_2_0.zip", "projects/pbatra/mri_test/2345370_20208_2_0.zip"]
+    # blob_list = [blob.name for blob in blobs]
     all_files = (
         pipeline
         # create a list of files to read
-        | 'create_file_path_tuple' >> beam.Create([blob for blob in blobs])
-        # | 'create_file_path_tuple' >> beam.Create([blob.name for blob in blobs])
+        # | 'create_file_path_tuple' >> beam.Create([blob for blob in blobs])
+        | 'CreateMriZipTuple' >> beam.Create(zips_with_allowed_field_ids)
 
-        | 'process_file' >> beam.Map(_write_tensors_from_zipped_dicoms, output_path)
+        | 'ProcessMriZip' >> beam.Map(_write_tensors_from_zipped_dicoms, output_path)
     )
 
     result = pipeline.run()
@@ -62,8 +66,8 @@ except OSError:
     logging.warning("GCS storage client could not be instantiated!")
 
 
-def _write_tensors_from_zipped_dicoms(zip_location,
-                                      output_path,
+def _write_tensors_from_zipped_dicoms(zip_info: Tuple[str, str, str],
+                                      output_path: str,
                                       x=256,
                                       y=256,
                                       z=48,
@@ -75,22 +79,15 @@ def _write_tensors_from_zipped_dicoms(zip_location,
                                       write_pngs=False
                                       ) -> None:
     try:
+        zip_blob_path, sample_id, field_id = zip_info
+
         with tempfile.TemporaryDirectory() as root_folder:
             zip_folder = os.path.join(root_folder, TEMP_ZIPPED)
             dicom_folder = os.path.join(root_folder, TEMP_DICOMS)
             tensors_folder = os.path.join(root_folder, OUTPUT_TENSORS)
 
-            # Parse field_id and sample_id from file_name
-            # Assume the file name is in the format <sample_id>_<field_id>_*.zip
-            parsed_file_name = os.path.basename(zip_location).split(JOIN_CHAR)
-            sample_id, field_id = parsed_file_name[0], parsed_file_name[1]
-
-            if field_id not in ALLOWED_MRI_FIELD_IDS:
-                logging.info(f"Skipping file {zip_location}, because field_id {field_id} is not one of '{ALLOWED_MRI_FIELD_IDS}'")
-                return
-
             zip_file_name = f"{sample_id}_{field_id}.zip"
-            zip_path = os.path.join(zip_folder, zip_file_name)
+            zip_file_path = os.path.join(zip_folder, zip_file_name)
             tensor_file_name = f"{sample_id}_{field_id}{TENSOR_EXT}"
             tensor_path = os.path.join(tensors_folder, tensor_file_name)
             output_blob = bucket.blob(f"{output_path}/{tensor_file_name}")
@@ -101,10 +98,10 @@ def _write_tensors_from_zipped_dicoms(zip_location,
                 if not os.path.exists(folder):
                     os.makedirs(folder)
 
-            bucket.blob(zip_location).download_to_filename(zip_path)
+            bucket.blob(zip_blob_path).download_to_filename(zip_file_path)
 
             with h5py.File(tensor_path, 'w') as hd5:
-                with zipfile.ZipFile(zip_path, "r") as zip_ref:
+                with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
                     zip_ref.extractall(dicom_folder)
                     _write_tensors_from_dicoms(x, y, z, include_heart_zoom, zoom_x, zoom_y, zoom_width, zoom_height,
                                                write_pngs, tensors_folder, dicom_folder, hd5, Counter())
@@ -207,6 +204,7 @@ def _write_tensors_from_dicoms(x,
                         zoom_mask = full_mask[zoom_x: zoom_x + zoom_width, zoom_y: zoom_y + zoom_height]
                         hd5.create_dataset(MRI_ZOOM_INPUT + HD5_GROUP_CHAR + str(slicer.InstanceNumber), data=zoom_slice, compression='gzip')
                         hd5.create_dataset(MRI_ZOOM_MASK + HD5_GROUP_CHAR + str(slicer.InstanceNumber), data=zoom_mask, compression='gzip')
+                # Commenting out the plotting code because it requires matplotlib, which has been difficult to install on Mac
                 #     if write_pngs:
                 #         overlay = np.ma.masked_where(overlay != 0, slicer.pixel_array)
                 #         # Note that plt.imsave renders the first dimension (our x) as vertical and our y as horizontal
@@ -318,3 +316,21 @@ def _str2date(d) -> datetime.date:
 
 def _date_from_dicom(d) -> str:
     return d.AcquisitionDate[0:4] + CONCAT_CHAR + d.AcquisitionDate[4:6] + CONCAT_CHAR + d.AcquisitionDate[6:]
+
+
+def _filter_by_field_id(blobs: Iterator[Blob], allowed_mri_field_ids: List[str]) -> List[Tuple[str, str, str]]:
+    # Parse field_id and sample_id from a zipped mri path
+    # Assume the zipped path is in the format <sample_id>_<field_id>_*.zip
+    zips_with_allowed_field_ids = []
+    for blob in blobs:
+        blob_path = blob.name
+        parsed_file_name = os.path.basename(blob_path).split(JOIN_CHAR)
+        sample_id, field_id = parsed_file_name[0], parsed_file_name[1]
+
+        if field_id in allowed_mri_field_ids:
+            logging.debug(f"Including MRI zip path {blob}, because field_id {field_id} is not one of '{ALLOWED_MRI_FIELD_IDS}'")
+            zips_with_allowed_field_ids.append((blob_path, sample_id, field_id))
+        else:
+            logging.debug(f"Skipping MRI zip path {blob}, because field_id {field_id} is not one of '{ALLOWED_MRI_FIELD_IDS}'")
+
+    return zips_with_allowed_field_ids
