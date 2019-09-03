@@ -58,7 +58,9 @@ def optimize_optimizer(args):
 
     test_data, test_labels = big_batch_from_minibatch_generator(args.tensor_maps_in, args.tensor_maps_out, generate_test, args.test_steps, False)
     optimizer_names = ['sgd', 'adam', 'radam', 'rmsprop', 'nadam']
-    space = {'optimizer': hp.choice('optimizer', optimizer_names), 'learning_rate': hp.choice('learning_rate', [1e-3, 1e-4, 1e-5])}
+    learning_rates = [1e-3, 1e-4, 1e-5]
+    param_lists = {'optimizer': optimizer_names, 'learning_rate': learning_rates}
+    space = {'optimizer': hp.choice('optimizer', optimizer_names), 'learning_rate': hp.choice('learning_rate', learning_rates)}
 
     def loss_from_multimodal_multitask(x):
         try:
@@ -88,7 +90,7 @@ def optimize_optimizer(args):
 
     trials = hyperopt.Trials()
     fmin(loss_from_multimodal_multitask, space=space, algo=tpe.suggest, max_evals=args.max_models, trials=trials)
-    plot_trials(trials, os.path.join(args.output_folder, args.id, 'loss_per_iteration' + IMAGE_EXT))
+    plot_trials(trials, os.path.join(args.output_folder, args.id, 'loss_per_iteration' + IMAGE_EXT), param_lists)
 
 
 def optimize_conv_layers_multimodal_multitask(args):
@@ -351,12 +353,12 @@ def string_from_trials(trials, index, param_lists={}):
 
 
 def plot_trials(trials, figure_path, param_lists={}):
-    lmax = max([x for x in trials.losses() if x != MAX_LOSS]) + 1 # add to the max to distinguish real losses from max loss
+    lmax = max([x for x in trials.losses() if x != MAX_LOSS]) + 1  # add to the max to distinguish real losses from max loss
     lplot = [x if x != MAX_LOSS else lmax for x in trials.losses()]
     best_loss = min(lplot)
     worst_loss = max(lplot)
     std = np.std(lplot)
-    plt.figure(figsize=(64, 64))
+    plt.figure(figsize=(24, 24))
     matplotlib.rcParams.update({'font.size': 9})
     plt.plot(lplot)
     for i in range(len(trials.trials)):
