@@ -54,8 +54,8 @@ def run(args):
 def optimize_optimizer(args):
     stats = Counter()
     generate_train, _, generate_test = test_train_valid_tensor_generators(args.tensor_maps_in, args.tensor_maps_out, args.tensors, args.batch_size,
-                                                                          args.valid_ratio, args.test_ratio, args.test_modulo, args.icd_csv,
-                                                                          args.balance_by_icds, False, False)
+                                                                           args.valid_ratio, args.test_ratio, args.test_modulo, args.balance_csvs, False, False)
+
     test_data, test_labels = big_batch_from_minibatch_generator(args.tensor_maps_in, args.tensor_maps_out, generate_test, args.test_steps, False)
     optimizer_names = ['sgd', 'adam', 'radam', 'rmsprop', 'nadam']
     space = {'optimizer': hp.choice('optimizer', optimizer_names), 'learning_rate': hp.choice('learning_rate', [1e-3, 1e-4, 1e-5])}
@@ -63,11 +63,12 @@ def optimize_optimizer(args):
     def loss_from_multimodal_multitask(x):
         try:
             set_args_from_x(args, x)
-            model = make_multimodal_to_multilabel_model(args.model_file, args.model_layers, args.model_freeze, args.tensor_maps_in,
-                                                        args.tensor_maps_out, args.activation, args.dense_layers, args.dropout, args.mlp_concat,
-                                                        args.conv_layers, args.max_pools, args.res_layers, args.dense_blocks, args.block_size,
-                                                        args.conv_bn, args.conv_x, args.conv_y, args.conv_z, args.conv_dropout, args.conv_width,
-                                                        args.u_connect, args.pool_x, args.pool_y, args.pool_z, args.padding, args.learning_rate, args.optimizer)
+            model = make_multimodal_to_multilabel_model(args.model_file, args.model_layers, args.model_freeze, args.tensor_maps_in, args.tensor_maps_out,
+                                                        args.activation, args.dense_layers, args.dropout, args.mlp_concat, args.conv_layers, args.max_pools,
+                                                        args.res_layers, args.dense_blocks, args.block_size, args.conv_bn, args.conv_x, args.conv_y,
+                                                        args.conv_z, args.conv_dropout, args.conv_width, args.u_connect, args.pool_x, args.pool_y,
+                                                        args.pool_z, args.padding, args.learning_rate, args.optimizer)
+
             if model.count_params() > args.max_parameters:
                 logging.info(f"Model too big, max parameters is:{args.max_parameters}, model has:{model.count_params()}. Return max loss.")
                 return MAX_LOSS
