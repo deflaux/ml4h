@@ -38,6 +38,8 @@ def run(args):
             optimize_lr_multimodal_multitask(args)
         elif 'inputs' == args.mode:
             optimize_input_tensor_maps(args)
+        elif 'optimizer' == args.mode:
+            optimize_optimizer(args)
         else:
             raise ValueError('Unknown hyperparameter optimization mode:', args.mode)
   
@@ -47,6 +49,45 @@ def run(args):
     end_time = timer()
     elapsed_time = end_time - start_time
     logging.info("Executed the '{}' operation in {:.2f} seconds".format(args.mode, elapsed_time))
+
+
+def optimize_optimizer(args):
+    stats = Counter()
+    generate_train, _, generate_test = test_train_valid_tensor_generators(args.tensor_maps_in, args.tensor_maps_out, args.tensors, args.batch_size,
+                                                                          args.valid_ratio, args.test_ratio, args.test_modulo, args.icd_csv,
+                                                                          args.balance_by_icds, False, False)
+    test_data, test_labels = big_batch_from_minibatch_generator(args.tensor_maps_in, args.tensor_maps_out, generate_test, args.test_steps, False)
+    optimizer_names = ['sgd', 'adam', 'radam', 'rmsprop', 'nadam']
+    space = {'optimizer': hp.choice('optimizer', optimizer_names), 'learning_rate': hp.choice('learning_rate', [1e-3, 1e-4, 1e-5])}
+
+    def loss_from_multimodal_multitask(x):
+        try:
+            set_args_from_x(args, x)
+            model = make_multimodal_to_multilabel_model(args.model_file, args.model_layers, args.model_freeze, args.tensor_maps_in,
+                                                        args.tensor_maps_out, args.activation, args.dense_layers, args.dropout, args.mlp_concat,
+                                                        args.conv_layers, args.max_pools, args.res_layers, args.dense_blocks, args.block_size,
+                                                        args.conv_bn, args.conv_x, args.conv_y, args.conv_z, args.conv_dropout, args.conv_width,
+                                                        args.u_connect, args.pool_x, args.pool_y, args.pool_z, args.padding, args.learning_rate, args.optimizer)
+            if model.count_params() > args.max_parameters:
+                logging.info(f"Model too big, max parameters is:{args.max_parameters}, model has:{model.count_params()}. Return max loss.")
+                return MAX_LOSS
+
+            logging.info('Current parameter set: {} \n'.format(string_from_arch_dict(x)))
+            model = train_model_from_generators(model, generate_train, generate_test, args.training_steps, args.validation_steps, args.batch_size,
+                                                args.epochs, args.patience, args.output_folder, args.id, args.inspect_model, args.inspect_show_labels)
+            loss_and_metrics = model.evaluate(test_data, test_labels, batch_size=args.batch_size)
+            stats['count'] += 1
+            logging.info('Iteration {} out of maximum {}. Loss: {} Current model size {}.'.format(stats['count'], args.max_models, loss_and_metrics[0],
+                                                                                                  model.count_params()))
+            return loss_and_metrics[0]
+
+        except ValueError as e:
+            logging.exception('ValueError trying to make a model for hyperparameter optimization. Returning max loss.')
+            return MAX_LOSS
+
+    trials = hyperopt.Trials()
+    fmin(loss_from_multimodal_multitask, space=space, algo=tpe.suggest, max_evals=args.max_models, trials=trials)
+    plot_trials(trials, os.path.join(args.output_folder, args.id, 'loss_per_iteration' + IMAGE_EXT))
 
 
 def optimize_conv_layers_multimodal_multitask(args):
