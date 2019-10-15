@@ -18,7 +18,7 @@ from keras.models import Model, load_model
 from keras.utils.vis_utils import model_to_dot
 from keras.layers import LeakyReLU, PReLU, ELU, ThresholdedReLU
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
-from keras.layers import SpatialDropout1D, SpatialDropout2D, SpatialDropout3D, add, concatenate
+from keras.layers import SpatialDropout1D, SpatialDropout2D, SpatialDropout3D, add, concatenate, Lambda
 from keras.layers import Input, Dense, Dropout, BatchNormalization, Activation, Flatten, LSTM, RepeatVector
 from keras.layers.convolutional import Conv1D, Conv2D, Conv3D, UpSampling1D, UpSampling2D, UpSampling3D, MaxPooling1D
 from keras.layers.convolutional import MaxPooling2D, MaxPooling3D, AveragePooling1D, AveragePooling2D, AveragePooling3D, Layer
@@ -351,9 +351,15 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
     else:
         raise ValueError('No input activations.')
 
+    variational = 'variational' in kwargs and kwargs['variational']
+    kl_loss_weight = ('kl_loss_weight' in kwargs and kwargs['kl_loss_weight']) or 1.
+    variational_layers = []
     for i, hidden_units in enumerate(dense_layers):
         if i == len(dense_layers) - 1:
-            multimodal_activation = _dense_layer(multimodal_activation, layers, hidden_units, activation, conv_normalize, name='embed')
+            multimodal_activation = _dense_layer(multimodal_activation, layers, hidden_units, activation, conv_normalize, name='embed', variational=variational)
+            if variational:
+                variational_layers.append(multimodal_activation[1:])
+                multimodal_activation = multimodal_activation[0]
         else:
             multimodal_activation = _dense_layer(multimodal_activation, layers, hidden_units, activation, conv_normalize)
         if dropout > 0:
@@ -361,9 +367,9 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         if mlp_concat:
             multimodal_activation = concatenate([multimodal_activation, mlp_input], axis=channel_axis)
 
-    losses = []
+    losses = [kl_loss(mu, log_var) for mu, log_var in variational_layers]
     my_metrics = {}
-    loss_weights = []
+    loss_weights = [kl_loss_weight] * len(losses)
     output_predictions = {}
     output_tensor_maps_to_process = tensor_maps_out.copy()
 
@@ -404,6 +410,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         else:
             output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(multimodal_activation)
 
+
     m = Model(inputs=input_tensors, outputs=list(output_predictions.values()))
     m.summary()
 
@@ -424,6 +431,10 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
 
     m.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=my_metrics)
     return m
+
+
+def kl_loss(mu, log_var):
+    return -0.5 * K.mean(1 + mu - K.square(mu) - K.exp(log_var), axis=-1)
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -613,14 +624,37 @@ def _pool_layers_from_kind_and_dimension(dimension, pool_type, pool_number, pool
         raise ValueError(f'Unknown pooling type: {pool_type} for dimension: {dimension}')
 
 
-def _dense_layer(x: K.placeholder, layers: Dict[str, K.placeholder], units: int, activation: str, normalization: str, name=None):
+def sampling(args):
+    """Reparameterization trick by sampling from an isotropic unit Gaussian.
+    # Arguments
+        args (tensor): mean and log of variance of Q(z|X)
+    # Returns
+        z (tensor): sampled latent vector
+    """
+    z_mean, z_log_var = args
+    epsilon = K.random_normal(shape=(K.shape(z_mean)))
+    return z_mean + K.exp(0.5 * z_log_var) * epsilon
+
+
+def _dense_layer(x: K.placeholder, layers: Dict[str, K.placeholder], units: int, activation: str, normalization: str,
+                 name=None, variational=False):
+    if not variational:
         if name is not None:
             x = layers[f"{name}_{str(len(layers))}"] = Dense(units=units, name=name)(x)
         else:
             x = layers[f"Dense_{str(len(layers))}"] = Dense(units=units)(x)
         x = layers[f"Activation_{str(len(layers))}"] = _activation_layer(activation)(x)
         x = layers[f"Normalization_{str(len(layers))}"] = _normalization_layer(normalization)(x)
-        return _get_last_layer(layers)
+        return x
+    else:
+        if name:
+            mu = layers[f"{name}_mu_{str(len(layers))}"] = Dense(units=units, name=name + '_mu')(x)
+            log_var = layers[f"{name}_log_var_{str(len(layers))}"] = Dense(units=units, name=name + '_log_var')(x)
+        else:
+            mu = layers[f"mu_{str(len(layers))}"] = Dense(units=units)(x)
+            log_var = layers[f"log_var_{str(len(layers))}"] = Dense(units=units)(x)
+        sampled = Lambda(sampling)([mu, log_var])
+        return sampled, mu, log_var
 
 
 def _upsampler(dimension, pool_x, pool_y, pool_z):
