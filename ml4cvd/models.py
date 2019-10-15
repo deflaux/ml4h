@@ -352,7 +352,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         raise ValueError('No input activations.')
 
     variational = 'variational' in kwargs and kwargs['variational']
-    kl_loss_weight = ('kl_loss_weight' in kwargs and kwargs['kl_loss_weight']) or 1.
+    kl_loss_weight = ('kl_loss_weight' in kwargs and kwargs['kl_loss_weight']) or 1.  # TODO: use this
     variational_layers = []
     for i, hidden_units in enumerate(dense_layers):
         if i == len(dense_layers) - 1:
@@ -367,9 +367,9 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         if mlp_concat:
             multimodal_activation = concatenate([multimodal_activation, mlp_input], axis=channel_axis)
 
-    losses = [kl_loss(mu, log_var) for mu, log_var in variational_layers]
+    losses = []
     my_metrics = {}
-    loss_weights = [kl_loss_weight] * len(losses)
+    loss_weights = []
     output_predictions = {}
     output_tensor_maps_to_process = tensor_maps_out.copy()
 
@@ -433,8 +433,23 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
     return m
 
 
-def kl_loss(mu, log_var):
-    return -0.5 * K.mean(1 + mu - K.square(mu) - K.exp(log_var), axis=-1)
+class KLDivergenceLayer(Layer):
+
+    """ Identity transform layer that adds KL divergence
+    to the final model loss.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self.is_placeholder = True
+        super(KLDivergenceLayer, self).__init__(*args, **kwargs)
+
+    def call(self, inputs):
+        mu, log_var = inputs
+        kl_batch = - .5 * K.sum(1 + log_var -
+                                K.square(mu) -
+                                K.exp(log_var), axis=-1)
+        self.add_loss(K.mean(kl_batch), inputs=inputs)
+        return inputs
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -653,6 +668,7 @@ def _dense_layer(x: K.placeholder, layers: Dict[str, K.placeholder], units: int,
         else:
             mu = layers[f"mu_{str(len(layers))}"] = Dense(units=units)(x)
             log_var = layers[f"log_var_{str(len(layers))}"] = Dense(units=units)(x)
+        mu, log_var = KLDivergenceLayer()([mu, log_var])
         sampled = Lambda(sampling)([mu, log_var])
         return sampled, mu, log_var
 
