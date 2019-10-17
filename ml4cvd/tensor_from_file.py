@@ -101,6 +101,28 @@ def _check_phase_full_len(hd5: h5py.File, phase: str):
         raise ValueError(f'{phase} phase is not full length')
 
 
+def _interpolate_trend(tm: TensorMap, hd5: h5py.File, dependents=None):
+    for phase in 'pretest', 'exercise', 'rest':
+        _check_phase_full_len(hd5, phase)
+    times = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_time')
+    new_times = np.arange(0, 435, 435 // tm.shape[0])[:tm.shape[0]]
+    tensor = _get_tensor_at_first_date(hd5, tm.group, tm.dtype, tm.name)
+    new_tensor = np.interp(new_times, times, tensor)
+    return tm.normalize_and_validate(new_tensor).reshape(tm.shape)
+
+
+def _real_load(tm: TensorMap, hd5: h5py.File, dependents=None):
+    for phase in 'pretest', 'exercise', 'rest':
+        _check_phase_full_len(hd5, phase)
+    times = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_time')
+    new_times = np.arange(0, 435, 435 // tm.shape[0])[:tm.shape[0]]
+    loads = _get_tensor_at_first_date(hd5, tm.group, tm.dtype, 'trend_grade')
+    rpms =  _get_tensor_at_first_date(hd5, tm.group, tm.dtype, 'trend_load')
+    loads = np.interp(new_times, times, loads)
+    rpms = np.interp(new_times, times, rpms)
+    return tm.normalize_and_validate(loads * rpms).reshape(tm.shape)
+
+
 def _first_date_bike_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
     _check_phase_full_len(hd5, 'rest')
     original = _get_tensor_at_first_date(hd5, tm.group, DataSetType.FLOAT_ARRAY, tm.name)
@@ -179,6 +201,7 @@ def _hr_achieved(tm: TensorMap, hd5: h5py.File, dependents=None):
 TMAPS: Dict[str, TensorMap] = dict()
 
 
+
 TMAPS['ecg-bike-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                   normalization={'mean': 30.55, 'std': 12.81},
                                   tensor_from_file=_first_date_hrr, dtype=DataSetType.CONTINUOUS)
@@ -214,6 +237,10 @@ TMAPS['ecg-bike-new-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', m
 TMAPS['ecg-bike-hr-achieved'] = TensorMap('hr_achieved', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                           normalization={'mean': .68, 'std': .1},
                                           tensor_from_file=_hr_achieved, dtype=DataSetType.CONTINUOUS)
+TMAPS['ecg-bike-interp-hrs'] = TensorMap('trend_heartrate', shape=(64, 1), group='ecg_bike', validator=no_nans,
+                                          tensor_from_file=_interpolate_trend, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-interp-real-load'] = TensorMap('trend_real_load', shape=(64, 1), group='ecg_bike', validator=no_nans,
+                                          tensor_from_file=_real_load, dtype=DataSetType.FLOAT_ARRAY)
 
 
 def _make_ecg_rest(population_normalize: float = None):
