@@ -417,16 +417,17 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         if len(tm.shape) > 1:
             all_filters = conv_layers + dense_blocks
             conv_layer, kernel = _conv_layer_from_kind_and_dimension(len(tm.shape), conv_type, conv_width, conv_x, conv_y, conv_z)
-            last_conv = Lambda(_dense_from_embed_shape, name=f'adapt_embed_to_{tm.output_name()}')([tm, len(_get_layer_kind_sorted(layers, 'Pooling')), pool_x, pool_y, pool_z, multimodal_activation])
+            dense, reshape = _build_embed_adapters(tm, len(_get_layer_kind_sorted(layers, 'Pooling')), pool_x, pool_y, pool_z)
+            adapted_embed = reshape(dense(multimodal_activation))
             for i, name in enumerate(reversed(_get_layer_kind_sorted(layers, 'Pooling'))):
                 if u_connect:
-                    last_conv = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)(last_conv)
-                    last_conv = conv_layer(filters=all_filters[-(1+i)], kernel_size=kernel, padding=padding)(last_conv)
-                    last_conv = _activation_layer(activation)(last_conv)
+                    adapted_embed = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)(adapted_embed)
+                    adapted_embed = conv_layer(filters=all_filters[-(1+i)], kernel_size=kernel, padding=padding)(adapted_embed)
+                    adapted_embed = _activation_layer(activation)(adapted_embed)
                     early_conv = _get_last_layer_by_kind(layers, 'Conv', int(name.split(JOIN_CHAR)[-1]))
-                    last_conv = concatenate([last_conv, early_conv])
+                    adapted_embed = concatenate([adapted_embed, early_conv])
                 else:
-                    last_conv = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)(last_conv)
+                    adapted_embed = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)(adapted_embed)
             conv_label = conv_layer(tm.shape[channel_axis], _one_by_n_kernel(len(tm.shape)), activation="linear")(last_conv)
             output_predictions[tm.output_name()] = Activation(tm.activation, name=tm.output_name())(conv_label)
         elif tm.parents is not None:
@@ -725,14 +726,12 @@ def _upsamplers_size_multiplier(num_upsamples, pool_x, pool_y, pool_z):
     return pool_x**num_upsamples, pool_y**num_upsamples, pool_z**num_upsamples
 
 
-def _dense_from_embed_shape(args: List[TensorMap, int, int, int, int, K.placeholder]) -> K.placeholder:
-    tm, num_upsamples, pool_x, pool_y, pool_z, input_tensor = args
+def _build_embed_adapters(tm: TensorMap, num_upsamples: int, pool_x: int, pool_y: int, pool_z: int) -> Tuple[Layer, Layer]:
     multipliers = _upsamplers_size_multiplier(num_upsamples, pool_x, pool_y, pool_z)
     size_multipliers = np.array(multipliers[:len(tm.shape)])
     pre_upsample_size = tuple(np.array(tm.shape)[:len(size_multipliers)] // size_multipliers)
     pre_upsample_size += tm.shape[len(multipliers):]
-    dense = Dense(np.prod(pre_upsample_size))(input_tensor)
-    return Reshape(pre_upsample_size)(dense)
+    return Dense(np.prod(pre_upsample_size)), Reshape(pre_upsample_size)
 
 
 def _activation_layer(activation):
