@@ -367,7 +367,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
             last_conv = _conv_block_new(input_tensors[j], layers, conv_fxns, pool_layers, len(tm.shape), activation, conv_normalize, conv_regularize, conv_dropout, None)
             dense_conv_fxns = _conv_layers_from_kind_and_dimension(len(tm.shape), conv_type, dense_blocks, conv_width, conv_x, conv_y, conv_z, padding, False, block_size)
             dense_pool_layers = _pool_layers_from_kind_and_dimension(len(tm.shape), pool_type, len(dense_blocks), pool_x, pool_y, pool_z)
-            last_conv = _dense_block(last_conv, layers, block_size, dense_conv_fxns, dense_pool_layers, len(tm.shape), activation, conv_normalize, conv_regularize, conv_dropout)
+            last_conv = _dense_block(last_conv, layers, block_size, dense_conv_fxns, dense_pool_layers, len(tm.shape), activation, conv_normalize, conv_regularize, conv_dropout, tm)
             input_multimodal.append(Flatten()(last_conv))
         else:
             mlp_input = input_tensors[j]
@@ -417,18 +417,20 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         if len(tm.shape) > 1:
             all_filters = conv_layers + dense_blocks
             conv_layer, kernel = _conv_layer_from_kind_and_dimension(len(tm.shape), conv_type, conv_width, conv_x, conv_y, conv_z)
-            dense, reshape = _build_embed_adapters(tm, len(_get_layer_kind_sorted(layers, 'Pooling')), pool_x, pool_y, pool_z)
-            adapted_embed = reshape(dense(multimodal_activation))
-            for i, name in enumerate(reversed(_get_layer_kind_sorted(layers, 'Pooling'))):
+            relevant_pools = [pool for pool in reversed(_get_layer_kind_sorted(layers, 'Pooling')) if tm.input_name() in pool]
+            dense, reshape = _build_embed_adapters(tm, len(relevant_pools), pool_x, pool_y, pool_z)
+            adapted_embed = dense(multimodal_activation)
+            adapted_embed = [reshape(adapted_embed)]
+            for i, name in enumerate(relevant_pools):
                 if u_connect:
-                    adapted_embed = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)(adapted_embed)
-                    adapted_embed = conv_layer(filters=all_filters[-(1+i)], kernel_size=kernel, padding=padding)(adapted_embed)
-                    adapted_embed = _activation_layer(activation)(adapted_embed)
-                    early_conv = _get_last_layer_by_kind(layers, 'Conv', int(name.split(JOIN_CHAR)[-1]))
-                    adapted_embed = concatenate([adapted_embed, early_conv])
+                    upsample_embed = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)
+                    conv_embed = conv_layer(filters=all_filters[-(1+i)], kernel_size=kernel, padding=padding)
+                    activate_embed = _activation_layer(activation)
+                    early_conv = _get_last_layer_by_kind(tm, layers, 'Conv', int(name.split(JOIN_CHAR)[-1]))
+                    adapted_embed.append(concatenate([activate_embed(conv_embed(upsample_embed(adapted_embed[-1]))), early_conv]))
                 else:
-                    adapted_embed = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)(adapted_embed)
-            conv_label = conv_layer(tm.shape[channel_axis], _one_by_n_kernel(len(tm.shape)), activation="linear")(last_conv)
+                    adapted_embed.append(_upsampler(len(tm.shape), pool_x, pool_y, pool_z)(adapted_embed[-1]))
+            conv_label = conv_layer(tm.shape[channel_axis], _one_by_n_kernel(len(tm.shape)), activation="linear")(adapted_embed[-1])
             output_predictions[tm.output_name()] = Activation(tm.activation, name=tm.output_name())(conv_label)
         elif tm.parents is not None:
             if len(K.int_shape(output_predictions[tm.parents[0]])) > 1:
@@ -606,18 +608,20 @@ def _dense_block(x: K.placeholder,
                  activation: str,
                  normalization: str,
                  regularization: str,
-                 regularization_rate: float):
+                 regularization_rate: float,
+                 tm: TensorMap,
+                 ):
     for i, conv_layer in enumerate(conv_layers):
-        x = layers[f"Conv_{str(len(layers))}"] = conv_layer(x)
-        x = layers[f"Activation_{str(len(layers))}"] = _activation_layer(activation)(x)
-        x = layers[f"Normalization_{str(len(layers))}"] = _normalization_layer(normalization)(x)
-        x = layers[f"Regularization_{str(len(layers))}"] = _regularization_layer(dimension, regularization, regularization_rate)(x)
+        x = layers[f"{tm.input_name()}_Conv_{str(len(layers))}"] = conv_layer(x)
+        x = layers[f"{tm.input_name()}_Activation_{str(len(layers))}"] = _activation_layer(activation)(x)
+        x = layers[f"{tm.input_name()}_Normalization_{str(len(layers))}"] = _normalization_layer(normalization)(x)
+        x = layers[f"{tm.input_name()}_Regularization_{str(len(layers))}"] = _regularization_layer(dimension, regularization, regularization_rate)(x)
         if i % block_size == 0:  # TODO: pools should come AFTER the dense conv block not before.
-            x = layers[f"Pooling{JOIN_CHAR}{str(len(layers))}"] = pool_layers[i//block_size](x)
+            x = layers[f"{tm.input_name()}_Pooling{JOIN_CHAR}{str(len(layers))}"] = pool_layers[i//block_size](x)
             dense_connections = [x]
         else:
             dense_connections += [x]
-            x = layers[f"concatenate{JOIN_CHAR}{str(len(layers))}"] = concatenate(dense_connections, axis=CHANNEL_AXIS)
+            x = layers[f"{tm.input_name()}_concatenate{JOIN_CHAR}{str(len(layers))}"] = concatenate(dense_connections, axis=CHANNEL_AXIS)
     return _get_last_layer(layers)
 
 
@@ -778,14 +782,14 @@ def _get_last_layer(named_layers):
     return named_layers[max_layer]
 
 
-def _get_last_layer_by_kind(named_layers, kind, mask_after=9e9):
+def _get_last_layer_by_kind(tm, named_layers, kind, mask_after=9e9):
     max_index = -1
     for k in named_layers:
         if kind in k:
             val = int(k.split('_')[-1])
             if val < mask_after:
                 max_index = max(max_index, val)
-    return named_layers[kind + JOIN_CHAR + str(max_index)]
+    return named_layers[tm.input_name() + '_' + kind + JOIN_CHAR + str(max_index)]
 
 
 def _get_layer_kind_sorted(named_layers, kind):
@@ -820,7 +824,7 @@ def _inspect_model(model: Model,
         _plot_dot_model_in_color(model_to_dot(model, show_shapes=inspect_show_labels, expand_nested=True), image_path, inspect_show_labels)
 
     t0 = time.time()
-    _ = model.fit_generator(generate_train, steps_per_epoch=training_steps, workers=8, use_multiprocessing=True,
+    _ = model.fit_generator(generate_train, steps_per_epoch=training_steps,
                             validation_steps=1, validation_data=generate_valid)
     t1 = time.time()
     train_speed = (t1 - t0) / (batch_size * training_steps)
@@ -868,6 +872,9 @@ def _plot_dot_model_in_color(dot, image_path, inspect_show_labels):
             elif 'MaxPooling' in n.get_label():
                 legend['MaxPooling'] = "aquamarine"
                 n.set_fillcolor("aquamarine")
+            elif 'AveragePooling' in n.get_label():
+                legend['AveragePooling'] = "aquamarine4"
+                n.set_fillcolor("aquamarine4")
             elif 'Dense' in n.get_label():
                 legend['Dense'] = "gold"
                 n.set_fillcolor("gold")

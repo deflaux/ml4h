@@ -2627,7 +2627,7 @@ TMAPS['coronary_artery_disease_hard'] = TensorMap('coronary_artery_disease_hard'
 TMAPS['coronary_artery_disease_intermediate'] = TensorMap('coronary_artery_disease_intermediate', group='categorical_flag', channel_map={'no_coronary_artery_disease_intermediate':0, 'coronary_artery_disease_intermediate':1}, loss=weighted_crossentropy([1.0, 7], 'coronary_artery_disease_intermediate'))
 TMAPS['coronary_artery_disease_soft'] = TensorMap('coronary_artery_disease_soft', group='categorical_flag', channel_map={'no_coronary_artery_disease_soft':0, 'coronary_artery_disease_soft':1}, loss=weighted_crossentropy([1.0, 5], 'coronary_artery_disease_soft'))
 TMAPS['crohns_disease'] = TensorMap('crohns_disease', group='categorical_flag', channel_map={'no_crohns_disease':0, 'crohns_disease':1}, loss=weighted_crossentropy([1.0, 117], 'crohns_disease'))
-TMAPS['death'] = TensorMap('death', group='categorical_flag', channel_map={'no_death':0, 'death':1}, loss=weighted_crossentropy([1.0, 17], 'death'))
+TMAPS['death'] = TensorMap('death', group='categorical_flag', channel_map={'no_death':0, 'death':1}, loss=weighted_crossentropy([1.0, 50], 'death'))
 TMAPS['depression'] = TensorMap('depression', group='categorical_flag', channel_map={'no_depression':0, 'depression':1}, loss=weighted_crossentropy([1.0, 6], 'depression'))
 TMAPS['dermatitis'] = TensorMap('dermatitis', group='categorical_flag', channel_map={'no_dermatitis':0, 'dermatitis':1}, loss=weighted_crossentropy([1.0, 14], 'dermatitis'))
 TMAPS['diabetes_all'] = TensorMap('diabetes_all', group='categorical_flag', channel_map={'no_diabetes_all':0, 'diabetes_all':1}, loss=weighted_crossentropy([1.0, 7], 'diabetes_all'))
