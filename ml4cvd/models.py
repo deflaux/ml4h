@@ -417,7 +417,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         if len(tm.shape) > 1:
             all_filters = conv_layers + dense_blocks
             conv_layer, kernel = _conv_layer_from_kind_and_dimension(len(tm.shape), conv_type, conv_width, conv_x, conv_y, conv_z)
-            last_conv = _dense_from_embed_shape(tm, len(_get_layer_kind_sorted(layers, 'Pooling')), pool_x, pool_y, pool_z, multimodal_activation)
+            last_conv = Lambda(_dense_from_embed_shape, name=f'adapt_embed_to_{tm.output_name()}')([tm, len(_get_layer_kind_sorted(layers, 'Pooling')), pool_x, pool_y, pool_z, multimodal_activation])
             for i, name in enumerate(reversed(_get_layer_kind_sorted(layers, 'Pooling'))):
                 if u_connect:
                     last_conv = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)(last_conv)
@@ -725,7 +725,8 @@ def _upsamplers_size_multiplier(num_upsamples, pool_x, pool_y, pool_z):
     return pool_x**num_upsamples, pool_y**num_upsamples, pool_z**num_upsamples
 
 
-def _dense_from_embed_shape(tm: TensorMap, num_upsamples: int, pool_x: int, pool_y: int, pool_z: int, input_tensor: Layer):
+def _dense_from_embed_shape(args: List[TensorMap, int, int, int, int, K.placeholder]) -> K.placeholder:
+    tm, num_upsamples, pool_x, pool_y, pool_z, input_tensor = args
     multipliers = _upsamplers_size_multiplier(num_upsamples, pool_x, pool_y, pool_z)
     size_multipliers = np.array(multipliers[:len(tm.shape)])
     pre_upsample_size = tuple(np.array(tm.shape)[:len(size_multipliers)] // size_multipliers)
