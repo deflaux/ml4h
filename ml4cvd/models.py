@@ -16,7 +16,7 @@ from keras.callbacks import History
 from keras.optimizers import Adam
 from keras.models import Model, load_model
 from keras.utils.vis_utils import model_to_dot
-from keras.layers import LeakyReLU, PReLU, ELU, ThresholdedReLU, Lambda
+from keras.layers import LeakyReLU, PReLU, ELU, ThresholdedReLU, Reshape
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from keras.layers import SpatialDropout1D, SpatialDropout2D, SpatialDropout3D, add, concatenate, Lambda
 from keras.layers import Input, Dense, Dropout, BatchNormalization, Activation, Flatten, LSTM, RepeatVector
@@ -417,12 +417,13 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         if len(tm.shape) > 1:
             all_filters = conv_layers + dense_blocks
             conv_layer, kernel = _conv_layer_from_kind_and_dimension(len(tm.shape), conv_type, conv_width, conv_x, conv_y, conv_z)
+            last_conv = _dense_from_embed_shape(tm, len(_get_layer_kind_sorted(layers, 'Pooling')), pool_x, pool_y, pool_z, multimodal_activation)
             for i, name in enumerate(reversed(_get_layer_kind_sorted(layers, 'Pooling'))):
-                early_conv = _get_last_layer_by_kind(layers, 'Conv', int(name.split(JOIN_CHAR)[-1]))
                 if u_connect:
                     last_conv = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)(last_conv)
                     last_conv = conv_layer(filters=all_filters[-(1+i)], kernel_size=kernel, padding=padding)(last_conv)
                     last_conv = _activation_layer(activation)(last_conv)
+                    early_conv = _get_last_layer_by_kind(layers, 'Conv', int(name.split(JOIN_CHAR)[-1]))
                     last_conv = concatenate([last_conv, early_conv])
                 else:
                     last_conv = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)(last_conv)
@@ -439,7 +440,6 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
             output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation='softmax', name=tm.output_name())(multimodal_activation)
         else:
             output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(multimodal_activation)
-
 
     m = Model(inputs=input_tensors, outputs=list(output_predictions.values()))
     m.summary()
@@ -461,6 +461,10 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
 
     m.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=my_metrics)
     return m
+
+
+def _variational_bottle_neck():
+    pass
 
 
 class KLDivergenceLayer(Layer):
@@ -717,6 +721,19 @@ def _upsampler(dimension, pool_x, pool_y, pool_z):
         return UpSampling1D(size=pool_x)
 
 
+def _upsamplers_size_multiplier(num_upsamples, pool_x, pool_y, pool_z):
+    return pool_x**num_upsamples, pool_y**num_upsamples, pool_z**num_upsamples
+
+
+def _dense_from_embed_shape(tm: TensorMap, num_upsamples: int, pool_x: int, pool_y: int, pool_z: int, input_tensor: Layer):
+    multipliers = _upsamplers_size_multiplier(num_upsamples, pool_x, pool_y, pool_z)
+    size_multipliers = np.array(multipliers[:len(tm.shape)])
+    pre_upsample_size = tuple(np.array(tm.shape)[:len(size_multipliers)] // size_multipliers)
+    pre_upsample_size += tm.shape[len(multipliers):]
+    dense = Dense(np.prod(pre_upsample_size))(input_tensor)
+    return Reshape(pre_upsample_size)(dense)
+
+
 def _activation_layer(activation):
     if activation == 'leaky':
         return LeakyReLU()
@@ -787,18 +804,18 @@ def _inspect_model(model: Model,
                   image_path: str) -> Model:
     """Collect statistics on model inference and training times.
 
-	Arguments
-	    model: the model to inspect
-		generate_train: training data generator function
-		generate_valid: Validation data generator function
-		batch_size: size of the mini-batches
-		training_steps: number of optimization steps to take
-		inspect_show_labels: if True, show layer labels on the architecture diagram
-		image_path: file path of the architecture diagram
+    Arguments
+        model: the model to inspect
+        generate_train: training data generator function
+        generate_valid: Validation data generator function
+        batch_size: size of the mini-batches
+        training_steps: number of optimization steps to take
+        inspect_show_labels: if True, show layer labels on the architecture diagram
+        image_path: file path of the architecture diagram
 
-	Returns
-		The slightly optimized keras model
-	"""
+    Returns
+        The slightly optimized keras model
+    """
     if image_path:
         _plot_dot_model_in_color(model_to_dot(model, show_shapes=inspect_show_labels, expand_nested=True), image_path, inspect_show_labels)
 
@@ -863,6 +880,12 @@ def _plot_dot_model_in_color(dot, image_path, inspect_show_labels):
             elif 'Activation' in n.get_label():
                 legend['Activation'] = "yellow"
                 n.set_fillcolor("yellow")
+            elif 'Concatenate' in n.get_label():
+                legend['Concatenate'] = "orchid"
+                n.set_fillcolor("orchid")
+            elif 'Flatten' in n.get_label():
+                legend['Flatten'] = "orchid1"
+                n.set_fillcolor("orchid1")
         n.set_style("filled")
         if not inspect_show_labels:
             n.set_label('\n')
