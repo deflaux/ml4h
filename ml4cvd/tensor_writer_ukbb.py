@@ -69,6 +69,7 @@ ECG_TAGS_TO_WRITE = ['VentricularRate', 'PQInterval', 'PDuration', 'QRSDuration'
                      'SokolovLVHIndex', 'PAxis', 'RAxis', 'TAxis', 'QTDispersion', 'QTDispersionBazett', 'QRSNum', 'POnset', 'POffset', 'QOnset',
                      'QOffset', 'TOffset']
 ECG_BIKE_SAMPLE_RATE = 500
+ECG_BIKE_NUM_LEADS = 3
 SECONDS_PER_MINUTE = 60
 
 
@@ -867,23 +868,22 @@ def _write_ecg_bike_tensors(ecgs, xml_field, hd5, sample_id, stats):
         else:
             stats['missing strip bike ECG'] += 1
 
-        counter = 0
-        full_ekgs = defaultdict(list)
-        for lead_order in root.findall("./FullDisclosure/LeadOrder"):
-            full_leads = {i: lead for i, lead in enumerate(lead_order.text.split(','))}
+        full_ekgs = [[] for _ in range(ECG_BIKE_NUM_LEADS)]
+        count = 0
         for full_d in root.findall("./FullDisclosure/FullDisclosureData"):
             for full_line in re.split('\n|\t', full_d.text):
                 for sample in re.split(',', full_line):
                     if sample == '':
                         continue
-                    full_ekgs[full_leads[counter % 3]].append(float(sample))
-                    counter += 1
+                    lead = (count % (ECG_BIKE_NUM_LEADS * ECG_BIKE_SAMPLE_RATE)) // ECG_BIKE_SAMPLE_RATE
+                    full_ekgs[lead].append(float(sample))
+                    count += 1
 
-        if len(full_ekgs) != 0:
+        if all(full_ekgs):  # Does each lead have data?
             full_np = np.zeros(ECG_BIKE_FULL_SIZE)
-            for lead in full_ekgs:
-                full_idx = min(ECG_BIKE_FULL_SIZE[0], len(full_ekgs[lead]))
-                full_np[:full_idx, ECG_BIKE_LEADS[lead]] = full_ekgs[lead][:full_idx]
+            for i, lead in enumerate(full_ekgs):
+                full_idx = min(ECG_BIKE_FULL_SIZE[0], len(lead))
+                full_np[:full_idx, i] = lead[:full_idx]
             write_to_hd5(dtype=DataSetType.FLOAT_ARRAY, name='full', value=full_np)
         else:
             stats['missing full disclosure bike ECG'] += 1
@@ -1049,6 +1049,7 @@ def get_disease2tsv(tsv_folder) -> Dict[str, str]:
 def append_fields_from_csv(tensors, csv_file, group, delimiter):
     stats = Counter()
     data_maps = defaultdict(dict)
+    categorical_channel_maps = {MRI_ANNOTATION_NAME: MRI_ANNOTATION_CHANNEL_MAP}  # str: dict
     with open(csv_file, 'r') as volumes:
         lol = list(csv.reader(volumes, delimiter=delimiter))
         fields = lol[0][1:]  # Assumes sample id is the first field
@@ -1066,18 +1067,46 @@ def append_fields_from_csv(tensors, csv_file, group, delimiter):
                 sample_id = tp.replace(TENSOR_EXT, '')
                 if sample_id in data_maps:
                     for field in data_maps[sample_id]:
-                        try:
-                            value = float(data_maps[sample_id][field])
-                            hd5_key = group + HD5_GROUP_CHAR + field
-                            if field in hd5[group]:
-                                data = hd5[hd5_key]
-                                data[0] = value
-                                stats['updated'] += 1
+                        value = data_maps[sample_id][field]
+                        if group == 'continuous':
+                            try:
+                                value = float(value.strip())
+                            except ValueError:
+                                stats[f'could not cast field: {field} with value: {value} to float'] += 1
+                                continue
+                        elif group == 'categorical':
+                            is_channel_mapped = False
+                            for cm_name in categorical_channel_maps:
+                                if value in categorical_channel_maps[cm_name]:
+                                    hd5_key = group + HD5_GROUP_CHAR + cm_name
+                                    if cm_name in hd5[group]:
+                                        data = hd5[hd5_key]
+                                        data[0] = categorical_channel_maps[cm_name][value]
+                                        stats['updated'] += 1
+                                    else:
+                                        hd5.create_dataset(hd5_key, data=[categorical_channel_maps[cm_name][value]])
+                                        stats['created'] += 1
+                                    is_channel_mapped = True
+                            if is_channel_mapped:
+                                continue
+
+                            if value.lower() in ['false', 'f', '0']:
+                                value = 0
+                            elif value.lower() in ['true', 't', '1']:
+                                value = 1
                             else:
-                                hd5.create_dataset(hd5_key, data=[value])
-                                stats['created'] += 1
-                        except ValueError:
-                            stats[f'could not cast field {field} to float'] += 1
+                                stats[f'Could not parse categorical field: {field} with value: {value}'] += 1
+                                continue
+
+                        hd5_key = group + HD5_GROUP_CHAR + field
+                        if field in hd5[group]:
+                            data = hd5[hd5_key]
+                            data[0] = value
+                            stats['updated'] += 1
+                        else:
+                            hd5.create_dataset(hd5_key, data=[value])
+                            stats['created'] += 1
+
                 else:
                     stats['sample id missing']
         except:
