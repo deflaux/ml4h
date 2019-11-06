@@ -472,10 +472,6 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
     return m
 
 
-def _variational_bottle_neck():
-    pass
-
-
 class KLDivergenceLayer(Layer):
 
     """ Identity transform layer that adds KL divergence
