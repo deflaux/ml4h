@@ -404,7 +404,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
     while len(output_tensor_maps_to_process) > 0:
         tm = output_tensor_maps_to_process.pop(0)
 
-        if not tm.parents is None and any(not p in output_predictions for p in tm.parents):
+        if tm.parents is not None and any(p not in output_predictions for p in tm.parents):
             output_tensor_maps_to_process.append(tm)
             continue
 
@@ -417,7 +417,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
             conv_layer, kernel = _conv_layer_from_kind_and_dimension(len(tm.shape), conv_type, conv_width, conv_x, conv_y, conv_z)
             relevant_pools = [pool for pool in reversed(_get_layer_kind_sorted(layers, 'Pooling')) if tm.input_name() in pool]
             dense, reshape = _build_embed_adapters(tm, len(relevant_pools), pool_x, pool_y, pool_z)
-            all_upsampled = [reshape(dense(multimodal_activation))]  # This has to be a stack because TF overloads assign
+            to_upsample = reshape(dense(multimodal_activation))
             for i, name in enumerate(relevant_pools):
                 if u_connect:
                     upsample_embed = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)
@@ -426,17 +426,14 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
                     early_conv = _get_last_layer_by_kind(tm, layers, 'Conv', int(name.split(JOIN_CHAR)[-1]))
                     if variational:
                         down_x, down_y, down_z = _upsamplers_size_multiplier(i, pool_x, pool_y, pool_z)
-                        to_u_connect = _pool_layers_from_kind_and_dimension(len(tm.shape), pool_type, 1, down_x, down_y, down_z)[0](early_conv)
-                        to_u_connect_shape = K.int_shape(to_u_connect)[1:]
-                        to_u_connect = _dense_layer(to_u_connect, layers, to_u_connect_shape[-1], activation, conv_normalize, name=name + '_embed', variational=True)[0]
-                        to_u_connect = _upsampler(len(tm.shape), down_x, down_y, down_z)(to_u_connect)
-                        all_upsampled.append(concatenate([activate_embed(conv_embed(upsample_embed(all_upsampled[-1]))), to_u_connect]))
-                        del to_u_connect
-                    else:
-                        all_upsampled.append(concatenate([activate_embed(conv_embed(upsample_embed(all_upsampled[-1]))), early_conv]))
+                        early_conv = _pool_layers_from_kind_and_dimension(len(tm.shape), pool_type, 1, down_x, down_y, down_z)[0](early_conv)
+                        to_u_connect_shape = K.int_shape(early_conv)[1:]
+                        early_conv = _dense_layer(early_conv, layers, to_u_connect_shape[-1], activation, conv_normalize, name=name + '_embed', variational=True)[0]
+                        early_conv = _upsampler(len(tm.shape), down_x, down_y, down_z)(early_conv)
+                    to_upsample = concatenate([activate_embed(conv_embed(upsample_embed(to_upsample))), early_conv])
                 else:
-                    all_upsampled.append(_upsampler(len(tm.shape), pool_x, pool_y, pool_z)(all_upsampled[-1]))
-            conv_label = conv_layer(tm.shape[channel_axis], _one_by_n_kernel(len(tm.shape)), activation="linear")(all_upsampled[-1])
+                    to_upsample = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)(to_upsample)
+            conv_label = conv_layer(tm.shape[channel_axis], _one_by_n_kernel(len(tm.shape)), activation="linear")(to_upsample)
             output_predictions[tm.output_name()] = Activation(tm.activation, name=tm.output_name())(conv_label)
         elif tm.parents is not None:
             if len(K.int_shape(output_predictions[tm.parents[0]])) > 1:
