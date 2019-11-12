@@ -734,7 +734,6 @@ def _build_embed_adapters(tm: TensorMap, num_upsamples: int, pool_x: int, pool_y
     size_multipliers = np.array(multipliers[:len(tm.shape) - 1])
     pre_upsample_size = tuple(np.array(tm.shape)[:len(size_multipliers)] // size_multipliers)
     pre_upsample_size += tm.shape[len(size_multipliers):]
-    import pdb; pdb.set_trace()
     return Dense(np.prod(pre_upsample_size)), Reshape(pre_upsample_size)
 
 
