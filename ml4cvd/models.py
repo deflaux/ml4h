@@ -401,6 +401,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
     output_predictions = {}
     output_tensor_maps_to_process = tensor_maps_out.copy()
 
+    u_connectable = {tm for tm in tensor_maps_in if len(tm.shape) > 1}
     while len(output_tensor_maps_to_process) > 0:
         tm = output_tensor_maps_to_process.pop(0)
 
@@ -416,6 +417,11 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
             all_filters = conv_layers + dense_blocks
             conv_layer, kernel = _conv_layer_from_kind_and_dimension(len(tm.shape), conv_type, conv_width, conv_x, conv_y, conv_z)
             relevant_pools = [pool for pool in reversed(_get_layer_kind_sorted(layers, 'Pooling')) if tm.input_name() in pool]
+            relevant_tm = None
+            if not relevant_pools:  # This case is for segmenting. TODO: should work for multiple segmentations of same sized inputs.
+                relevant_tm = next((other for other in u_connectable if other.shape[:-1] == tm.shape[:-1]))
+                u_connectable.remove(relevant_tm)
+                relevant_pools = [pool for pool in reversed(_get_layer_kind_sorted(layers, 'Pooling')) if relevant_tm.input_name() in pool]
             dense, reshape = _build_embed_adapters(tm, len(relevant_pools), pool_x, pool_y, pool_z)
             to_upsample = reshape(dense(multimodal_activation))
             for i, name in enumerate(relevant_pools):
@@ -423,7 +429,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
                     upsample_embed = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)
                     conv_embed = conv_layer(filters=all_filters[-(1+i)], kernel_size=kernel, padding=padding)
                     activate_embed = _activation_layer(activation)
-                    early_conv = _get_last_layer_by_kind(tm, layers, 'Conv', int(name.split(JOIN_CHAR)[-1]))
+                    early_conv = _get_last_layer_by_kind(relevant_tm or tm, layers, 'Conv', int(name.split(JOIN_CHAR)[-1]))
                     if variational:
                         down_x, down_y, down_z = _upsamplers_size_multiplier(i, pool_x, pool_y, pool_z)
                         early_conv = _pool_layers_from_kind_and_dimension(len(tm.shape), pool_type, 1, down_x, down_y, down_z)[0](early_conv)
@@ -853,12 +859,15 @@ def _plot_dot_model_in_color(dot, image_path, inspect_show_labels):
         'softmax': "chartreuse",
         'MaxPooling': "aquamarine",
         'AveragePooling': "aquamarine4",
+        'embed': "firebrick1",
         'Dense': "gold",
         'Reshape': "coral",
         'Input': "darkolivegreen1",
         'Activation': "yellow",
         'Concatenate': "orchid",
         'Flatten': "orchid1",
+        'KLDivergenceLayer': "seagreen1",
+        'Lambda': "seagreen3",
     }
     for n in dot.get_nodes():
         if n.get_label():
