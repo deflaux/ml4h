@@ -12,6 +12,7 @@ from typing import Dict, List, Tuple, Iterable, Callable, Union
 
 # Keras imports
 import keras.backend as K
+import keras
 from keras.callbacks import History
 from keras.optimizers import Adam
 from keras.models import Model, load_model
@@ -382,7 +383,6 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         raise ValueError('No input activations.')
 
     variational = 'variational' in kwargs and kwargs['variational']
-    kl_loss_weight = ('kl_loss_weight' in kwargs and kwargs['kl_loss_weight']) or 1.  # TODO: use this
     for i, hidden_units in enumerate(dense_layers):
         if i == len(dense_layers) - 1:
             multimodal_activation = _dense_layer(multimodal_activation, layers, hidden_units, activation, conv_normalize, name='embed', variational=variational)
@@ -483,11 +483,12 @@ class KLDivergenceLayer(Layer):
 
     def __init__(self, *args, **kwargs):
         self.is_placeholder = True
+        self.kl_weight = 1e-5
         super(KLDivergenceLayer, self).__init__(*args, **kwargs)
 
     def call(self, inputs):
         mu, log_var = inputs
-        kl_batch = - .5 * K.sum(1 + log_var -
+        kl_batch = -self.kl_weight * .5 * K.sum(1 + log_var -
                                 K.square(mu) -
                                 K.exp(log_var), axis=-1)
         self.add_loss(K.mean(kl_batch), inputs=inputs)
@@ -551,12 +552,25 @@ def train_model_from_generators(model: Model,
         return model, history
     return model
 
+class AdjustKLLoss(keras.callbacks.Callback):
+    def __init__(self, patience):
+        self.patience = patience
+        super().__init__()
+
+    def on_epoch_end(self, epoch, logs={}):
+        for layer in self.model.layers:
+            new_weight = 1 / (1 + np.exp(self.patience - epoch))
+            if "kl_divergence" in layer.name:
+                layer.kl_weight = new_weight
+                logging.info(f'Setting {layer.name} loss weight to {new_weight}.')
+
 
 def _get_callbacks(patience: int, model_file: str) -> List[Callable]:
     callbacks = [
         ModelCheckpoint(filepath=model_file, verbose=1, save_best_only=True),
         EarlyStopping(monitor='val_loss', patience=patience * 3, verbose=1),
-        ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=patience, verbose=1)
+        ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=patience, verbose=1),
+        AdjustKLLoss(patience),
     ]
 
     return callbacks
