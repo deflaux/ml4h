@@ -60,8 +60,10 @@ def _all_dates(hd5: h5py.File, source: str, dtype: DataSetType, name: str) -> Li
     # Unfortunately, that's hard to do efficiently
     return hd5[source][str(dtype)][name]
 
+
 def _pass_nan(tensor):
     return (tensor)
+
 
 def _fail_nan(tensor):
     if np.isnan(tensor).any():
@@ -153,13 +155,6 @@ def _healthy_bike(tm: TensorMap, hd5: h5py.File, dependents=None):
 def _healthy_hrr(tm: TensorMap, hd5: h5py.File, dependents=None):
     _healthy_check(hd5)
     return _first_date_hrr(tm, hd5)
-
-
-def _first_date_hrr(tm: TensorMap, hd5: h5py.File, dependents=None):
-    _check_phase_full_len(hd5, 'rest')
-    last_hr = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate')[-1]
-    max_hr = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, 'max_hr')
-    return tm.normalize_and_validate(max_hr - last_hr)
 
 
 def _median_pretest(tm: TensorMap, hd5: h5py.File, dependents=None):
@@ -317,8 +312,8 @@ def _make_ukb_ecg_rest(population_normalize: float = None):
     def ukb_ecg_rest_from_file(tm, hd5):
         if 'ukb_ecg_rest' not in hd5:
             raise ValueError('Group with R and S amplitudes not present in hd5')
-        tensor = _get_tensor_at_first_date(hd5, tm.group, DataSetType.FLOAT_ARRAY, tm.name, _pass_nan)        
-        try:            
+        tensor = _get_tensor_at_first_date(hd5, tm.group, DataSetType.FLOAT_ARRAY, tm.name, _pass_nan)
+        try:
             if population_normalize is None:
                 tensor = tm.zero_mean_std1(tensor)
             else:
@@ -351,13 +346,13 @@ def _make_ukb_ecg_rest_lvh():
         cornell_female_min = 2000.0
         cornell_male_min = 2800.0
         if 'ukb_ecg_rest' not in hd5:
-            raise ValueError('Group with R and S amplitudes not present in hd5')        
+            raise ValueError('Group with R and S amplitudes not present in hd5')
         tensor_ramp = _get_tensor_at_first_date(hd5, tm.group, DataSetType.FLOAT_ARRAY, 'ramplitude', _pass_nan)
         tensor_samp = _get_tensor_at_first_date(hd5, tm.group, DataSetType.FLOAT_ARRAY, 'samplitude', _pass_nan)
         criteria_sleads = [lead_order[l] for l in ['V1', 'V3']]
         criteria_rleads = [lead_order[l] for l in ['aVL', 'V5', 'V6']]
         if np.any(np.isnan(np.union1d(tensor_ramp[criteria_rleads], tensor_samp[criteria_sleads]))):
-            raise ValueError('Missing some of the R and S amplitude readings needed to evaluate LVH criteria')        
+            raise ValueError('Missing some of the R and S amplitude readings needed to evaluate LVH criteria')
         is_female = 'Genetic-sex_Female_0_0' in hd5['categorical']
         is_male   = 'Genetic-sex_Male_0_0' in hd5['categorical']
         # If genetic sex not available, try phenotypic
@@ -366,14 +361,14 @@ def _make_ukb_ecg_rest_lvh():
             is_male   = 'Sex_Male_0_0' in hd5['categorical']
         # If neither available, raise error
         if not(is_female or is_male):
-            raise ValueError('Sex info required to evaluate LVH criteria')        
+            raise ValueError('Sex info required to evaluate LVH criteria')
         if tm.name == 'avl_lvh':
             is_lvh = tensor_ramp[lead_order['aVL']] > avl_min
         elif tm.name == 'sokolow_lyon_lvh':
             is_lvh = tensor_samp[lead_order['V1']] +\
                      np.maximum(tensor_ramp[lead_order['V5']], tensor_ramp[lead_order['V6']]) > sl_min
-        elif tm.name == 'cornell_lvh':            
-            is_lvh = tensor_ramp[lead_order['aVL']] + tensor_samp[lead_order['V3']]     
+        elif tm.name == 'cornell_lvh':
+            is_lvh = tensor_ramp[lead_order['aVL']] + tensor_samp[lead_order['V3']]
             if is_female:
                 is_lvh = is_lvh > cornell_female_min
             if is_male:
@@ -382,13 +377,13 @@ def _make_ukb_ecg_rest_lvh():
             raise ValueError(f'{tm.name} criterion for LVH is not accounted for')
         # Following convention from categorical TMAPS, positive has cmap index 1
         tensor = np.zeros(tm.shape, dtype=np.float32)
-        index = 0    
+        index = 0
         if is_lvh:
             index = 1
         tensor[index] = 1.0
         return tensor
     return ukb_ecg_rest_lvh_from_file
-        
+
 
 TMAPS['ecg_rest_lvh_avl'] = TensorMap('avl_lvh', group='ukb_ecg_rest', tensor_from_file=_make_ukb_ecg_rest_lvh(),
                             channel_map={'no_avl_lvh': 0, 'aVL LVH': 1},
@@ -401,7 +396,7 @@ TMAPS['ecg_rest_lvh_sokolow_lyon'] = TensorMap('sokolow_lyon_lvh', group='ukb_ec
 TMAPS['ecg_rest_lvh_cornell'] = TensorMap('cornell_lvh', group='ukb_ecg_rest', tensor_from_file=_make_ukb_ecg_rest_lvh(),
                             channel_map={'no_cornell_lvh': 0, 'Cornell LVH': 1},
                             loss=weighted_crossentropy([0.003, 1.0], 'cornell_lvh'))
-    
+
 
 TMAPS['t2_flair_sag_p2_1mm_fs_ellip_pf78_1'] = TensorMap('t2_flair_sag_p2_1mm_fs_ellip_pf78_1', shape=(256, 256, 192), group='ukb_brain_mri',
                                                          tensor_from_file=normalized_first_date, dtype=DataSetType.FLOAT_ARRAY,
