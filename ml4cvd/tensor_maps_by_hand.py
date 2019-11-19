@@ -554,7 +554,7 @@ TMAPS['random-forest-fields'] = TensorMap('random-forest-fields', group='categor
                                                'Vascularheart-problems-diagnosed-by-doctor_Stroke': 11,
                                                'Vascularheart-problems-diagnosed-by-doctor_High-blood-pressure': 12,
                                                'Vascularheart-problems-diagnosed-by-doctor_Prefer-not-to-answer': 13,
-                                               'Had-other-major-operations_Yes--you-will-be-asked-about-this-later-by-an-interviewer':14,
+                                               'Had-other-major-operations_Yes--you-will-be-asked-about-this-later-by-an-interviewer': 14,
                                                'Had-other-major-operations_No': 15,
                                                'Had-other-major-operations_Do-not-know': 16,
                                                'Had-other-major-operations_Prefer-not-to-answer': 17,
