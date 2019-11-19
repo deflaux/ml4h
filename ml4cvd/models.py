@@ -483,7 +483,7 @@ class KLDivergenceLayer(Layer):
 
     def __init__(self, *args, **kwargs):
         self.is_placeholder = True
-        self.kl_weight = 1e-5
+        self.kl_weight = K.variable(1e-5)
         super(KLDivergenceLayer, self).__init__(*args, **kwargs)
 
     def call(self, inputs):
@@ -561,7 +561,7 @@ class AdjustKLLoss(keras.callbacks.Callback):
         for layer in self.model.layers:
             new_weight = 1 / (1 + np.exp(self.patience - epoch))
             if "kl_divergence" in layer.name:
-                layer.kl_weight = new_weight
+                K.set_value(layer.kl_weight, new_weight)
                 logging.info(f'Setting {layer.name} loss weight to {new_weight}.')
 
 
