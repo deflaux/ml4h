@@ -128,7 +128,7 @@ def plot_metric_history(history, title, prefix='./figures/'):
     rows = max(2, int(math.ceil(total_plots / cols)))
     f, axes = plt.subplots(rows, cols, figsize=(int(cols*SUBPLOT_SIZE), int(rows*SUBPLOT_SIZE)))
     for k in sorted(history.history.keys()):
-        if 'val_' not in k:
+        if 'val_' not in k and 'KL_loss' not in k:
             axes[row, col].plot(history.history[k])
             k_split = str(k).replace('output_', '').split('_')
             k_title = " ".join(OrderedDict.fromkeys(k_split))
@@ -139,6 +139,9 @@ def plot_metric_history(history, title, prefix='./figures/'):
                 labels = ['train', 'valid']
             else:
                 labels = [k]
+            if 'KL_loss' in history.history:
+                axes[row, col].plot(history.history['KL_loss'], linestyle='--')
+                labels.append('KL loss weight')
             axes[row, col].legend(labels, loc='upper left')
 
             row += 1

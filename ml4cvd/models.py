@@ -488,10 +488,9 @@ class KLDivergenceLayer(Layer):
 
     def call(self, inputs):
         mu, log_var = inputs
-        kl_batch = -self.kl_weight * .5 * K.sum(1 + log_var -
-                                K.square(mu) -
-                                K.exp(log_var), axis=-1)
+        kl_batch = -self.kl_weight * .5 * K.sum(1 + log_var - K.square(mu) - K.exp(log_var), axis=-1)
         self.add_loss(K.mean(kl_batch), inputs=inputs)
+        self.add_metric(K.mean(kl_batch))
         return inputs
 
 
@@ -552,17 +551,23 @@ def train_model_from_generators(model: Model,
         return model, history
     return model
 
+
 class AdjustKLLoss(keras.callbacks.Callback):
     def __init__(self, patience):
         self.patience = patience
         super().__init__()
 
-    def on_epoch_end(self, epoch, logs={}):
+    def on_epoch_end(self, epoch, logs=None):
+        kl_found = False
+        new_weight = 1 / (1 + np.exp(self.patience - epoch))
         for layer in self.model.layers:
-            new_weight = 1 / (1 + np.exp(self.patience - epoch))
             if "kl_divergence" in layer.name:
                 K.set_value(layer.kl_weight, new_weight)
                 logging.info(f'Setting {layer.name} loss weight to {new_weight}.')
+                kl_found = True
+        if kl_found:
+            logs = logs or {}
+            logs['KL_loss'] = new_weight
 
 
 def _get_callbacks(patience: int, model_file: str) -> List[Callable]:
