@@ -2,6 +2,7 @@ from typing import List, Dict
 
 import h5py
 import numpy as np
+from biosppy.signals import ecg
 from keras.utils import to_categorical
 
 from ml4cvd.TensorMap import TensorMap, no_nans
@@ -396,6 +397,36 @@ TMAPS['ecg_rest_lvh_sokolow_lyon'] = TensorMap('sokolow_lyon_lvh', group='ukb_ec
 TMAPS['ecg_rest_lvh_cornell'] = TensorMap('cornell_lvh', group='ukb_ecg_rest', tensor_from_file=_make_ukb_ecg_rest_lvh(),
                             channel_map={'no_cornell_lvh': 0, 'Cornell LVH': 1},
                             loss=weighted_crossentropy([0.003, 1.0], 'cornell_lvh'))
+
+
+def _make_ukb_ecg_rest_hrv(population_normalize: float = None):
+    def ukb_ecg_rest_hrv_from_file(tm, hd5):
+        if len(tm.shape) > 1 :
+            raise ValueError('Heart rate variability does not allow multi-dimensions')
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        for k in hd5[tm.group]:
+            if k in tm.channel_map:
+                lead = hd5[tm.group][k]
+                lead_metrics = defaultdict(dict)
+                (lead_metrics['ts_reference'], lead_metrics['filtered'], lead_metrics['rpeaks'], 
+                 lead_metrics['template_ts'], lead_metrics['templates'], lead_metrics['heart_rate_ts'], 
+                 lead_metrics['heart_rate']) = ecg.ecg(signal=lead[:, 0], sampling_rate = 500., show=False)
+                avg = np.mean(lead_metrics['heart_rate'])
+                std = np.std(lead_metrics['heart_rate'])
+                tensor[tm.channel_map[k]] = avg/std
+        try:
+            if population_normalize is None:
+                tensor = tm.zero_mean_std1(tensor)
+            else:
+                tensor /= population_normalize
+        except:
+            ValueError(f'Cannot normalize {tm.name}')
+        return tensor
+    return ukb_ecg_rest_hrv_from_file
+
+
+TMAPS['ecg_rest_hrv'] = TensorMap('hrv', group='ukb_ecg_rest', tensor_from_file=_make_ukb_ecg_rest_hrv(),
+                                  loss='logcosh', metrics=['mae'], shape=(1,), channel_map={'strip_I': 0})
 
 
 TMAPS['t2_flair_sag_p2_1mm_fs_ellip_pf78_1'] = TensorMap('t2_flair_sag_p2_1mm_fs_ellip_pf78_1', shape=(256, 256, 192), group='ukb_brain_mri',
