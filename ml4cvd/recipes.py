@@ -3,8 +3,10 @@
 # Imports
 import os
 import csv
+import h5py
 import logging
 import numpy as np
+import pandas as pd
 from functools import reduce
 from timeit import default_timer as timer
 from collections import Counter, defaultdict
@@ -82,6 +84,8 @@ def run(args):
             append_fields_from_csv(args.tensors, args.app_csv, 'categorical', '\t')
         elif 'append_gene_csv' == args.mode:
             append_gene_csv(args.tensors, args.app_csv, ',')
+        elif 'explore_tensor_maps' == args.mode:
+            explore_tensor_maps(args)
         else:
             raise ValueError('Unknown mode:', args.mode)
 
@@ -91,6 +95,35 @@ def run(args):
     end_time = timer()
     elapsed_time = end_time - start_time
     logging.info("Executed the '{}' operation in {:.2f} seconds".format(args.mode, elapsed_time))
+
+
+def explore_tensor_maps(args):
+    args.num_workers = 0
+    generators = test_train_valid_tensor_generators(**args.__dict__)
+    tmaps = args.tensor_maps_in + args.tensor_maps_out
+    tmap_names = args.tensor_maps_in + args.tensor_maps_out
+
+    dfs = []
+    for gen in generators:
+        path_iter = gen.path_iters[0]
+        column_dict = {name: list() for name in tmap_names}
+        column_dict['sample_id'] = []
+        for i, path in enumerate(path_iter):
+            if i == gen.true_epoch_lens[0]:
+                break
+            column_dict['sample_id'].append(os.path.basename(path).strip(TENSOR_EXT))
+            with h5py.File(path) as hd5:
+                dependents = {}
+                for name, tmap in zip(tmap_names, tmaps):
+                    if tmap in dependents:
+                        column_dict[name].append(dependents[tmap])
+                    else:
+                        try:
+                            column_dict[name].append(tmap.tensor_from_file(tmap, hd5, dependents))
+                        except (IndexError, KeyError, ValueError, OSError, RuntimeError):
+                            column_dict[name].append(np.full(tmap.shape, np.nan))
+        dfs.append(pd.DataFrame(column_dict))
+    return dfs
 
 
 def train_multimodal_multitask(args):
