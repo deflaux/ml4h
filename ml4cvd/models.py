@@ -484,13 +484,13 @@ class KLDivergenceLayer(Layer):
     def __init__(self, *args, **kwargs):
         self.is_placeholder = True
         self.kl_weight = K.variable(1e-5)
-        super(KLDivergenceLayer, self).__init__(*args, **kwargs)
+        super(KLDivergenceLayer, self).__init__(**kwargs)
 
     def call(self, inputs):
         mu, log_var = inputs
         kl_batch = -self.kl_weight * .5 * K.sum(1 + log_var - K.square(mu) - K.exp(log_var), axis=-1)
-        self.add_loss(K.mean(kl_batch), inputs=inputs)
-        self.add_metric(K.mean(kl_batch))
+        loss = K.mean(kl_batch)
+        self.add_loss(loss, inputs=inputs)
         return inputs
 
 
