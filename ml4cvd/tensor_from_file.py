@@ -155,13 +155,6 @@ def _healthy_hrr(tm: TensorMap, hd5: h5py.File, dependents=None):
     return _first_date_hrr(tm, hd5)
 
 
-def _first_date_hrr(tm: TensorMap, hd5: h5py.File, dependents=None):
-    _check_phase_full_len(hd5, 'rest')
-    last_hr = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate')[-1]
-    max_hr = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, 'max_hr')
-    return tm.normalize_and_validate(max_hr - last_hr)
-
-
 def _median_pretest(tm: TensorMap, hd5: h5py.File, dependents=None):
     _healthy_check(hd5)
     times = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_time')
@@ -189,6 +182,29 @@ def _hr_achieved(tm: TensorMap, hd5: h5py.File, dependents=None):
     max_hr = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, 'max_hr')
     max_pred = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, 'max_pred_hr')
     return tm.normalize_and_validate(max_hr / max_pred)
+
+
+def _min_hr_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
+    _check_phase_full_len(hd5, 'rest')
+    hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate')
+    phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename')
+    min_hr = hrs[phases == 2].min()
+    return tm.normalize_and_validate(min_hr)
+
+
+def _max_hr_not_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
+    _check_phase_full_len(hd5, 'pretest')
+    hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate')
+    phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename')
+    max_hr = hrs[(phases == 0) | (phases == 1)].max()
+    return tm.normalize_and_validate(max_hr)
+
+
+def _ecg_protocol(tm: TensorMap, hd5: h5py.File, dependents=None):
+    proto = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.STRING, 'protocol')
+    proto_to_int = {'F{i * 10}': i - 3 for i in range(3, 14)}
+    proto_to_int.update({'M{i * 10}': i - 4 + 100 for i in range(4, 15)})
+    return tm.normalize_and_validate(proto_to_int[proto])
 
 
 TMAPS: Dict[str, TensorMap] = dict()
@@ -226,9 +242,20 @@ TMAPS['ecg-bike-pretest'] = TensorMap('full', shape=(500 * 15 - 4, 3), group='ec
 TMAPS['ecg-bike-new-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                       normalization={'mean': 31, 'std': 12},
                                       tensor_from_file=_new_hrr, dtype=DataSetType.CONTINUOUS)
+
+# FOR JEN
 TMAPS['ecg-bike-hr-achieved'] = TensorMap('hr_achieved', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
-                                          normalization={'mean': .68, 'std': .1},
                                           tensor_from_file=_hr_achieved, dtype=DataSetType.CONTINUOUS)
+TMAPS['ecg-bike-max-hr'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mae'],
+                                     tensor_from_file=_max_hr_not_recovery, dtype=DataSetType.CONTINUOUS)
+TMAPS['ecg-bike-recovery-min-hr'] = TensorMap('min_hr', group='ecg_bike', loss='logcosh', metrics=['mae'],
+                                              tensor_from_file=_min_hr_recovery, dtype=DataSetType.CONTINUOUS)
+TMAPS['ecg-bike-max-pred-hr'] = TensorMap('max_pred_hr', group='ecg_bike', loss='logcosh', metrics=['mae'],
+                                          tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
+TMAPS['ecg-bike-resting-hr'] = TensorMap('resting_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                         tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
+TMAPS['ecg-bike-protocol'] = TensorMap('protocol', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                       tensor_from_file=_ecg_protocol, dtype=DataSetType.CONTINUOUS)
 
 
 def _make_ecg_rest(population_normalize: float = None):
