@@ -189,7 +189,7 @@ def _min_hr_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
     hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate')
     phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename')
     min_hr = hrs[phases == 2].min()
-    return tm.normalize_and_validate(min_hr)
+    return tm.normalize_and_validate(np.array([min_hr]))
 
 
 def _max_hr_not_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
@@ -197,14 +197,22 @@ def _max_hr_not_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
     hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate')
     phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename')
     max_hr = hrs[(phases == 0) | (phases == 1)].max()
-    return tm.normalize_and_validate(max_hr)
+    return tm.normalize_and_validate(np.array([max_hr]))
 
 
 def _ecg_protocol(tm: TensorMap, hd5: h5py.File, dependents=None):
-    proto = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.STRING, 'protocol')
-    proto_to_int = {'F{i * 10}': i - 3 for i in range(3, 14)}
-    proto_to_int.update({'M{i * 10}': i - 4 + 100 for i in range(4, 15)})
-    return tm.normalize_and_validate(proto_to_int[proto])
+    dates = _all_dates(hd5, 'ecg_bike', DataSetType.STRING, 'protocol')
+    if not dates:
+        raise ValueError(f'No {name} values values available.')
+    first_date = path_date_to_datetime(min(dates))  # Date format is sortable. 
+    first_date_path = tensor_path(source='ecg_bike', dtype=DataSetType.STRING, name='protocol', date=first_date)
+    try:
+        proto = str(np.array(hd5[first_date_path]))
+    except TypeError:
+        raise ValueError('Protocol is empty.')
+    proto_to_int = {f'F{i * 10}': i - 3 for i in range(3, 14)}
+    proto_to_int.update({f'M{i * 10}': i - 4 + 100 for i in range(4, 15)})
+    return tm.normalize_and_validate(np.array([proto_to_int[proto]], dtype=np.float32))
 
 
 TMAPS: Dict[str, TensorMap] = dict()
@@ -245,16 +253,22 @@ TMAPS['ecg-bike-new-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', m
 
 # FOR JEN
 TMAPS['ecg-bike-hr-achieved'] = TensorMap('hr_achieved', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                          normalization={'mean': 0, 'std': 1},
                                           tensor_from_file=_hr_achieved, dtype=DataSetType.CONTINUOUS)
-TMAPS['ecg-bike-max-hr'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mae'],
+TMAPS['ecg-bike-max-hr'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                     normalization={'mean': 0, 'std': 1},
                                      tensor_from_file=_max_hr_not_recovery, dtype=DataSetType.CONTINUOUS)
-TMAPS['ecg-bike-recovery-min-hr'] = TensorMap('min_hr', group='ecg_bike', loss='logcosh', metrics=['mae'],
+TMAPS['ecg-bike-recovery-min-hr'] = TensorMap('min_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                              normalization={'mean': 0, 'std': 1},
                                               tensor_from_file=_min_hr_recovery, dtype=DataSetType.CONTINUOUS)
-TMAPS['ecg-bike-max-pred-hr'] = TensorMap('max_pred_hr', group='ecg_bike', loss='logcosh', metrics=['mae'],
+TMAPS['ecg-bike-max-pred-hr'] = TensorMap('max_pred_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                          normalization={'mean': 0, 'std': 1},
                                           tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
 TMAPS['ecg-bike-resting-hr'] = TensorMap('resting_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                        normalization={'mean': 0, 'std': 1},
                                          tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
 TMAPS['ecg-bike-protocol'] = TensorMap('protocol', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                       normalization={'mean': 0, 'std': 1},
                                        tensor_from_file=_ecg_protocol, dtype=DataSetType.CONTINUOUS)
 
 

@@ -828,23 +828,3 @@ TMAPS['categorical-phenotypes-134'] = TensorMap(
                      'Workplace-had-a-lot-of-diesel-exhaust_Rarelynever_0_0': 90,
                      'Workplace-had-a-lot-of-diesel-exhaust_Rarelynever_0_1': 91,
                      'Workplace-very-dusty_Rarelynever_0_0': 127, 'Workplace-very-dusty_Rarelynever_0_1': 128})
-
-
-TMAPS['ecg-bike-max-hr'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mape'],
-                                     normalization={'mean': 110.03, 'std': 20.04}, shape=(1,),
-                                     tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
-TMAPS['ecg-bike-resting-hr'] = TensorMap('resting_hr', group='ecg_bike', loss='logcosh', shape=(1,),
-                                         metrics=['mape'], normalization={'mean': 71.2, 'std': 12.57},
-                                         tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
-TMAPS['ecg-bike-age'] = TensorMap('age', group='ecg_bike', loss='logcosh', metrics=['mape'], shape=(1,),
-                                  normalization={'mean': 60, 'std': 7.65},
-                                  tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
-TMAPS['ecg-bike-max-pred-hr'] = TensorMap('max_pred_hr', group='ecg_bike', loss='logcosh', metrics=['mape'], shape=(1,),
-                                          normalization={'mean': 167.5, 'std': 5.81},
-                                          tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
-TMAPS['ecg-bike-trend-hr'] = TensorMap('trend_heartrate', shape=(106, 1), group='ecg_bike',
-                                       tensor_from_file=normalized_first_date, dtype=DataSetType.FLOAT_ARRAY)
-TMAPS['ecg-bike-trend-load'] = TensorMap('trend_load', shape=(106, 1), group='ecg_bike',
-                                         tensor_from_file=normalized_first_date, dtype=DataSetType.FLOAT_ARRAY)
-TMAPS['ecg-bike-trend-grade'] = TensorMap('trend_grade', shape=(106, 1), group='ecg_bike',
-                                          tensor_from_file=normalized_first_date, dtype=DataSetType.FLOAT_ARRAY)

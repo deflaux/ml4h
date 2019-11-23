@@ -100,28 +100,33 @@ def run(args):
 def explore_tensor_maps(args):
     args.num_workers = 0
     generators = test_train_valid_tensor_generators(**args.__dict__)
-    tmaps = args.tensor_maps_in + args.tensor_maps_out
-    tmap_names = args.tensor_maps_in + args.tensor_maps_out
-
+    tmaps = args.tensor_maps_in
+    tmap_names = args.input_tensors
     dfs = []
     for gen in generators:
         path_iter = gen.path_iters[0]
         column_dict = {name: list() for name in tmap_names}
         column_dict['sample_id'] = []
         for i, path in enumerate(path_iter):
+            if (i+1) % 500 == 0 :
+                logging.info(f'Parsing {i/gen.true_epoch_lens[0]*100:.2f} % done')
             if i == gen.true_epoch_lens[0]:
                 break
-            column_dict['sample_id'].append(os.path.basename(path).strip(TENSOR_EXT))
-            with h5py.File(path) as hd5:
-                dependents = {}
-                for name, tmap in zip(tmap_names, tmaps):
-                    if tmap in dependents:
-                        column_dict[name].append(dependents[tmap])
-                    else:
-                        try:
-                            column_dict[name].append(tmap.tensor_from_file(tmap, hd5, dependents))
-                        except (IndexError, KeyError, ValueError, OSError, RuntimeError):
-                            column_dict[name].append(np.full(tmap.shape, np.nan))
+            try:
+                with h5py.File(path, 'r') as hd5:
+                    dependents = {}
+                    for name, tmap in zip(tmap_names, tmaps):
+                        if tmap in dependents:
+                            column_dict[name].append(dependents[tmap])
+                        else:
+                            try:
+                                column_dict[name].append(tmap.tensor_from_file(tmap, hd5, dependents)[0])
+                            except (IndexError, KeyError, ValueError, OSError, RuntimeError):
+                                column_dict[name].append(np.full(tmap.shape, np.nan)[0])
+                column_dict['sample_id'].append(os.path.basename(path).strip(TENSOR_EXT))
+            except OSError:
+                continue
+            
         dfs.append(pd.DataFrame(column_dict))
     return dfs
 
