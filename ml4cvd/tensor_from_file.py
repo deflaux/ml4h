@@ -262,6 +262,8 @@ TMAPS['ecg-bike-recovery'] = TensorMap('full', shape=(30000, 1), group='ecg_bike
 TMAPS['ecg-bike-pretest'] = TensorMap('full', shape=(500 * 15 - 4, 3), group='ecg_bike', validator=no_nans,
                                       normalization={'mean': np.array([7, -7, 3.5])[np.newaxis], 'std': np.array([31, 30, 16])[np.newaxis]},
                                       tensor_from_file=_first_date_bike_pretest, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-pretest-encode'] = TensorMap('full', shape=(2**13, 3), group='ecg_bike', validator=no_nans,
+                                             tensor_from_file=_first_date_bike_pretest, dtype=DataSetType.FLOAT_ARRAY)
 TMAPS['ecg-bike-new-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                       normalization={'mean': 31, 'std': 12},
                                       tensor_from_file=_new_hrr, dtype=DataSetType.CONTINUOUS)
