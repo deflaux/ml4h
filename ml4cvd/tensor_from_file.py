@@ -5,7 +5,7 @@ import numpy as np
 from scipy.stats import linregress
 from keras.utils import to_categorical
 
-from ml4cvd.TensorMap import TensorMap, no_nans
+from ml4cvd.TensorMap import TensorMap, no_nans, make_range_validator
 from ml4cvd.metrics import weighted_crossentropy
 from ml4cvd.tensor_writer_ukbb import tensor_path, path_date_to_datetime
 from ml4cvd.defines import ECG_REST_LEADS, ECG_REST_MEDIAN_LEADS, ECG_REST_AMP_LEADS
@@ -222,9 +222,12 @@ def _hrr_johanna_def(tm: TensorMap, hd5: h5py.File, dependents=None):
     phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename')
     exercise_mask = phases == 1
     recovery_mask = phases == 2
-    exercise_slope, intercept, _, _, _ = linregress(np.linspace(0, 1, np.count_nonzero(exercise_mask)), hrs[exercise_mask])
+    exercise_slope, _, _, _, _ = linregress(np.linspace(0, 1, np.count_nonzero(exercise_mask)), hrs[exercise_mask])
     recovery_slope, _, _, _, _ = linregress(np.linspace(1, 0, np.count_nonzero(recovery_mask)), hrs[recovery_mask])
-    return tm.normalize_and_validate(np.array([recovery_slope / (exercise_slope - intercept)]))
+    # backwards linspace to make recovery slope positive
+    if not np.isfinite(recovery_slope / exercise_slope):
+        raise ValueError('NaN hrr.')
+    return tm.normalize_and_validate(np.array([recovery_slope / exercise_slope]))
 
 
 TMAPS: Dict[str, TensorMap] = dict()
@@ -281,7 +284,23 @@ TMAPS['ecg-bike-resting-hr'] = TensorMap('resting_hr', group='ecg_bike', loss='l
                                          tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
 TMAPS['ecg-bike-protocol'] = TensorMap('protocol', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                        normalization={'mean': 0, 'std': 1},
-                                       tensor_from_file=_ecg_protocol, dtype=DataSetType.CONTINUOUS)
+                                       tensor_from_file=_ecg_protocol, dtype=DataSetType.CONTINUOUS, validator=make_range_validator(0, 10))
+# trend measurements
+TMAPS['ecg-bike-trend-hr'] = TensorMap('trend_heartrate', shape=(120, 1), group='ecg_bike',
+                                       normalization={'mean': 0, 'std': 1},
+                                       tensor_from_file=normalized_first_date, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-trend-load'] = TensorMap('trend_load', shape=(120, 1), group='ecg_bike',
+                                         normalization={'mean': 0, 'std': 1},
+                                         tensor_from_file=normalized_first_date, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-trend-grade'] = TensorMap('trend_grade', shape=(120, 1), group='ecg_bike',
+                                          normalization={'mean': 0, 'std': 1},
+                                          tensor_from_file=normalized_first_date, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-trend-time'] = TensorMap('trend_time', shape=(120, 1), group='ecg_bike',
+                                         normalization={'mean': 0, 'std': 1},
+                                         tensor_from_file=normalized_first_date, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-trend-phasename'] = TensorMap('trend_phasename', shape=(120, 1), group='ecg_bike',
+                                              normalization={'mean': 0, 'std': 1},
+                                              tensor_from_file=normalized_first_date, dtype=DataSetType.FLOAT_ARRAY)
 
 # FOR JOHANNA
 TMAPS['ecg-bike-hrr-johanna'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
