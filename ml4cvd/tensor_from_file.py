@@ -2,6 +2,7 @@ from typing import List, Dict
 
 import h5py
 import numpy as np
+from scipy.stats import linregress
 from keras.utils import to_categorical
 
 from ml4cvd.TensorMap import TensorMap, no_nans
@@ -215,6 +216,17 @@ def _ecg_protocol(tm: TensorMap, hd5: h5py.File, dependents=None):
     return tm.normalize_and_validate(np.array([proto_to_int[proto]], dtype=np.float32))
 
 
+def _hrr_johanna_def(tm: TensorMap, hd5: h5py.File, dependents=None):
+    _check_phase_full_len(hd5, 'rest')
+    hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate')
+    phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename')
+    exercise_mask = phases == 1
+    recovery_mask = phases == 2
+    exercise_slope, intercept, _, _, _ = linregress(np.linspace(0, 1, np.count_nonzero(exercise_mask)), hrs[exercise_mask])
+    recovery_slope, _, _, _, _ = linregress(np.linspace(1, 0, np.count_nonzero(recovery_mask)), hrs[recovery_mask])
+    return tm.normalize_and_validate(np.array([recovery_slope / (exercise_slope - intercept)]))
+
+
 TMAPS: Dict[str, TensorMap] = dict()
 
 
@@ -270,6 +282,11 @@ TMAPS['ecg-bike-resting-hr'] = TensorMap('resting_hr', group='ecg_bike', loss='l
 TMAPS['ecg-bike-protocol'] = TensorMap('protocol', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                        normalization={'mean': 0, 'std': 1},
                                        tensor_from_file=_ecg_protocol, dtype=DataSetType.CONTINUOUS)
+
+# FOR JOHANNA
+TMAPS['ecg-bike-hrr-johanna'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                          normalization={'mean': 0, 'std': 1},
+                                          tensor_from_file=_hrr_johanna_def)
 
 
 def _make_ecg_rest(population_normalize: float = None):
