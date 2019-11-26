@@ -528,6 +528,6 @@ def _slice_tensor(tensor_key, slice_index):
     return _slice_tensor_from_file
 
 
-TMAPS['lax_4ch_diastole_slice'] = TensorMap('lax_4ch_diastole_slice', (256, 256, 1), group='root_array', loss='logcosh',
+TMAPS['lax_4ch_diastole_slice'] = TensorMap('lax_4ch_diastole_slice', (256, 256, 1), loss='logcosh',
                                             tensor_from_file=_slice_tensor('cine_segmented_lax_4ch', 0),
                                             normalization={'zero_mean_std1': True})
