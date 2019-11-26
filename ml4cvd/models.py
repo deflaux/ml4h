@@ -365,7 +365,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         if len(tm.shape) > 1:
             conv_fxns = _conv_layers_from_kind_and_dimension(len(tm.shape), conv_type, conv_layers, conv_width, conv_x, conv_y, conv_z, padding, conv_dilate)
             pool_layers = _pool_layers_from_kind_and_dimension(len(tm.shape), pool_type, len(max_pools), pool_x, pool_y, pool_z)
-            last_conv = _conv_block_new(input_tensors[j], layers, conv_fxns, pool_layers, len(tm.shape), activation, conv_normalize, conv_regularize, conv_dropout, None)
+            last_conv = _conv_block_new(input_tensors[j], layers, conv_fxns, pool_layers, len(tm.shape), activation, conv_normalize, conv_regularize, conv_dropout, None, tm)
             dense_conv_fxns = _conv_layers_from_kind_and_dimension(len(tm.shape), conv_type, dense_blocks, conv_width, conv_x, conv_y, conv_z, padding, False, block_size)
             dense_pool_layers = _pool_layers_from_kind_and_dimension(len(tm.shape), pool_type, len(dense_blocks), pool_x, pool_y, pool_z)
             last_conv = _dense_block(last_conv, layers, block_size, dense_conv_fxns, dense_pool_layers, len(tm.shape), activation, conv_normalize, conv_regularize, conv_dropout, tm)
@@ -601,7 +601,8 @@ def _conv_block_new(x: K.placeholder,
                     normalization: str,
                     regularization: str,
                     regularization_rate: float,
-                    residual_convolution_layer: Layer):
+                    residual_convolution_layer: Layer,
+                    tm: TensorMap):
     pool_diff = len(conv_layers) - len(pool_layers)
 
     for i, conv_layer in enumerate(conv_layers):
@@ -611,7 +612,7 @@ def _conv_block_new(x: K.placeholder,
         x = layers[f"Normalization_{str(len(layers))}"] = _normalization_layer(normalization)(x)
         x = layers[f"Regularization_{str(len(layers))}"] = _regularization_layer(dimension, regularization, regularization_rate)(x)
         if i >= pool_diff:
-            x = layers[f"Pooling_{str(len(layers))}"] = pool_layers[i - pool_diff](x)
+            x = layers[f"{tm.input_name()}_Pooling_{str(len(layers))}"] = pool_layers[i - pool_diff](x)
             if residual_convolution_layer is not None:
                 residual = layers[f"Pooling_{str(len(layers))}"] = pool_layers[i - pool_diff](residual)
         if residual_convolution_layer is not None:
