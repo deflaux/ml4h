@@ -279,6 +279,16 @@ def make_hidden_layer_model(parent_model: Model, tensor_maps_in: List[TensorMap]
     return intermediate_layer_model
 
 
+def make_decoder_model(parent_model: Model, input_layer_name: str) -> Model:
+    """
+    Assumes everything in the model flows through the input_layer
+    """
+    intermediate_layer_model = Model(inputs=parent_model.get_layer(input_layer_name).input, outputs=parent_model.outputs)
+    # If we do not predict here then the graph is disconnected, I do not know why?!
+    intermediate_layer_model.predict(np.zeros((1,) + intermediate_layer_model.input_shape[1:]))
+    return intermediate_layer_model
+
+
 def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
                                     tensor_maps_out: List[TensorMap]=None,
                                     activation: str=None,
