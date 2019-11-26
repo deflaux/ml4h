@@ -425,9 +425,9 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
             dense, reshape = _build_embed_adapters(tm, len(relevant_pools), pool_x, pool_y, pool_z)
             to_upsample = reshape(dense(multimodal_activation))
             for i, name in enumerate(relevant_pools):
+                conv_embed = conv_layer(filters=all_filters[-(1+i)], kernel_size=kernel, padding=padding)
                 if u_connect:
                     upsample_embed = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)
-                    conv_embed = conv_layer(filters=all_filters[-(1+i)], kernel_size=kernel, padding=padding)
                     activate_embed = _activation_layer(activation)
                     early_conv = _get_last_layer_by_kind(relevant_tm or tm, layers, 'Conv', int(name.split(JOIN_CHAR)[-1]))
                     if variational:
@@ -438,7 +438,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
                         early_conv = _upsampler(len(tm.shape), down_x, down_y, down_z)(early_conv)
                     to_upsample = concatenate([activate_embed(conv_embed(upsample_embed(to_upsample))), early_conv])
                 else:
-                    to_upsample = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)(to_upsample)
+                    to_upsample = _upsampler(len(tm.shape), pool_x, pool_y, pool_z)(conv_embed(to_upsample))
             conv_label = conv_layer(tm.shape[channel_axis], _one_by_n_kernel(len(tm.shape)), activation="linear")(to_upsample)
             output_predictions[tm.output_name()] = Activation(tm.activation, name=tm.output_name())(conv_label)
         elif tm.parents is not None:
