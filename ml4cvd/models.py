@@ -485,7 +485,8 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
     m.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=my_metrics)
     if 'decompose' in kwargs and kwargs['decompose'] is not None:
         encoder = Model(inputs=input_tensors, outputs=multimodal_activation)
-        decoder = Model(inputs=encoder.output, outputs=list(output_predictions.values()))
+        latent_inputs = Input(shape=dense_layers[-1], name='latent_input')
+        decoder = Model(inputs=latent_inputs, outputs=list(output_predictions.values()))
         return m, encoder, decoder
     return m
 
