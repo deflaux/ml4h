@@ -279,16 +279,6 @@ def make_hidden_layer_model(parent_model: Model, tensor_maps_in: List[TensorMap]
     return intermediate_layer_model
 
 
-def make_decoder_model(parent_model: Model, input_layer_name: str) -> Model:
-    """
-    Assumes everything in the model flows through the input_layer
-    """
-    intermediate_layer_model = Model(inputs=parent_model.get_layer(input_layer_name).input, outputs=parent_model.outputs)
-    # If we do not predict here then the graph is disconnected, I do not know why?!
-    intermediate_layer_model.predict(np.zeros((1,) + intermediate_layer_model.input_shape[1:]))
-    return intermediate_layer_model
-
-
 def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
                                     tensor_maps_out: List[TensorMap]=None,
                                     activation: str=None,
@@ -465,22 +455,17 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         else:
             output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(latent_inputs)
 
-    outs = output_predictions.items()
+    out_list = list(output_predictions.values())
     encoder = Model(inputs=input_tensors, outputs=multimodal_activation)
-    decoder = Model(inputs=latent_inputs, outputs=[out[1] for out in outs])
+    decoder = Model(inputs=latent_inputs, outputs=out_list)
     outputs = decoder(encoder(input_tensors))
+    if not isinstance(outputs, list):
+        outputs = [outputs]
+    for output, name in zip(outputs, output_predictions.keys()):
+        output._name = name
     logging.info(f' OUts are:{outputs}')
-    named_outputs = []
-    if len(outs) == 1:
-        naming_layer = Lambda(lambda x: x, name=outs[0][0])
-        named_outputs.append(naming_layer(outputs))
-    else:
-        for i, out in enumerate(outs):
-            naming_layer = Lambda(lambda x: x, name=out[0])
-            named_outputs.append(naming_layer(outputs[i]))
-
-    m = Model(inputs=input_tensors, outputs=named_outputs)
-    #m = Model(inputs=input_tensors, outputs=list(output_predictions.values()))
+    logging.info(f' OUtsss are:{[o for o in outputs]}')
+    m = Model(inputs=input_tensors, outputs=outputs)
     m.summary()
 
     if 'model_layers' in kwargs and kwargs['model_layers'] is not None:
