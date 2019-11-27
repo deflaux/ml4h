@@ -488,7 +488,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         logging.info('Loaded and froze:{} layers from:{}'.format(frozen, kwargs['model_freeze']))
 
     m.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=my_metrics)
-    if 'decompose' in kwargs and kwargs['decompose'] is not None:
+    if kwargs.get('decompose', False):
         return m, encoder, decoder
     return m
 
