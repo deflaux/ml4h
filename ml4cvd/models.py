@@ -406,6 +406,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         if mlp_concat:
             multimodal_activation = concatenate([multimodal_activation, mlp_input], axis=channel_axis)
 
+    latent_inputs = Input(shape=(dense_layers[-1],), name='latent_input')
     losses = []
     my_metrics = {}
     loss_weights = []
@@ -434,7 +435,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
                 u_connectable.remove(relevant_tm)
                 relevant_pools = [pool for pool in reversed(_get_layer_kind_sorted(layers, 'Pooling')) if relevant_tm.input_name() in pool]
             dense, reshape = _build_embed_adapters(tm, len(relevant_pools), pool_x, pool_y, pool_z)
-            to_upsample = reshape(dense(multimodal_activation))
+            to_upsample = reshape(dense(latent_inputs))
             for i, name in enumerate(relevant_pools):
                 conv_embed = conv_layer(filters=all_filters[-(1+i)], kernel_size=kernel, padding=padding)
                 if u_connect:
@@ -454,17 +455,21 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
             output_predictions[tm.output_name()] = Activation(tm.activation, name=tm.output_name())(conv_label)
         elif tm.parents is not None:
             if len(K.int_shape(output_predictions[tm.parents[0]])) > 1:
-                output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(multimodal_activation)
+                output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(latent_inputs)
             else:
-                parented_activation = concatenate([multimodal_activation] + [output_predictions[p] for p in tm.parents])
+                parented_activation = concatenate([latent_inputs] + [output_predictions[p] for p in tm.parents])
                 parented_activation = _dense_layer(parented_activation, layers, tm.annotation_units, activation, conv_normalize)
                 output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(parented_activation)
         elif tm.is_categorical_any():
-            output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation='softmax', name=tm.output_name())(multimodal_activation)
+            output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation='softmax', name=tm.output_name())(latent_inputs)
         else:
-            output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(multimodal_activation)
+            output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(latent_inputs)
 
-    m = Model(inputs=input_tensors, outputs=list(output_predictions.values()))
+    encoder = Model(inputs=input_tensors, outputs=multimodal_activation)
+    decoder = Model(inputs=latent_inputs, outputs=list(output_predictions.values()))
+    outputs = decoder(encoder(input_tensors))
+    m = Model(inputs=input_tensors, outputs=outputs)
+    #m = Model(inputs=input_tensors, outputs=list(output_predictions.values()))
     m.summary()
 
     if 'model_layers' in kwargs and kwargs['model_layers'] is not None:
@@ -484,9 +489,6 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
 
     m.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=my_metrics)
     if 'decompose' in kwargs and kwargs['decompose'] is not None:
-        encoder = Model(inputs=input_tensors, outputs=multimodal_activation)
-        latent_inputs = Input(shape=(dense_layers[-1],), name='latent_input')
-        decoder = Model(inputs=latent_inputs, outputs=list(output_predictions.values()))
         return m, encoder, decoder
     return m
 
