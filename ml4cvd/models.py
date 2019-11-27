@@ -356,6 +356,17 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
     :param optimizer: which optimizer to use. See optimizers.py.
     :return: a compiled keras model
     """
+    opt = get_optimizer(optimizer, learning_rate, kwargs.get('optimizer_kwargs'))
+    metric_dict = get_metric_dict(tensor_maps_out)
+    layers_dict = _get_custom_layers()
+    custom_dict = {**metric_dict, **layers_dict, type(opt).__name__: opt}
+    if 'model_file' in kwargs and kwargs['model_file'] is not None:
+        logging.info("Attempting to load model file from: {}".format(kwargs['model_file']))
+        m = load_model(kwargs['model_file'], custom_objects=custom_dict)
+        m.summary()
+        logging.info("Loaded model file from: {}".format(kwargs['model_file']))
+        return m
+
     input_tensors = [Input(shape=tm.shape, name=tm.input_name()) for tm in tensor_maps_in]
     input_multimodal = []
     channel_axis = -1
@@ -454,19 +465,12 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
             output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(multimodal_activation)
 
     m = Model(inputs=input_tensors, outputs=list(output_predictions.values()))
+    m.summary()
 
-    opt = get_optimizer(optimizer, learning_rate, kwargs.get('optimizer_kwargs'))
-    metric_dict = get_metric_dict(tensor_maps_out)
-    custom_dict = {**metric_dict, type(opt).__name__: opt}
-    if 'model_file' in kwargs and kwargs['model_file'] is not None:
-        logging.info("Attempting to load model file from: {}".format(kwargs['model_file']))
-        m = load_model(kwargs['model_file'], custom_objects=custom_dict)
-        m.summary()
-        logging.info("Loaded model file from: {}".format(kwargs['model_file']))
-        return m
     if 'model_layers' in kwargs and kwargs['model_layers'] is not None:
         m.load_weights(kwargs['model_layers'], by_name=True)
         logging.info('Loaded model weights from:{}'.format(kwargs['model_layers']))
+
     if 'model_freeze' in kwargs and kwargs['model_freeze'] is not None:
         frozen = 0
         m.load_weights(kwargs['model_freeze'], by_name=True)
@@ -478,7 +482,6 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
                 frozen += 1
         logging.info('Loaded and froze:{} layers from:{}'.format(frozen, kwargs['model_freeze']))
 
-    m.summary()
     m.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=my_metrics)
     return m
 
@@ -501,6 +504,9 @@ class KLDivergenceLayer(Layer):
         self.add_loss(loss, inputs=inputs)
         return inputs
 
+
+def _get_custom_layers():
+    return {"KLDivergenceLayer": KLDivergenceLayer}
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # ~~~~~~~ Training ~~~~~~~~~~~~~~~~
