@@ -503,21 +503,24 @@ TMAPS['lvm_mosteller_index_sentinel'] = TensorMap('lvm_mosteller_index', group='
                                              channel_map={'LVM': 0}, normalization={'mean': 89.7, 'std': 24.8})
 
 
-def mri_slice_blackout_tensor_from_file(tm, hd5, dependents={}):
-    cur_slice = np.random.choice(list(hd5[MRI_TO_SEGMENT].keys()))
-    tensor = np.zeros(tm.shape, dtype=np.float32)
-    dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.float32)
-    tensor[:, :, 0] = np.array(hd5[MRI_TO_SEGMENT][cur_slice], dtype=np.float32)
-    label_tensor = np.array(hd5[MRI_SEGMENTED][cur_slice], dtype=np.float32)
-    dependents[tm.dependent_map][:, :, :] = to_categorical(label_tensor, tm.dependent_map.shape[-1])
-    tensor[:, :, 0] *= np.not_equal(label_tensor, 0, dtype=np.float32)
-    return tm.zero_mean_std1(tensor)
+def _slice_blackout(slice_index):
+    def mri_slice_blackout_tensor_from_file(tm, hd5, dependents={}):
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        tensor[..., 0] = np.array(hd5[MRI_TO_SEGMENT][slice_index], dtype=np.float32)
+        dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.float32)
+        label_tensor = np.array(hd5[MRI_SEGMENTED][slice_index], dtype=np.float32)
+        dependents[tm.dependent_map][:, :, :] = to_categorical(label_tensor, tm.dependent_map.shape[-1])
+        tensor[..., 0] *= np.not_equal(label_tensor, 0, dtype=np.float32)
+        return tm.normalize_and_validate(tensor)
+    return mri_slice_blackout_tensor_from_file
 
 
 TMAPS['mri_slice_blackout_segmented_weighted'] = TensorMap('mri_slice_segmented', (256, 256, 3), group='categorical', channel_map=MRI_SEGMENTED_CHANNEL_MAP,
                                                            loss=weighted_crossentropy([0.1, 25.0, 25.0], 'mri_slice_blackout_segmented'))
-TMAPS['mri_slice_blackout'] = TensorMap('mri_slice_blackout', (256, 256, 1), tensor_from_file=mri_slice_blackout_tensor_from_file,
-                                        dependent_map=TMAPS['mri_slice_blackout_segmented_weighted'])
+TMAPS['mri_slice_blackout_b2'] = TensorMap('mri_slice_blackout', (256, 256, 1), tensor_from_file=_slice_blackout(100), normalization={'zero_mean_std1': True},
+                                           dependent_map=TMAPS['mri_slice_blackout_segmented_weighted'])
+TMAPS['mri_slice_blackout_b4'] = TensorMap('mri_slice_blackout', (256, 256, 1), tensor_from_file=_slice_blackout(200), normalization={'zero_mean_std1': True},
+                                           dependent_map=TMAPS['mri_slice_blackout_segmented_weighted'])
 
 
 def _slice_tensor(tensor_key, slice_index):
