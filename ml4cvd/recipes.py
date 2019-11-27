@@ -98,7 +98,7 @@ def train_multimodal_multitask(args):
         model = make_multimodal_multitask_model(**args.__dict__)
         model = train_model_from_generators(model, generate_train, generate_valid, args.training_steps, args.validation_steps, args.batch_size,
                                             args.epochs, args.patience, args.output_folder, args.id, args.inspect_model, args.inspect_show_labels,
-                                            args.anneal_rate, args.anneal_shift)
+                                            anneal_rate=args.anneal_rate, anneal_shift=args.anneal_shift, anneal_max=args.anneal_max)
 
         out_path = os.path.join(args.output_folder, args.id + '/')
         test_data, test_labels, test_paths = big_batch_from_minibatch_generator(args.tensor_maps_in, args.tensor_maps_out, generate_test, args.test_steps)
