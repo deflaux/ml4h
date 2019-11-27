@@ -459,13 +459,8 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
     encoder = Model(inputs=input_tensors, outputs=multimodal_activation)
     decoder = Model(inputs=latent_inputs, outputs=out_list)
     outputs = decoder(encoder(input_tensors))
-    if not isinstance(outputs, list):
-        outputs = [outputs]
-    for output, name in zip(outputs, output_predictions.keys()):
-        output._name = name
-    logging.info(f' OUts are:{outputs}')
-    logging.info(f' OUtsss are:{[o for o in outputs]}')
     m = Model(inputs=input_tensors, outputs=outputs)
+    m.output_names = list(output_predictions.keys())
     m.summary()
 
     if 'model_layers' in kwargs and kwargs['model_layers'] is not None:
@@ -560,7 +555,7 @@ def train_model_from_generators(model: Model,
 
     history = model.fit_generator(generate_train, steps_per_epoch=training_steps, epochs=epochs, verbose=1,
                                   validation_steps=validation_steps, validation_data=generate_valid,
-                                  callbacks=_get_callbacks(patience, model_file, kwargs),)
+                                  callbacks=_get_callbacks(patience, model_file, **kwargs),)
 
     logging.info('Model weights saved at: %s' % model_file)
     if plot:
