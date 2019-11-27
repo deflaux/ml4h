@@ -483,6 +483,10 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap]=None,
         logging.info('Loaded and froze:{} layers from:{}'.format(frozen, kwargs['model_freeze']))
 
     m.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=my_metrics)
+    if 'decompose' in kwargs and kwargs['decompose'] is not None:
+        encoder = Model(inputs=input_tensors, outputs=multimodal_activation)
+        decoder = Model(inputs=encoder.output, outputs=list(output_predictions.values()))
+        return m, encoder, decoder
     return m
 
 
@@ -524,7 +528,8 @@ def train_model_from_generators(model: Model,
                                 inspect_model: bool,
                                 inspect_show_labels: bool,
                                 return_history: bool = False,
-                                plot: bool = True) -> Union[Model, Tuple[Model, History]]:
+                                plot: bool = True,
+                                **kwargs) -> Union[Model, Tuple[Model, History]]:
     """Train a model from tensor generators for validation and training data.
 
 	Training data lives on disk, it will be loaded by generator functions.
@@ -556,7 +561,7 @@ def train_model_from_generators(model: Model,
 
     history = model.fit_generator(generate_train, steps_per_epoch=training_steps, epochs=epochs, verbose=1,
                                   validation_steps=validation_steps, validation_data=generate_valid,
-                                  callbacks=_get_callbacks(patience, model_file),)
+                                  callbacks=_get_callbacks(patience, model_file, kwargs),)
 
     logging.info('Model weights saved at: %s' % model_file)
     if plot:
@@ -567,13 +572,15 @@ def train_model_from_generators(model: Model,
 
 
 class AdjustKLLoss(keras.callbacks.Callback):
-    def __init__(self, patience):
-        self.patience = patience
+    def __init__(self, maximum, rate, shift):
+        self.rate = rate
+        self.shift = shift
+        self.maximum = maximum
         super().__init__()
 
     def on_epoch_end(self, epoch, logs=None):
         kl_found = False
-        new_weight = 1 / (1 + np.exp(self.patience - epoch))
+        new_weight = self.maximum / (1 + np.exp(self.rate*(self.shift - epoch)))
         for layer in self.model.layers:
             if "kl_divergence" in layer.name:
                 K.set_value(layer.kl_weight, new_weight)
@@ -584,13 +591,18 @@ class AdjustKLLoss(keras.callbacks.Callback):
             logs['KL_loss'] = new_weight
 
 
-def _get_callbacks(patience: int, model_file: str) -> List[Callable]:
+def _get_callbacks(patience: int, model_file: str, **kwargs) -> List[Callable]:
+
     callbacks = [
         ModelCheckpoint(filepath=model_file, verbose=1, save_best_only=True),
         EarlyStopping(monitor='val_loss', patience=patience * 3, verbose=1),
         ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=patience, verbose=1),
-        #AdjustKLLoss(patience),
     ]
+    anneal_max = kwargs.get('anneal_max', False)
+    anneal_rate = kwargs.get('anneal_rate', False)
+    anneal_shift = kwargs.get('anneal_shift', False)
+    if anneal_max and anneal_rate and anneal_shift:
+        callbacks.append(AdjustKLLoss(anneal_max, anneal_rate, anneal_shift))
 
     return callbacks
 
