@@ -598,6 +598,7 @@ def _get_callbacks(patience: int, model_file: str, **kwargs) -> List[Callable]:
     anneal_shift = kwargs.get('anneal_shift', False)
     if anneal_max and anneal_rate and anneal_shift:
         callbacks.append(AdjustKLLoss(anneal_max, anneal_rate, anneal_shift))
+        logging.info(f"YES annealing!! {kwargs}")
     else:
         logging.info(f"NOT annealing!! {kwargs}")
     return callbacks
