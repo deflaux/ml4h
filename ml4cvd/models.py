@@ -566,6 +566,14 @@ def train_model_from_generators(model: Model,
     return model
 
 
+def _check_layer_for_kl(layer, new_weight):
+    if "kl_divergence" in layer.name:
+        K.set_value(layer.kl_weight, new_weight)
+        logging.info(f'Setting {layer.name} loss weight to {new_weight}.')
+        return True
+    return False
+
+
 class AdjustKLLoss(keras.callbacks.Callback):
     def __init__(self, maximum, rate, shift):
         self.rate = rate
@@ -577,10 +585,12 @@ class AdjustKLLoss(keras.callbacks.Callback):
         kl_found = False
         new_weight = self.maximum / (1 + np.exp(self.rate*(self.shift - epoch)))
         for layer in self.model.layers:
-            if "kl_divergence" in layer.name:
-                K.set_value(layer.kl_weight, new_weight)
-                logging.info(f'Setting {layer.name} loss weight to {new_weight}.')
-                kl_found = True
+            if isinstance(layer, Model):
+                for l in layer.layers:
+                    kl_found |= _check_layer_for_kl(l, new_weight)
+            else:
+                kl_found |= _check_layer_for_kl(layer, new_weight)
+
         if kl_found:
             logs = logs or {}
             logs['KL_loss'] = new_weight
