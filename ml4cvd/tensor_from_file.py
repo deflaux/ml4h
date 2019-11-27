@@ -517,9 +517,9 @@ def _slice_blackout(slice_index):
 
 TMAPS['mri_slice_blackout_segmented_weighted'] = TensorMap('mri_slice_segmented', (256, 256, 3), group='categorical', channel_map=MRI_SEGMENTED_CHANNEL_MAP,
                                                            loss=weighted_crossentropy([0.1, 25.0, 25.0], 'mri_slice_blackout_segmented'))
-TMAPS['mri_slice_blackout_b2'] = TensorMap('mri_slice_blackout', (256, 256, 1), tensor_from_file=_slice_blackout(100), normalization={'zero_mean_std1': True},
+TMAPS['mri_slice_blackout_b2'] = TensorMap('mri_slice_blackout', (256, 256, 1), tensor_from_file=_slice_blackout("100"), normalization={'zero_mean_std1': True},
                                            dependent_map=TMAPS['mri_slice_blackout_segmented_weighted'])
-TMAPS['mri_slice_blackout_b4'] = TensorMap('mri_slice_blackout', (256, 256, 1), tensor_from_file=_slice_blackout(200), normalization={'zero_mean_std1': True},
+TMAPS['mri_slice_blackout_b4'] = TensorMap('mri_slice_blackout', (256, 256, 1), tensor_from_file=_slice_blackout("200"), normalization={'zero_mean_std1': True},
                                            dependent_map=TMAPS['mri_slice_blackout_segmented_weighted'])
 
 
