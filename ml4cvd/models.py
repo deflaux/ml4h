@@ -589,7 +589,7 @@ def _get_callbacks(patience: int, model_file: str) -> List[Callable]:
         ModelCheckpoint(filepath=model_file, verbose=1, save_best_only=True),
         EarlyStopping(monitor='val_loss', patience=patience * 3, verbose=1),
         ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=patience, verbose=1),
-        AdjustKLLoss(patience),
+        #AdjustKLLoss(patience),
     ]
 
     return callbacks
