@@ -506,6 +506,7 @@ class KLDivergenceLayer(Layer):
 def _get_custom_layers():
     return {"KLDivergenceLayer": KLDivergenceLayer}
 
+
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # ~~~~~~~ Training ~~~~~~~~~~~~~~~~
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

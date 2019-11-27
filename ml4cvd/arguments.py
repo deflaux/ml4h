@@ -150,8 +150,8 @@ def parse_args():
     parser.add_argument('--max_models', default=16, type=int,
                         help='Maximum number of models for the hyper-parameter optimizer to evaluate before returning.')
     parser.add_argument('--balance_csvs', default=[], nargs='*', help='Balances batches with representation from sample IDs in this list of CSVs')
-    parser.add_argument('--anneal_rate', default=0, type=float, help='Annealing rate of loss terms during training')
-    parser.add_argument('--anneal_shift', default=0, type=float, help='Annealing X axis offset of loss terms during training')
+    parser.add_argument('--anneal_rate', default=1.0, type=float, help='Annealing rate of loss terms during training')
+    parser.add_argument('--anneal_shift', default=10, type=float, help='Annealing X axis offset of loss terms during training')
     parser.add_argument('--anneal_max', default=1.0, type=float, help='Annealing maximum value')
 
     # Run specific and debugging arguments
