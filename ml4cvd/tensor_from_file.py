@@ -205,7 +205,7 @@ def _ecg_protocol(tm: TensorMap, hd5: h5py.File, dependents=None):
     dates = _all_dates(hd5, 'ecg_bike', DataSetType.STRING, 'protocol')
     if not dates:
         raise ValueError(f'No {name} values values available.')
-    first_date = path_date_to_datetime(min(dates))  # Date format is sortable. 
+    first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
     first_date_path = tensor_path(source='ecg_bike', dtype=DataSetType.STRING, name='protocol', date=first_date)
     try:
         proto = str(np.array(hd5[first_date_path]))

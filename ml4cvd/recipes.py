@@ -102,6 +102,7 @@ def explore_tensor_maps(args):
     generators = test_train_valid_tensor_generators(**args.__dict__)
     tmaps = args.tensor_maps_in
     tmap_names = args.input_tensors
+    error_names = [name + '_error_reason' for name in tmap_names]
     dfs = []
     for gen in generators:
         path_iter = gen.path_iters[0]
@@ -115,18 +116,20 @@ def explore_tensor_maps(args):
             try:
                 with h5py.File(path, 'r') as hd5:
                     dependents = {}
-                    for name, tmap in zip(tmap_names, tmaps):
+                    for name, error_name, tmap in zip(tmap_names, error_names, tmaps):
+                        error = ''
                         if tmap in dependents:
                             column_dict[name].append(dependents[tmap])
                         else:
                             try:
                                 column_dict[name].append(tmap.tensor_from_file(tmap, hd5, dependents)[0])
-                            except (IndexError, KeyError, ValueError, OSError, RuntimeError):
-                                column_dict[name].append(np.full(tmap.shape, np.nan)[0])
+                            except (IndexError, KeyError, ValueError, OSError, RuntimeError) as e:
+                                error = type(e).__name__
+                                column_dict[name].append(np.full(tmap.shape, np.nan)[0])  # TODO only for floats now
+                        column_dict[error_name].append(error)
                 column_dict['sample_id'].append(os.path.basename(path).strip(TENSOR_EXT))
             except OSError:
                 continue
-            
         dfs.append(pd.DataFrame(column_dict))
     return dfs
 
