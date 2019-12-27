@@ -949,6 +949,53 @@ TMAPS['cine_segmented_lax_3ch_proj_from_lax'] = TensorMap('cine_segmented_lax_3c
 TMAPS['cine_segmented_lax_4ch_proj_from_lax'] = TensorMap('cine_segmented_lax_4ch_proj_from_lax', (256, 256, 50), loss='logcosh',
                                                           tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_4ch', MRI_LAX_SEGMENTED))
 
+def _make_segmentation_axis_from_file(segmented_name, channel, write_path=None):
+    def segmentation_axis(tm, hd5):
+        tensor = np.zeros(tm.shape)
+        cine_segmented_grids = _mri_hd5_to_structured_grids(hd5, segmented_name)
+        for cine_segmented_grid in cine_segmented_grids:
+            cell_centers = vtk.vtkCellCenters()
+            cell_centers.SetInputData(cine_segmented_grid)
+            cell_centers.Update()
+            cell_pts = vtk.util.numpy_support.vtk_to_numpy(cell_centers.GetOutput().GetPoints().GetData())
+            dims = cine_segmented_grid.GetDimensions()
+            # Remove 1 to get cell dimensions rather than point dimensions
+            dims = [dim - 1 for dim in dims]
+            ncells_per_slice = dims[0]*dims[1]
+            for t in range(MRI_FRAMES):
+                arr_name = f'{segmented_name}_{t}'
+                segmented_arr = vtk.util.numpy_support.vtk_to_numpy(cine_segmented_grid.GetCellData().GetArray(arr_name))
+                cogs = np.zeros((dims[2], 3))
+                cogs[:] = np.nan
+                for s in range(dims[2]):
+                    thresh_indices = np.nonzero((segmented_arr[:, :, s].T > MRI_SEGMENTED_CHANNEL_MAP[channel] - EPS) &
+                                                (segmented_arr[:, :, s].T < MRI_SEGMENTED_CHANNEL_MAP[channel] + EPS))
+                    thresh_flat_indices = np.ravel_multi_index(thresh_indices, (dims[0], dims[1]))
+                    if len(tresh_flat_indices) > 0 :
+                        cogs[s, :] = np.mean(cell_pts[s*ncells_per_slice+thresh_flat_indices], axis=0)
+                slices_no_nans = ~np.isnan(cogs).any(axis=1)
+                cogs_mean = np.mean(cogs[slices_no_nans], axis=0)
+                uu, dd, vv = np.linalg.svd(cogs[slices_no_nans] - cogs_mean)
+                tensor[:3, t] = vv[0]
+                tensor[3:, t] = cogs_mean
+                if write_path:
+                    ventricle_length = np.linalg.norm(cogs[0] - cogs[-1])
+                    line_pts = vv[0] * np.mgrid[-0.5*ventricle_length:0.5*ventricle_length:2j][:, np.newaxis] + cogs_mean
+                    line_source = vtk.vtkLineSource()
+                    line_source.SetPoint1(line_pts[0, :])
+                    line_source.SetPoint2(line_pts[1, :])
+                    line_source.Update()
+                    line_writer = vtk.vtkXMLPolyDataWriter()
+                    line_writer.SetInputConnection(line_source.GetOutputPort())
+                    line_writer.SetFileName(os.path.join(write_path, f'cog_line_{t}.vtp'))
+                    line_writer.Update()
+        return tensor
+    return segmentation_axis
+
+
+TMAPS['cine_segmented_sax_inlinevf_axis'] = TensorMap('cine_segmented_sax_inlinevf_axis', (6, 50),
+                                                      tensor_from_file=_make_segmentation_axis_from_file(MRI_SEGMENTED, 'myocardium'))
+
 
 def _slice_tensor(tensor_key, slice_index):
     def _slice_tensor_from_file(tm, hd5, dependents={}):
