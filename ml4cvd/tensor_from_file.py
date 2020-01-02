@@ -892,7 +892,7 @@ def _map_points_to_cells(pts, dataset, tol=1e-3):
     return map_to_cells
 
 
-def _make_mri_projected_segmentation_from_file(to_segment_name, segmented_name, save_path=None, population_normalize=None):
+def _make_mri_projected_segmentation_from_file(to_segment_name, segmented_name, save_path=None):
     def mri_projected_segmentation(tm, hd5):
         if segmented_name not in [MRI_SEGMENTED, MRI_LAX_SEGMENTED]:
             raise ValueError(f'{segmented_name} is recognized neither as SAX nor LAX segmentation')
@@ -949,7 +949,8 @@ TMAPS['cine_segmented_lax_3ch_proj_from_lax'] = TensorMap('cine_segmented_lax_3c
 TMAPS['cine_segmented_lax_4ch_proj_from_lax'] = TensorMap('cine_segmented_lax_4ch_proj_from_lax', (256, 256, 50), loss='logcosh',
                                                           tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_4ch', MRI_LAX_SEGMENTED))
 
-def _make_segmentation_axis_from_file(segmented_name, channel, write_path=None):
+
+def _make_segmentation_axis_from_file(segmented_name, channel, population_normalize=None, order='F', save_path=None, mode='6dofs'):
     def segmentation_axis(tm, hd5):
         tensor = np.zeros(tm.shape)
         cine_segmented_grids = _mri_hd5_to_structured_grids(hd5, segmented_name)
@@ -965,20 +966,28 @@ def _make_segmentation_axis_from_file(segmented_name, channel, write_path=None):
             for t in range(MRI_FRAMES):
                 arr_name = f'{segmented_name}_{t}'
                 segmented_arr = vtk.util.numpy_support.vtk_to_numpy(cine_segmented_grid.GetCellData().GetArray(arr_name))
+                segmented_arr = segmented_arr.reshape(*dims, order=order)
                 cogs = np.zeros((dims[2], 3))
                 cogs[:] = np.nan
                 for s in range(dims[2]):
                     thresh_indices = np.nonzero((segmented_arr[:, :, s].T > MRI_SEGMENTED_CHANNEL_MAP[channel] - EPS) &
                                                 (segmented_arr[:, :, s].T < MRI_SEGMENTED_CHANNEL_MAP[channel] + EPS))
                     thresh_flat_indices = np.ravel_multi_index(thresh_indices, (dims[0], dims[1]))
-                    if len(tresh_flat_indices) > 0 :
+                    if len(thresh_flat_indices) > 0 :
                         cogs[s, :] = np.mean(cell_pts[s*ncells_per_slice+thresh_flat_indices], axis=0)
                 slices_no_nans = ~np.isnan(cogs).any(axis=1)
                 cogs_mean = np.mean(cogs[slices_no_nans], axis=0)
                 uu, dd, vv = np.linalg.svd(cogs[slices_no_nans] - cogs_mean)
-                tensor[:3, t] = vv[0]
-                tensor[3:, t] = cogs_mean
-                if write_path:
+                if mode == '6dofs':
+                    tensor[:3, t] = vv[0]
+                    tensor[3:, t] = cogs_mean
+                elif mode == '3angles':
+                    tensor[:, t] = np.degrees(np.arccos(vv[0]))
+                if population_normalize is None:
+                    tensor = tm.zero_mean_std1(tensor)
+                else:
+                    tensor /= population_normalize
+                if save_path:
                     ventricle_length = np.linalg.norm(cogs[0] - cogs[-1])
                     line_pts = vv[0] * np.mgrid[-0.5*ventricle_length:0.5*ventricle_length:2j][:, np.newaxis] + cogs_mean
                     line_source = vtk.vtkLineSource()
@@ -989,6 +998,20 @@ def _make_segmentation_axis_from_file(segmented_name, channel, write_path=None):
                     line_writer.SetInputConnection(line_source.GetOutputPort())
                     line_writer.SetFileName(os.path.join(write_path, f'cog_line_{t}.vtp'))
                     line_writer.Update()
+                    cine_segmented_grid.GetCellData().SetScalars(arr_name)
+                    thresh_channel = vtk.vtkThreshold()
+                    thresh_channel.SetInputData(cine_segmented_grid)
+                    thresh_channel.ThresholdBetween(MRI_SEGMENTED_CHANNEL_MAP[channel] - EPS,
+                                                    MRI_SEGMENTED_CHANNEL_MAP[channel] + EPS)
+                    thresh_channel.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_CELLS, arr_name)
+                    thresh_channel.Update()
+                    thresh_surf = vtk.vtkDataSetSurfaceFilter()
+                    thresh_surf.SetInputConnection(thresh_channel.GetOutputPort())
+                    thresh_surf.Update()
+                    thresh_writer = vtk.vtkXMLPolyDataWriter()
+                    thresh_writer.SetInputConnection(thresh_surf.GetOutputPort())
+                    thresh_writer.SetFileName(os.path.join(write_path, f'channel_thresh_{t}.vtp'))
+                    thresh_writer.Update()                                             
         return tensor
     return segmentation_axis
 
