@@ -216,36 +216,61 @@ def _ecg_protocol(tm: TensorMap, hd5: h5py.File, dependents=None):
     return tm.normalize_and_validate(np.array([proto_to_int[proto]], dtype=np.float32))
 
 
-def _hrr_johanna_def(tm: TensorMap, hd5: h5py.File, dependents=None):
-    # TODO: does not account for time of measurements
-    _check_phase_full_len(hd5, 'rest')
-    hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate')
-    phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename')
-    exercise_mask = phases == 1
-    recovery_mask = phases == 2
-    exercise_slope, _, _, _, _ = linregress(np.linspace(0, 1, np.count_nonzero(exercise_mask)), hrs[exercise_mask])
-    recovery_slope, _, _, _, _ = linregress(np.linspace(1, 0, np.count_nonzero(recovery_mask)), hrs[recovery_mask])
-    # backwards linspace to make recovery slope positive
-    if not np.isfinite(recovery_slope / exercise_slope):
-        raise ValueError('NaN hrr.')
-    return tm.normalize_and_validate(np.array([recovery_slope / exercise_slope]))
-
-
-def _hrr_smoothed(tm: TensorMap, hd5: h5py.File, dependents=None):
-    _check_phase_full_len(hd5, 'rest')
+def _regress_hr_exercise_recovery(hd5: h5py.File):
     times = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasetime')
     hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate')
     phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename')
     exercise_mask = phases == 1
     recovery_mask = phases == 2
-    exercise_times = times[exercise_mask]
-    recovery_times = times[recovery_mask]
-    exercise_slope, exercise_intercept, _, _, _ = linregress(times[exercise_mask], hrs[exercise_mask])
-    recovery_slope, recovery_intercept, _, _, _ = linregress(times[recovery_mask], hrs[recovery_mask])
+    return (linregress(times[exercise_mask], hrs[exercise_mask]),
+            linregress(times[recovery_mask], hrs[recovery_mask]))
+
+
+def _hrr_johanna_def(tm: TensorMap, hd5: h5py.File, dependents=None):
+    exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'exercise_duration')
+    recovery_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'rest_duration')
+    (exercise_slope, _, _, _, _), (recovery_slope, _, _, _, _) = _regress_hr_exercise_recovery(hd5)
+    hrr = recovery_slope * recovery_dur / (exercise_slope * exercise_dur)
+    if not np.isfinite(hrr):
+        raise ValueError('NaN hrr.')
+    return tm.normalize_and_validate(np.array([hrr]))
+
+
+def _hrr_smoothed(tm: TensorMap, hd5: h5py.File, dependents=None):
+    (exercise_slope, exercise_intercept, _, _, _), (recovery_slope, recovery_intercept, _, _, _) = _regress_hr_exercise_recovery(hd5)
     exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'exercise_duration')
     recovery_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'rest_duration')
     exercise_max = exercise_slope * exercise_dur + exercise_intercept
     recovery_min = recovery_slope * recovery_dur + recovery_intercept
+    return tm.normalize_and_validate(np.array([exercise_max - recovery_min]))
+
+
+# QC protocols
+def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
+    # Phase lengths long enough?
+    _check_phase_full_len(hd5, 'pretest')
+    _check_phase_full_len(hd5, 'rest')
+
+    # linear regressions make sense
+    (exercise_slope, exercise_intercept, _, _, _), (recovery_slope, recovery_intercept, _, _, _) = _regress_hr_exercise_recovery(hd5)
+    if exercise_slope < 0:
+        raise ValueError('Exercise slope negative.')
+    if recovery_slope > 0:
+        raise ValueError('Recovery slope positive.')
+
+    # physiologic heart rates
+    exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'exercise_duration')
+    recovery_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'rest_duration')
+    exercise_max = exercise_slope * exercise_dur + exercise_intercept
+    recovery_min = recovery_slope * recovery_dur + recovery_intercept
+    if exercise_max > 220:
+        raise ValueError('Max HR too high.')
+    if recovery_min < 30:
+        raise ValueError('Min HR too low.')
+
+    # acceptable number of measurements
+
+    # artifact checks
     return tm.normalize_and_validate(np.array([exercise_max - recovery_min]))
 
 
