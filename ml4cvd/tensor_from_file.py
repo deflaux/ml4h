@@ -217,6 +217,7 @@ def _ecg_protocol(tm: TensorMap, hd5: h5py.File, dependents=None):
 
 
 def _hrr_johanna_def(tm: TensorMap, hd5: h5py.File, dependents=None):
+    # TODO: does not account for time of measurements
     _check_phase_full_len(hd5, 'rest')
     hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate')
     phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename')
@@ -228,6 +229,24 @@ def _hrr_johanna_def(tm: TensorMap, hd5: h5py.File, dependents=None):
     if not np.isfinite(recovery_slope / exercise_slope):
         raise ValueError('NaN hrr.')
     return tm.normalize_and_validate(np.array([recovery_slope / exercise_slope]))
+
+
+def _hrr_smoothed(tm: TensorMap, hd5: h5py.File, dependents=None):
+    _check_phase_full_len(hd5, 'rest')
+    times = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasetime')
+    hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate')
+    phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename')
+    exercise_mask = phases == 1
+    recovery_mask = phases == 2
+    exercise_times = times[exercise_mask]
+    recovery_times = times[recovery_mask]
+    exercise_slope, exercise_intercept, _, _, _ = linregress(times[exercise_mask], hrs[exercise_mask])
+    recovery_slope, recovery_intercept, _, _, _ = linregress(times[recovery_mask], hrs[recovery_mask])
+    exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'exercise_duration')
+    recovery_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'rest_duration')
+    exercise_max = exercise_slope * exercise_dur + exercise_intercept
+    recovery_min = recovery_slope * recovery_dur + recovery_intercept
+    return tm.normalize_and_validate(np.array([exercise_max - recovery_min]))
 
 
 TMAPS: Dict[str, TensorMap] = dict()
@@ -311,6 +330,10 @@ TMAPS['ecg-bike-trend-phasename'] = TensorMap('trend_phasename', shape=(120, 1),
                                               normalization={'mean': 0, 'std': 1},
                                               tensor_from_file=normalized_first_date, dtype=DataSetType.FLOAT_ARRAY)
 
+# LINEAR SMOOTHED HRR
+TMAPS['ecg-bike-hrr-smooth'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                         normalization={'mean': 0, 'std': 1},
+                                         tensor_from_file=_hrr_smoothed)
 # FOR JOHANNA
 TMAPS['ecg-bike-hrr-johanna'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                           normalization={'mean': 0, 'std': 1},
