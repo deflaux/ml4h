@@ -380,6 +380,11 @@ TMAPS['ecg-bike-hrr-johanna'] = TensorMap('hrr', group='ecg_bike', loss='logcosh
                                           normalization={'mean': 0, 'std': 1},
                                           tensor_from_file=_hrr_johanna_def)
 
+# HRR FINAL
+TMAPS['ecg-bike-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                  normalization={'mean': 0, 'std': 1},
+                                  tensor_from_file=_hrr_qc)
+
 
 def _make_ecg_rest(population_normalize: float = None):
     def ecg_rest_from_file(tm, hd5, dependents={}):
