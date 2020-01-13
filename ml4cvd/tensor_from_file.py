@@ -981,12 +981,8 @@ def _make_segmentation_axis_from_file(segmented_name, channel, population_normal
                 if mode == '6dofs':
                     tensor[:3, t] = vv[0]
                     tensor[3:, t] = cogs_mean
-                elif mode == '3angles':
-                    tensor[:, t] = np.degrees(np.arccos(vv[0]))
-                if population_normalize is None:
-                    tensor = tm.zero_mean_std1(tensor)
-                else:
-                    tensor /= population_normalize
+                elif mode == 'xzangle':
+                    tensor[t] = -np.degrees(np.arctan2(vv[0][2], vv[0][0]))
                 if save_path:
                     ventricle_length = np.linalg.norm(cogs[0] - cogs[-1])
                     line_pts = vv[0] * np.mgrid[-0.5*ventricle_length:0.5*ventricle_length:2j][:, np.newaxis] + cogs_mean
@@ -1011,13 +1007,21 @@ def _make_segmentation_axis_from_file(segmented_name, channel, population_normal
                     thresh_writer = vtk.vtkXMLPolyDataWriter()
                     thresh_writer.SetInputConnection(thresh_surf.GetOutputPort())
                     thresh_writer.SetFileName(os.path.join(write_path, f'channel_thresh_{t}.vtp'))
-                    thresh_writer.Update()                                             
+                    thresh_writer.Update()
+            if population_normalize is None:
+                tensor = tm.zero_mean_std1(tensor)
+            else:
+                tensor /= population_normalize                
         return tensor
     return segmentation_axis
 
 
 TMAPS['cine_segmented_sax_inlinevf_axis'] = TensorMap('cine_segmented_sax_inlinevf_axis', (6, 50),
-                                                      tensor_from_file=_make_segmentation_axis_from_file(MRI_SEGMENTED, 'myocardium'))
+                                                      tensor_from_file=_make_segmentation_axis_from_file(MRI_SEGMENTED, 'myocardium', mode='6dofs',
+                                                                                                         population_normalize=1.0))
+TMAPS['cine_segmented_sax_inlinevf_xzangle'] = TensorMap('cine_segmented_sax_inlinevf_xzangle', (50,),
+                                                         tensor_from_file=_make_segmentation_axis_from_file(MRI_SEGMENTED, 'myocardium', mode='xzangle',
+                                                                                                            population_normalize=1.0))
 
 
 def _slice_tensor(tensor_key, slice_index):
