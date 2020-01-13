@@ -950,78 +950,212 @@ TMAPS['cine_segmented_lax_4ch_proj_from_lax'] = TensorMap('cine_segmented_lax_4c
                                                           tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_4ch', MRI_LAX_SEGMENTED))
 
 
-def _make_segmentation_axis_from_file(segmented_name, channel, population_normalize=None, order='F', save_path=None, mode='6dofs'):
-    def segmentation_axis(tm, hd5):
+def _segmentation_axis(segmented_name, cine_segmented_grids, channel, order='F', save_path=None):
+    axes = {'center': [], 'xzangle': [], 'direction' : []}
+    for cine_segmented_grid in cine_segmented_grids:        
+        axes['center'].append(np.zeros((3, MRI_FRAMES)))        
+        axes['xzangle'].append(np.zeros((MRI_FRAMES,)))
+        axes['direction'].append(np.zeros((3, MRI_FRAMES)))
+        cell_centers = vtk.vtkCellCenters()
+        cell_centers.SetInputData(cine_segmented_grid)
+        cell_centers.Update()
+        cell_pts = vtk.util.numpy_support.vtk_to_numpy(cell_centers.GetOutput().GetPoints().GetData())
+        dims = cine_segmented_grid.GetDimensions()
+        # Remove 1 to get cell dimensions rather than point dimensions
+        dims = [dim - 1 for dim in dims]
+        ncells_per_slice = dims[0]*dims[1]
+        for t in range(MRI_FRAMES):
+            arr_name = f'{segmented_name}_{t}'
+            segmented_arr = vtk.util.numpy_support.vtk_to_numpy(cine_segmented_grid.GetCellData().GetArray(arr_name))
+            segmented_arr = segmented_arr.reshape(*dims, order=order)
+            cogs = np.zeros((dims[2], 3))
+            cogs[:] = np.nan
+            for s in range(dims[2]):
+                thresh_indices = np.nonzero((segmented_arr[:, :, s].T > MRI_SEGMENTED_CHANNEL_MAP[channel] - EPS) &
+                                            (segmented_arr[:, :, s].T < MRI_SEGMENTED_CHANNEL_MAP[channel] + EPS))
+                thresh_flat_indices = np.ravel_multi_index(thresh_indices, (dims[0], dims[1]))
+                if len(thresh_flat_indices) > 0 :
+                    cogs[s, :] = np.mean(cell_pts[s*ncells_per_slice+thresh_flat_indices], axis=0)
+            slices_no_nans = ~np.isnan(cogs).any(axis=1)
+            cogs_mean = np.mean(cogs[slices_no_nans], axis=0)
+            uu, dd, vv = np.linalg.svd(cogs[slices_no_nans] - cogs_mean)
+            axes['center'][-1][:, t] = cogs_mean
+            axes['xzangle'][-1][t] = -np.degrees(np.arctan2(vv[0][2], vv[0][0]))
+            axes['direction'][-1][:, t] = vv[0]
+                
+            if save_path:
+                ventricle_length = np.linalg.norm(cogs[0] - cogs[-1])
+                line_pts = vv[0] * np.mgrid[-0.5*ventricle_length:0.5*ventricle_length:2j][:, np.newaxis] + cogs_mean
+                line_source = vtk.vtkLineSource()
+                line_source.SetPoint1(line_pts[0, :])
+                line_source.SetPoint2(line_pts[1, :])
+                line_source.Update()
+                line_writer = vtk.vtkXMLPolyDataWriter()
+                line_writer.SetInputConnection(line_source.GetOutputPort())
+                line_writer.SetFileName(os.path.join(write_path, f'cog_line_{t}.vtp'))
+                line_writer.Update()
+                cine_segmented_grid.GetCellData().SetScalars(arr_name)
+                thresh_channel = vtk.vtkThreshold()
+                thresh_channel.SetInputData(cine_segmented_grid)
+                thresh_channel.ThresholdBetween(MRI_SEGMENTED_CHANNEL_MAP[channel] - EPS,
+                                                MRI_SEGMENTED_CHANNEL_MAP[channel] + EPS)
+                thresh_channel.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_CELLS, arr_name)
+                thresh_channel.Update()
+                thresh_surf = vtk.vtkDataSetSurfaceFilter()
+                thresh_surf.SetInputConnection(thresh_channel.GetOutputPort())
+                thresh_surf.Update()
+                thresh_writer = vtk.vtkXMLPolyDataWriter()
+                thresh_writer.SetInputConnection(thresh_surf.GetOutputPort())
+                thresh_writer.SetFileName(os.path.join(write_path, f'channel_thresh_{t}.vtp'))
+                thresh_writer.Update()
+    return axes
+
+
+def _make_segmentation_axis_from_file(segmented_name, segmentation_channel, population_normalize=None, order='F', save_path=None):
+    def segmentation_axis_from_file(tm, hd5):
         tensor = np.zeros(tm.shape)
         cine_segmented_grids = _mri_hd5_to_structured_grids(hd5, segmented_name)
-        for cine_segmented_grid in cine_segmented_grids:
-            cell_centers = vtk.vtkCellCenters()
-            cell_centers.SetInputData(cine_segmented_grid)
-            cell_centers.Update()
-            cell_pts = vtk.util.numpy_support.vtk_to_numpy(cell_centers.GetOutput().GetPoints().GetData())
-            dims = cine_segmented_grid.GetDimensions()
-            # Remove 1 to get cell dimensions rather than point dimensions
-            dims = [dim - 1 for dim in dims]
-            ncells_per_slice = dims[0]*dims[1]
-            for t in range(MRI_FRAMES):
-                arr_name = f'{segmented_name}_{t}'
-                segmented_arr = vtk.util.numpy_support.vtk_to_numpy(cine_segmented_grid.GetCellData().GetArray(arr_name))
-                segmented_arr = segmented_arr.reshape(*dims, order=order)
-                cogs = np.zeros((dims[2], 3))
-                cogs[:] = np.nan
-                for s in range(dims[2]):
-                    thresh_indices = np.nonzero((segmented_arr[:, :, s].T > MRI_SEGMENTED_CHANNEL_MAP[channel] - EPS) &
-                                                (segmented_arr[:, :, s].T < MRI_SEGMENTED_CHANNEL_MAP[channel] + EPS))
-                    thresh_flat_indices = np.ravel_multi_index(thresh_indices, (dims[0], dims[1]))
-                    if len(thresh_flat_indices) > 0 :
-                        cogs[s, :] = np.mean(cell_pts[s*ncells_per_slice+thresh_flat_indices], axis=0)
-                slices_no_nans = ~np.isnan(cogs).any(axis=1)
-                cogs_mean = np.mean(cogs[slices_no_nans], axis=0)
-                uu, dd, vv = np.linalg.svd(cogs[slices_no_nans] - cogs_mean)
-                if mode == '6dofs':
-                    tensor[:3, t] = vv[0]
-                    tensor[3:, t] = cogs_mean
-                elif mode == 'xzangle':
-                    tensor[t] = -np.degrees(np.arctan2(vv[0][2], vv[0][0]))
-                if save_path:
-                    ventricle_length = np.linalg.norm(cogs[0] - cogs[-1])
-                    line_pts = vv[0] * np.mgrid[-0.5*ventricle_length:0.5*ventricle_length:2j][:, np.newaxis] + cogs_mean
-                    line_source = vtk.vtkLineSource()
-                    line_source.SetPoint1(line_pts[0, :])
-                    line_source.SetPoint2(line_pts[1, :])
-                    line_source.Update()
-                    line_writer = vtk.vtkXMLPolyDataWriter()
-                    line_writer.SetInputConnection(line_source.GetOutputPort())
-                    line_writer.SetFileName(os.path.join(write_path, f'cog_line_{t}.vtp'))
-                    line_writer.Update()
-                    cine_segmented_grid.GetCellData().SetScalars(arr_name)
-                    thresh_channel = vtk.vtkThreshold()
-                    thresh_channel.SetInputData(cine_segmented_grid)
-                    thresh_channel.ThresholdBetween(MRI_SEGMENTED_CHANNEL_MAP[channel] - EPS,
-                                                    MRI_SEGMENTED_CHANNEL_MAP[channel] + EPS)
-                    thresh_channel.SetInputArrayToProcess(0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_CELLS, arr_name)
-                    thresh_channel.Update()
-                    thresh_surf = vtk.vtkDataSetSurfaceFilter()
-                    thresh_surf.SetInputConnection(thresh_channel.GetOutputPort())
-                    thresh_surf.Update()
-                    thresh_writer = vtk.vtkXMLPolyDataWriter()
-                    thresh_writer.SetInputConnection(thresh_surf.GetOutputPort())
-                    thresh_writer.SetFileName(os.path.join(write_path, f'channel_thresh_{t}.vtp'))
-                    thresh_writer.Update()
-            if population_normalize is None:
-                tensor = tm.zero_mean_std1(tensor)
-            else:
-                tensor /= population_normalize                
+        axes = _segmentation_axis(segmented_name, cine_segmented_grids, segmentation_channel, order, save_path)
+        for i, cine_grid in enumerate(cine_segmented_grids):
+            for channel in tm.channel_map:
+                ax_start = tm.channel_map[channel]
+                ax_end = ax_start + axes[channel][0].shape[0]
+                if len(tm.shape) == 3:
+                    tensor[i, ax_start:ax_end, :] = axes[channel][i]
+                elif len(tm.shape) == 2:
+                    tensor[ax_start:ax_end, :] = axes[channel][i]
+                elif len(tm.shape) == 1:
+                    tensor[:] = axes[channel][i].ravel()
+        if population_normalize is None:
+            tensor = tm.zero_mean_std1(tensor)
+        else:
+            tensor /= population_normalize                
         return tensor
-    return segmentation_axis
+    return segmentation_axis_from_file
 
 
 TMAPS['cine_segmented_sax_inlinevf_axis'] = TensorMap('cine_segmented_sax_inlinevf_axis', (6, 50),
-                                                      tensor_from_file=_make_segmentation_axis_from_file(MRI_SEGMENTED, 'myocardium', mode='6dofs',
+                                                      channel_map={'direction': 0, 'center': 3},
+                                                      tensor_from_file=_make_segmentation_axis_from_file(MRI_SEGMENTED, 'myocardium',
                                                                                                          population_normalize=1.0))
 TMAPS['cine_segmented_sax_inlinevf_xzangle'] = TensorMap('cine_segmented_sax_inlinevf_xzangle', (50,),
-                                                         tensor_from_file=_make_segmentation_axis_from_file(MRI_SEGMENTED, 'myocardium', mode='xzangle',
+                                                         channel_map={'xzangle': 0},
+                                                         tensor_from_file=_make_segmentation_axis_from_file(MRI_SEGMENTED, 'myocardium',
                                                                                                             population_normalize=1.0))
+
+
+def _lv_spheroid(rb, l, z, h, e, psi0, spheroid_only=False, npoints_prolate=700, npoints_radial=10, npoints_extrusion=200):
+    """Returns idealized truncated prolate spheroid from six parameters as vtkPolyData
+    """
+    full_circle = 360.0
+    
+    psi0 = np.radians(psi0)
+    psi0epi = np.arcsin((z-h) / z * np.sin(psi0))
+
+    psi = np.linspace(psi0, np.pi/2.0, npoints_prolate)
+    psir = np.linspace(np.pi/2.0, psi0epi, npoints_prolate)
+
+    rhoepi = rb*(e*np.cos(psir) + (1.0-e) * (1.0-np.sin(psir)))
+    rhoend = (rb-l) * (e*np.cos(psi) + (1.0-e) * (1.0-np.sin(psi)))
+
+    zepi = z * (1.0-np.sin(psir))
+    zend = (z-h) * (1.0-np.sin(psi)) + h
+
+    if spheroid_only:
+        pts = np.zeros((psi.shape[0],3))
+        # Store only endocardial points
+        pts[:,0] = rhoend
+        pts[:,2] = zend
+        polyline = vtk.vtkPolyLine()
+        polyline.GetPointIds().SetNumberOfIds(npoints_prolate)
+    else:
+        dn = 1.0 / float(npoints_radial)
+        pts = np.zeros((npoints_prolate * 2 + npoints_radial - 1, 3))
+        # First store epicardial points, then radial, then endocardial points
+        pts[:npoints_prolate, 0] = rhoepi
+        for i in range(1, npoints_radial):
+            pts[npoints_prolate+i-1, 0] = (1.0-i*dn) * rhoepi[-1] + i*dn*rhoend[0]
+        pts[npoints_prolate+npoints_radial-1:, 0] = rhoend
+        pts[:npoints_prolate, 2] = zepi
+        for i in range(1, npoints_radial):
+            pts[npoints_prolate+i-1, 2] = (1.0-i*dn) * zepi[-1] + i*dn*zend[0]
+        pts[npoints_prolate+npoints_radial-1:, 2] = zend
+        polyline = vtk.vtkPolyLine()
+        polyline.GetPointIds().SetNumberOfIds(npoints_prolate*2 + npoints_radial - 1)
+
+    points = vtk.vtkPoints()
+    points.SetData(vtk.util.numpy_support.numpy_to_vtk(pts))
+    for i in range(polyline.GetPointIds().GetNumberOfIds()):
+        polyline.GetPointIds().SetId(i, i)
+
+    cells = vtk.vtkCellArray()
+    cells.InsertNextCell(polyline)
+
+    # Polydata is built as source for rotational extrusion
+    polydata = vtk.vtkPolyData()
+    polydata.SetPoints(points)
+    polydata.SetLines(cells)
+
+    extrude = vtk.vtkRotationalExtrusionFilter()
+    extrude.SetInputData(polydata)
+    extrude.SetAngle(full_circle)
+    extrude.SetResolution(npoints_extrusion)
+    extrude.Update()
+
+    writer = vtk.vtkXMLPolyDataWriter()
+    writer.SetInputConnection(extrude.GetOutputPort())
+    writer.SetFileName('/home/pdiachil/polydata.vtp')
+    writer.Update()
+    return extrude.GetOutput()
+
+
+def _align_geometric_model(model, target_center, target_axis):
+    bounds = model.GetBounds()
+    model_axis = np.array([0.0, 0.0, 1.0])
+    
+    # If already aligned no need to compute rotation matrix
+    if np.linalg.norm(axis-model_axis) > TOL:
+        v_cross = np.cross(model_axis, axis)
+
+        s = np.linalg.norm(v_cross)
+        c = np.dot(model_axis, axis)
+
+        v_skew = np.array([[0.0, -v_cross[2], v_cross[1]],
+                           [v_cross[2], 0.0, -v_cross[0]],
+                           [-v_cross[1], v_cross[0], 0.0]])
+
+        v_skew2 = np.dot(v_skew, v_skew)
+        R = np.eye(3) + v_skew + v_skew2 * (1.0 - c)/s/s
+    # If aligned...
+    else: 
+        R = np.eye(3)
+    
+    model_center = np.array([0.5*(bounds[0]+bounds[1]),
+                             0.5*(bounds[2]+bounds[3]),
+                             0.5*(bounds[4]+bounds[5])])
+
+    model_center = np.dot(R, model_center)
+    translation = target_center - model_center
+    
+    transform = vtk.vtkTransform()
+    transform.SetMatrix([R[0, 0], R[0, 1], R[0, 2], translation[0],
+                         R[1, 0], R[1, 1], R[1, 2], translation[1],
+                         R[2, 0], R[2, 1], R[2, 2], translation[2],
+                         0.0, 0.0, 0.0, 1.0])
+
+    transform_polydata = vtk.vtkTransformPolyDataFilter()
+    transform_polydata.SetInputData(model)
+    transform_polydata.SetTransform(transform)
+    transform_polydata.Update()
+
+    return transform_polydata.GetOutput()
+
+
+def _mismatch_grid_model(short_axis_grids, long_axis_grids, parametric_model, channel='myocardium'):
+
+    short_axis = _segmentation_axis(short_axis_name_name, short_axis_grid, channel)
+    rotated_model = _align_geometric_model(parametric_model, short_axis['center'], short_axis['direction'])
+    
 
 
 def _slice_tensor(tensor_key, slice_index):
