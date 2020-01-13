@@ -225,18 +225,18 @@ def _ecg_protocol(tm: TensorMap, hd5: h5py.File, dependents=None):
 
 
 def _regress_hr_exercise_recovery(hd5: h5py.File):
-    times = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasetime', handle_nan=_filter_nan)
-    hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate', handle_nan=_filter_nan)
-    phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename', handle_nan=_filter_nan)
-    #TODO: make sure phases are integer
-    exercise_mask = (phases == 1) & (hrs > 0)
-    recovery_mask = phases == 2 & (hrs > 0)
+    times = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasetime', handle_nan=_pass_nan)
+    hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate', handle_nan=_pass_nan)
+    phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename', handle_nan=_pass_nan)
+    all_finite = np.isfinite(times) & np.isfinite(hrs) & np.isfinite(phases)
+    exercise_mask = (phases == 1) & (hrs > 0) & all_finite
+    recovery_mask = (phases == 2) & (hrs > 0) & all_finite
 
     # acceptable number of measurements
     if np.count_nonzero(exercise_mask) < 20:
         raise ValueError('Not enough exercise measurements.')
     if np.count_nonzero(recovery_mask) < 5:
-        raise ValueError('Not enough exercise measurements.')
+        raise ValueError('Not enough recovery measurements.')
 
     return (linregress(times[exercise_mask], hrs[exercise_mask]),
             linregress(times[recovery_mask], hrs[recovery_mask]))
@@ -272,7 +272,7 @@ def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     # protocol has exercise
     protocol = _ecg_protocol_string(hd5)
     if protocol in {'M40', 'F30'}:
-        raise ValueError('No exercise in protocol.')
+        raise ValueError('No exercise ramp in protocol.')
 
     # linear regressions make sense
     exercise_reg, recovery_reg = _regress_hr_exercise_recovery(hd5)
@@ -296,12 +296,11 @@ def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     if recovery_min < 30:
         raise ValueError('Min HR too low.')
 
-    # artifact checks  #TODO: make sure phases are integer
     phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename', handle_nan=_filter_nan)
     artifact = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_artifact', handle_nan=_filter_nan)
     for thresh, phase, phase_name in zip([.24, .79, .83], [0, 1, 2], ('pretest', 'exercise', 'recovery')):  # 90% quantiles
         if artifact[phases == phase].mean() > thresh:
-            raise ValueError(f'Artifact too high in {phase}.')
+            raise ValueError(f'Artifact too high in {phase_name}.')
 
     return tm.normalize_and_validate(np.array([exercise_max - recovery_min]))
 
