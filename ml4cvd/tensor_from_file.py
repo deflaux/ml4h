@@ -70,6 +70,10 @@ def _fail_nan(tensor):
     return tensor
 
 
+def _filter_nan(tensor):
+    return tensor[np.isfinite(tensor)]
+
+
 def _nan_to_mean(tensor, max_allowed_nan_fraction=.2):
     tensor_isnan = np.isnan(tensor)
     if np.count_nonzero(tensor_isnan) / tensor.size > max_allowed_nan_fraction:
@@ -125,7 +129,6 @@ def _first_date_bike_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
 
 
 def _first_date_bike_pretest(tm: TensorMap, hd5: h5py.File, dependents=None):
-    _check_phase_full_len(hd5, 'pretest')
     original = _get_tensor_at_first_date(hd5, tm.group, DataSetType.FLOAT_ARRAY, tm.name)
     pretest = original[:tm.shape[0]]
     return tm.normalize_and_validate(pretest).reshape(tm.shape)
@@ -201,27 +204,40 @@ def _max_hr_not_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
     return tm.normalize_and_validate(np.array([max_hr]))
 
 
-def _ecg_protocol(tm: TensorMap, hd5: h5py.File, dependents=None):
+def _ecg_protocol_string(hd5):
     dates = _all_dates(hd5, 'ecg_bike', DataSetType.STRING, 'protocol')
     if not dates:
-        raise ValueError(f'No {name} values values available.')
+        raise ValueError('No protocol values available.')
     first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
     first_date_path = tensor_path(source='ecg_bike', dtype=DataSetType.STRING, name='protocol', date=first_date)
     try:
         proto = str(np.array(hd5[first_date_path]))
     except TypeError:
         raise ValueError('Protocol is empty.')
+    return proto
+
+
+def _ecg_protocol(tm: TensorMap, hd5: h5py.File, dependents=None):
     proto_to_int = {f'F{i * 10}': i - 3 for i in range(3, 14)}
     proto_to_int.update({f'M{i * 10}': i - 4 + 100 for i in range(4, 15)})
+    proto = _ecg_protocol_string(hd5)
     return tm.normalize_and_validate(np.array([proto_to_int[proto]], dtype=np.float32))
 
 
 def _regress_hr_exercise_recovery(hd5: h5py.File):
-    times = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasetime')
-    hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate')
-    phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename')
-    exercise_mask = phases == 1
-    recovery_mask = phases == 2
+    times = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasetime', handle_nan=_filter_nan)
+    hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate', handle_nan=_filter_nan)
+    phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename', handle_nan=_filter_nan)
+    #TODO: make sure phases are integer
+    exercise_mask = (phases == 1) & (hrs > 0)
+    recovery_mask = phases == 2 & (hrs > 0)
+
+    # acceptable number of measurements
+    if np.count_nonzero(exercise_mask) < 20:
+        raise ValueError('Not enough exercise measurements.')
+    if np.count_nonzero(recovery_mask) < 5:
+        raise ValueError('Not enough exercise measurements.')
+
     return (linregress(times[exercise_mask], hrs[exercise_mask]),
             linregress(times[recovery_mask], hrs[recovery_mask]))
 
@@ -245,21 +261,33 @@ def _hrr_smoothed(tm: TensorMap, hd5: h5py.File, dependents=None):
     return tm.normalize_and_validate(np.array([exercise_max - recovery_min]))
 
 
-# QC protocols
 def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     # Phase lengths long enough?
     _check_phase_full_len(hd5, 'pretest')
     _check_phase_full_len(hd5, 'rest')
+    exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'exercise_duration')
+    if exercise_dur < 120:
+        raise ValueError('Exercised less than two minutes.')
+
+    # protocol has exercise
+    protocol = _ecg_protocol_string(hd5)
+    if protocol in {'M40', 'F30'}:
+        raise ValueError('No exercise in protocol.')
 
     # linear regressions make sense
-    (exercise_slope, exercise_intercept, _, _, _), (recovery_slope, recovery_intercept, _, _, _) = _regress_hr_exercise_recovery(hd5)
+    exercise_reg, recovery_reg = _regress_hr_exercise_recovery(hd5)
+    exercise_slope, exercise_intercept, exercise_r, _, _ = exercise_reg
+    recovery_slope, recovery_intercept, recovery_r, _, _ = recovery_reg
+    if exercise_r**2 < .45:  # 10% quantile
+        raise ValueError('R^2 too low in exercise hr regression.')
+    if recovery_r**2 < .65:  # 10% quantile
+        raise ValueError('R^2 too low in recovery hr regression.')
     if exercise_slope < 0:
         raise ValueError('Exercise slope negative.')
     if recovery_slope > 0:
         raise ValueError('Recovery slope positive.')
 
     # physiologic heart rates
-    exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'exercise_duration')
     recovery_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'rest_duration')
     exercise_max = exercise_slope * exercise_dur + exercise_intercept
     recovery_min = recovery_slope * recovery_dur + recovery_intercept
@@ -268,9 +296,13 @@ def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     if recovery_min < 30:
         raise ValueError('Min HR too low.')
 
-    # acceptable number of measurements
+    # artifact checks  #TODO: make sure phases are integer
+    phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename', handle_nan=_filter_nan)
+    artifact = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_artifact', handle_nan=_filter_nan)
+    for thresh, phase, phase_name in zip([.24, .79, .83], [0, 1, 2], ('pretest', 'exercise', 'recovery')):  # 90% quantiles
+        if artifact[phases == phase].mean() > thresh:
+            raise ValueError(f'Artifact too high in {phase}.')
 
-    # artifact checks
     return tm.normalize_and_validate(np.array([exercise_max - recovery_min]))
 
 
