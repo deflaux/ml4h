@@ -302,7 +302,7 @@ def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
         if artifact[phases == phase].mean() > thresh:
             raise ValueError(f'Artifact too high in {phase_name}.')
 
-    return tm.normalize_and_validate(np.array([exercise_max - recovery_min]))
+    return tm.normalize_and_validate(np.array(exercise_max - recovery_min))
 
 
 TMAPS: Dict[str, TensorMap] = dict()
@@ -342,7 +342,8 @@ TMAPS['ecg-bike-new-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', m
                                       tensor_from_file=_new_hrr, dtype=DataSetType.CONTINUOUS)
 
 # FOR JEN
-
+TMAPS['unnormalized_bmi'] = TensorMap('23104_Body-mass-index-BMI_0_0', group='continuous', channel_map={'23104_Body-mass-index-BMI_0_0': 0}, annotation_units=1,
+                                      validator=make_range_validator(0, 300), normalization={'mean': 0, 'std': 1}, loss='logcosh')
 TMAPS['ecg-bike-pretest-duration'] = TensorMap('pretest_duration', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                                normalization={'mean': 0, 'std': 1},
                                                tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
