@@ -1104,31 +1104,29 @@ def _lv_spheroid(rb, l, z, h, e, psi0, spheroid_only=False, npoints_prolate=700,
 
     writer = vtk.vtkXMLPolyDataWriter()
     writer.SetInputConnection(extrude.GetOutputPort())
-    writer.SetFileName('/home/pdiachil/polydata.vtp')
+    writer.SetFileName('/home/pdiachil/mri_tensors/polydata.vtp')
     writer.Update()
     return extrude.GetOutput()
 
 
-def _align_geometric_model(model, target_center, target_axis):
-    bounds = model.GetBounds()
+def _align_parametric_model(model, target_center, target_axis):
     model_axis = np.array([0.0, 0.0, 1.0])
+    bounds = model.GetBounds()
     
-    # If already aligned no need to compute rotation matrix
-    if np.linalg.norm(axis-model_axis) > TOL:
-        v_cross = np.cross(model_axis, axis)
+    # If already aligned, rotation is just identity, else compute skew
+    R = np.eye(3)
+    if np.linalg.norm(target_axis - model_axis) > EPS:
+        v_cross = np.cross(model_axis, target_axis)
 
         s = np.linalg.norm(v_cross)
-        c = np.dot(model_axis, axis)
+        c = np.dot(model_axis, target_axis)
 
         v_skew = np.array([[0.0, -v_cross[2], v_cross[1]],
                            [v_cross[2], 0.0, -v_cross[0]],
                            [-v_cross[1], v_cross[0], 0.0]])
 
         v_skew2 = np.dot(v_skew, v_skew)
-        R = np.eye(3) + v_skew + v_skew2 * (1.0 - c)/s/s
-    # If aligned...
-    else: 
-        R = np.eye(3)
+        R += v_skew + v_skew2 * (1.0 - c)/s/s
     
     model_center = np.array([0.5*(bounds[0]+bounds[1]),
                              0.5*(bounds[2]+bounds[3]),
@@ -1148,13 +1146,24 @@ def _align_geometric_model(model, target_center, target_axis):
     transform_polydata.SetTransform(transform)
     transform_polydata.Update()
 
+    transform_writer = vtk.vtkXMLPolyDataWriter()
+    transform_writer.SetFileName('/home/pdiachil/mri_tensors/transformed_polydata.vtp')
+    transform_writer.SetInputConnection(transform_polydata.GetOutputPort())
+    transform_writer.Update()
     return transform_polydata.GetOutput()
 
 
-def _mismatch_grid_model(short_axis_grids, long_axis_grids, parametric_model, channel='myocardium'):
+def _mismatch_grid_model(short_axis_grid, long_axis_grids, parametric_model, channel='myocardium'):
+    short_axis = _segmentation_axis(short_axis_name, short_axis_grid, channel)
+    rotated_model = _align_parametric_model(parametric_model, short_axis['center'], short_axis['direction'])
 
-    short_axis = _segmentation_axis(short_axis_name_name, short_axis_grid, channel)
-    rotated_model = _align_geometric_model(parametric_model, short_axis['center'], short_axis['direction'])
+
+def _mismatch_parametric_model_segmentation(aligned_parametric_model, segmented_ds):
+    dims = segmented_ds.GetDimensions()
+    npts_per_slice = dims[0] * dims[1]
+    ncells_per_slice = (dims[0]-1) * (dims[1]-1)
+                
+    
     
 
 
