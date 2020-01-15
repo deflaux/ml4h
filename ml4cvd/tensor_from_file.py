@@ -233,7 +233,7 @@ def _regress_hr_exercise_recovery(hd5: h5py.File):
     recovery_mask = (phases == 2) & (hrs > 0) & all_finite
 
     # acceptable number of measurements
-    if np.count_nonzero(exercise_mask) < 20:
+    if np.count_nonzero(exercise_mask) < 10:
         raise ValueError('Not enough exercise measurements.')
     if np.count_nonzero(recovery_mask) < 5:
         raise ValueError('Not enough recovery measurements.')
@@ -266,43 +266,49 @@ def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     _check_phase_full_len(hd5, 'pretest')
     _check_phase_full_len(hd5, 'rest')
     exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'exercise_duration')
-    if exercise_dur < 120:
+    if exercise_dur < 60:
         raise ValueError('Exercised less than two minutes.')
 
-    # protocol has exercise
-    protocol = _ecg_protocol_string(hd5)
-    if protocol in {'M40', 'F30'}:
-        raise ValueError('No exercise ramp in protocol.')
+    # get trend measurements
+    times = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasetime', handle_nan=_pass_nan)
+    hrs = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_heartrate', handle_nan=_pass_nan)
+    phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename', handle_nan=_pass_nan)
+    all_finite = np.isfinite(times) & np.isfinite(hrs) & np.isfinite(phases)
+    exercise_mask = (phases == 1) & (hrs > 0) & all_finite
+    recovery_mask = (phases == 2) & (hrs > 0) & all_finite
 
-    # linear regressions make sense
-    exercise_reg, recovery_reg = _regress_hr_exercise_recovery(hd5)
+    # acceptable number of measurements
+    if np.count_nonzero(exercise_mask) < 10:
+        raise ValueError('Not enough exercise measurements.')
+    if np.count_nonzero(recovery_mask) < 5:
+        raise ValueError('Not enough recovery measurements.')
+
+    # linear regression checks
+    exercise_reg = linregress(times[exercise_mask], hrs[exercise_mask])
+    recovery_reg = linregress(times[recovery_mask], hrs[recovery_mask])
     exercise_slope, exercise_intercept, exercise_r, _, _ = exercise_reg
     recovery_slope, recovery_intercept, recovery_r, _, _ = recovery_reg
     if exercise_r**2 < .45:  # 10% quantile
         raise ValueError('R^2 too low in exercise hr regression.')
-    if recovery_r**2 < .65:  # 10% quantile
-        raise ValueError('R^2 too low in recovery hr regression.')
     if exercise_slope < 0:
         raise ValueError('Exercise slope negative.')
     if recovery_slope > 0:
         raise ValueError('Recovery slope positive.')
 
-    # physiologic heart rates
-    recovery_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'rest_duration')
-    exercise_max = exercise_slope * exercise_dur + exercise_intercept
-    recovery_min = recovery_slope * recovery_dur + recovery_intercept
-    if exercise_max > 220:
+    final_exercise_hr = hrs[exercise_mask][times[exercise_mask] >= exercise_dur - 5].mean()  # mean of last 5s of exercise
+    final_recovery_hr = hrs[recovery_mask][times[recovery_mask] >= 60 - 5].mean()  # mean of last 5s of recovery
+
+    if np.isnan(final_exercise_hr):
+        raise ValueError('No hr measurements in last 5 seconds of exercise.')
+    if np.isnan(final_recovery_hr):
+        raise ValueError('No hr measurements in last 5 seconds of recovery.')
+
+    if final_exercise_hr > 220:
         raise ValueError('Max HR too high.')
-    if recovery_min < 30:
+    if final_recovery_hr < 30:
         raise ValueError('Min HR too low.')
 
-    phases = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasename', handle_nan=_filter_nan)
-    artifact = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_artifact', handle_nan=_filter_nan)
-    for thresh, phase, phase_name in zip([.24, .79, .83], [0, 1, 2], ('pretest', 'exercise', 'recovery')):  # 90% quantiles
-        if artifact[phases == phase].mean() > thresh:
-            raise ValueError(f'Artifact too high in {phase_name}.')
-
-    return tm.normalize_and_validate(np.array(exercise_max - recovery_min))
+    return tm.normalize_and_validate(np.array(final_exercise_hr - final_recovery_hr))
 
 
 TMAPS: Dict[str, TensorMap] = dict()
