@@ -321,9 +321,6 @@ def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
 TMAPS: Dict[str, TensorMap] = dict()
 
 
-TMAPS['ecg-bike-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
-                                  normalization={'mean': 30.55, 'std': 12.81},
-                                  tensor_from_file=_first_date_hrr, dtype=DataSetType.CONTINUOUS)
 TMAPS['ecg-bike-healthy-max-hr'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mae'],
                                              normalization={'mean': 113.7, 'std': 13.3}, shape=(1,),
                                              tensor_from_file=_healthy_bike, dtype=DataSetType.CONTINUOUS)
@@ -350,9 +347,6 @@ TMAPS['ecg-bike-recovery'] = TensorMap('full', shape=(30000, 1), group='ecg_bike
 TMAPS['ecg-bike-pretest'] = TensorMap('full', shape=(500 * 15 - 4, 3), group='ecg_bike', validator=no_nans,
                                       normalization={'mean': np.array([7, -7, 3.5])[np.newaxis], 'std': np.array([31, 30, 16])[np.newaxis]},
                                       tensor_from_file=_first_date_bike_pretest, dtype=DataSetType.FLOAT_ARRAY)
-TMAPS['ecg-bike-new-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
-                                      normalization={'mean': 31, 'std': 12},
-                                      tensor_from_file=_new_hrr, dtype=DataSetType.CONTINUOUS)
 
 # FOR JEN
 TMAPS['unnormalized_bmi'] = TensorMap('23104_Body-mass-index-BMI_0_0', group='continuous', channel_map={'23104_Body-mass-index-BMI_0_0': 0}, annotation_units=1,
@@ -427,7 +421,8 @@ TMAPS['ecg-bike-hrr-johanna'] = TensorMap('hrr', group='ecg_bike', loss='logcosh
 
 # HRR FINAL
 TMAPS['ecg-bike-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
-                                  normalization={'mean': 0, 'std': 1},
+                                  normalization={'mean': 25, 'std': 15},
+                                  dtype=DataSetType.CONTINUOUS,
                                   tensor_from_file=_hrr_qc)
 
 
