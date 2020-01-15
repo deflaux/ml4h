@@ -90,7 +90,7 @@ def _get_tensor_at_first_date(hd5: h5py.File, source: str, dtype: DataSetType, n
     if not dates:
         raise ValueError(f'No {name} values values available.')
     # TODO: weird to convert date from string to datetime, because it just gets converted back.
-    first_date = path_date_to_datetime(min(dates))  # Date format is sortable. 
+    first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
     first_date_path = tensor_path(source=source, dtype=dtype, name=name, date=first_date)
     tensor = np.array(hd5[first_date_path], dtype=np.float32)
     tensor = handle_nan(tensor)
@@ -129,9 +129,15 @@ def _first_date_bike_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
 
 
 def _first_date_bike_pretest(tm: TensorMap, hd5: h5py.File, dependents=None):
-    original = _get_tensor_at_first_date(hd5, tm.group, DataSetType.FLOAT_ARRAY, tm.name)
-    pretest = original[:tm.shape[0]]
-    return tm.normalize_and_validate(pretest).reshape(tm.shape)
+    dates = _all_dates(hd5, tm.group, tm.dtype, tm.name)
+    if not dates:
+        raise ValueError(f'No {name} values values available.')
+    # TODO: weird to convert date from string to datetime, because it just gets converted back.
+    first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
+    first_date_path = tensor_path(source=tm.group, dtype=tm.dtype, name=tm.name, date=first_date)
+    tensor = np.array(hd5[first_date_path][:tm.shape[0]], dtype=np.float32)
+    tensor = _fail_nan(tensor)
+    return tm.normalize_and_validate(tensor).reshape(tm.shape)
 
 
 def _first_date_hrr(tm: TensorMap, hd5: h5py.File, dependents=None):
@@ -266,8 +272,9 @@ def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     _check_phase_full_len(hd5, 'pretest')
     _check_phase_full_len(hd5, 'rest')
     exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'exercise_duration')
-    if exercise_dur < 60:
-        raise ValueError('Exercised less than two minutes.')
+    min_exercise_dur = 60
+    if exercise_dur < min_exercise_dur:
+        raise ValueError(f'Exercised less than {min_exercise_dur}s.')
 
     # get trend measurements
     times = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.FLOAT_ARRAY, 'trend_phasetime', handle_nan=_pass_nan)
