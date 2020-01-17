@@ -131,12 +131,25 @@ def _first_date_bike_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
 def _first_date_bike_pretest(tm: TensorMap, hd5: h5py.File, dependents=None):
     dates = _all_dates(hd5, tm.group, tm.dtype, tm.name)
     if not dates:
-        raise ValueError(f'No {name} values values available.')
-    # TODO: weird to convert date from string to datetime, because it just gets converted back.
+        raise ValueError(f'No ecg trace available.')
     first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
     first_date_path = tensor_path(source=tm.group, dtype=tm.dtype, name=tm.name, date=first_date)
     tensor = np.array(hd5[first_date_path][:tm.shape[0]], dtype=np.float32)
     tensor = _fail_nan(tensor)
+    return tm.normalize_and_validate(tensor).reshape(tm.shape)
+
+
+def _first_date_bike_pretest_augmented(tm: TensorMap, hd5: h5py.File, dependents=None):
+    dates = _all_dates(hd5, tm.group, tm.dtype, tm.name)
+    if not dates:
+        raise ValueError(f'No ecg trace available.')
+    first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
+    first_date_path = tensor_path(source=tm.group, dtype=tm.dtype, name=tm.name, date=first_date)
+    pretest_len = 15 * 500
+    start = np.random.randint(pretest_len - tm.shape[0])
+    tensor = np.array(hd5[first_date_path][start: start + tm.shape[0]], dtype=np.float32)
+    tensor = _fail_nan(tensor)
+    tensor += np.random.randn(tm.shape) * np.random.randint(0, 3)
     return tm.normalize_and_validate(tensor).reshape(tm.shape)
 
 
@@ -347,6 +360,9 @@ TMAPS['ecg-bike-recovery'] = TensorMap('full', shape=(30000, 1), group='ecg_bike
 TMAPS['ecg-bike-pretest'] = TensorMap('full', shape=(500 * 15 - 4, 3), group='ecg_bike', validator=no_nans,
                                       normalization={'mean': np.array([7, -7, 3.5])[np.newaxis], 'std': np.array([31, 30, 16])[np.newaxis]},
                                       tensor_from_file=_first_date_bike_pretest, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-pretest-augmented'] = TensorMap('full', shape=(4096, 3), group='ecg_bike', validator=no_nans, cacheable=False,
+                                                normalization={'mean': np.array([7, -7, 3.5])[np.newaxis], 'std': np.array([31, 30, 16])[np.newaxis]},
+                                                tensor_from_file=_first_date_bike_pretest_augmented, dtype=DataSetType.FLOAT_ARRAY)
 
 # FOR JEN
 TMAPS['unnormalized_bmi'] = TensorMap('23104_Body-mass-index-BMI_0_0', group='continuous', channel_map={'23104_Body-mass-index-BMI_0_0': 0}, annotation_units=1,
