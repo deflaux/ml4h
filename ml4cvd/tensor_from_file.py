@@ -444,6 +444,16 @@ def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     return tm.normalize_and_validate(np.array(final_exercise_hr - final_recovery_hr))
 
 
+# TODO: when discretization branch merged, use that
+def _hrr_qc_discretized(tm: TensorMap, hd5: h5py.File, dependents=None):
+    tm.normalization = {'mean': 0, 'std': 1}
+    hrr = _hrr_qc(tm, hd5)
+    tm.normalization = None
+    one_hot = np.zeros(3)
+    one_hot[np.digitize(hrr, [20, 40])] = 1
+    return tm.normalize_and_validate(one_hot)
+
+
 TMAPS: Dict[str, TensorMap] = dict()
 
 
@@ -565,6 +575,11 @@ TMAPS['ecg-bike-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metri
                                   normalization={'mean': 25, 'std': 15},
                                   dtype=DataSetType.CONTINUOUS,
                                   tensor_from_file=_hrr_qc)
+TMAPS['ecg-bike-hrr-discretized'] = TensorMap('hrr', group='ecg_bike',
+                                              normalization=None,
+                                              dtype=DataSetType.CATEGORICAL,
+                                              channel_map={'low_hrr': 0, 'normal_hrr': 1, 'high_hrr': 2},
+                                              tensor_from_file=_hrr_qc_discretized)
 
 TMAPS['ecg_rest_afib_hazard'] = TensorMap('atrial_fibrillation_or_flutter', group='proportional_hazard', shape=(100,),
                                           tensor_from_file=_survival_tensor('ecg_rest_date', 365 * 5), dtype=DataSetType.SERIES)
