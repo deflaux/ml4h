@@ -149,7 +149,7 @@ def _first_date_bike_pretest_augmented(tm: TensorMap, hd5: h5py.File, dependents
     start = np.random.randint(pretest_len - tm.shape[0])
     tensor = np.array(hd5[first_date_path][start: start + tm.shape[0]], dtype=np.float32)
     tensor = _fail_nan(tensor)
-    tensor += np.random.randn(tm.shape) * np.random.randint(0, 3)
+    tensor += np.random.randn(*tm.shape) * np.random.randint(0, 3)
     return tm.normalize_and_validate(tensor).reshape(tm.shape)
 
 
