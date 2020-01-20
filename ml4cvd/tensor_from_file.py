@@ -892,6 +892,39 @@ def _map_points_to_cells(pts, dataset, tol=1e-3):
     return map_to_cells
 
 
+def _project_segmented_array_to_dataset(ds_to_segment, ds_segmented, segmented_name, tensor, save_path=None):
+    dims = ds_to_segment.GetDimensions()
+    pts = vtk.util.numpy_support.vtk_to_numpy(ds_to_segment.GetPoints().GetData())
+    npts_per_slice = dims[0] * dims[1]
+    ncells_per_slice = (dims[0]-1) * (dims[1]-1)
+    n_orientation = (pts[npts_per_slice] - pts[0])
+    n_orientation /= np.linalg.norm(n_orientation)
+    cell_centers = vtk.vtkCellCenters()
+    cell_centers.SetInputData(ds_to_segment)
+    cell_centers.Update()
+    cell_pts = vtk.util.numpy_support.vtk_to_numpy(cell_centers.GetOutput().GetPoints().GetData())                
+    # Loop through dataset slices 
+    for s in range(dims[2]-1):
+        slice_center = np.mean(pts[s*npts_per_slice:(s+2)*npts_per_slice], axis=0)                    
+        slice_cell_pts = cell_pts[s*ncells_per_slice:(s+1)*ncells_per_slice]
+        slice_segmented = _cut_through_plane(ds_segmented, slice_center, n_orientation)
+        map_to_segmented = _map_points_to_cells(slice_cell_pts, slice_segmented)
+        # Loop through time
+        for t in range(MRI_FRAMES):
+            arr_name = f'{segmented_name}_{t}'
+            segmented_arr = vtk.util.numpy_support.vtk_to_numpy(slice_segmented.GetCellData().GetArray(arr_name))
+            projected_arr = segmented_arr[map_to_segmented]
+            if len(tensor.shape) == 3:
+                tensor[:, :, t] = np.maximum(tensor[:, :, t], projected_arr.reshape(tensor.shape[0], tensor.shape[1]))
+            elif len(tensor.shape) == 4:
+                tensor[:, :, s, t] = np.maximum(tensor[:, :, s, t], projected_arr.reshape(tensor.shape[0], tensor.shape[1]))
+            if save_path:
+                writer_segmented = vtk.vtkXMLPolyDataWriter()
+                writer_segmented.SetInputData(slice_segmented)
+                writer_segmented.SetFileName(os.path.join(save_path, f'{tm.name}_segmented_{ds_i}_{ds_j}_{s}.vtp'))
+                writer_segmented.Update()
+
+
 def _make_mri_projected_segmentation_from_file(to_segment_name, segmented_name, save_path=None):
     def mri_projected_segmentation(tm, hd5):
         if segmented_name not in [MRI_SEGMENTED, MRI_LAX_SEGMENTED]:
@@ -902,36 +935,7 @@ def _make_mri_projected_segmentation_from_file(to_segment_name, segmented_name, 
         # Loop through segmentations and datasets
         for ds_i, ds_segmented in enumerate(cine_segmented_grids):
             for ds_j, ds_to_segment in enumerate(cine_to_segment_grids):
-                dims = ds_to_segment.GetDimensions()
-                pts = vtk.util.numpy_support.vtk_to_numpy(ds_to_segment.GetPoints().GetData())
-                npts_per_slice = dims[0] * dims[1]
-                ncells_per_slice = (dims[0]-1) * (dims[1]-1)
-                n_orientation = (pts[npts_per_slice] - pts[0])
-                n_orientation /= np.linalg.norm(n_orientation)
-                cell_centers = vtk.vtkCellCenters()
-                cell_centers.SetInputData(ds_to_segment)
-                cell_centers.Update()
-                cell_pts = vtk.util.numpy_support.vtk_to_numpy(cell_centers.GetOutput().GetPoints().GetData())                
-                # Loop through dataset slices 
-                for s in range(dims[2]-1):
-                    slice_center = np.mean(pts[s*npts_per_slice:(s+2)*npts_per_slice], axis=0)                    
-                    slice_cell_pts = cell_pts[s*ncells_per_slice:(s+1)*ncells_per_slice]
-                    slice_segmented = _cut_through_plane(ds_segmented, slice_center, n_orientation)
-                    map_to_segmented = _map_points_to_cells(slice_cell_pts, slice_segmented)
-                    # Loop through time
-                    for t in range(MRI_FRAMES):
-                        arr_name = f'{segmented_name}_{t}'
-                        segmented_arr = vtk.util.numpy_support.vtk_to_numpy(slice_segmented.GetCellData().GetArray(arr_name))
-                        projected_arr = segmented_arr[map_to_segmented]
-                        if len(tm.shape) == 3:
-                            tensor[:, :, t] = np.maximum(tensor[:, :, t], projected_arr.reshape(tm.shape[0], tm.shape[1]))
-                        elif len(tm.shape) == 4:
-                            tensor[:, :, s, t] = np.maximum(tensor[:, :, s, t], projected_arr.reshape(tm.shape[0], tm.shape[1]))
-                    if save_path:
-                        writer_segmented = vtk.vtkXMLPolyDataWriter()
-                        writer_segmented.SetInputData(slice_segmented)
-                        writer_segmented.SetFileName(os.path.join(save_path, f'{tm.name}_segmented_{ds_i}_{ds_j}_{s}.vtp'))
-                        writer_segmented.Update()
+                _project_segmented_array_to_dataset(ds_to_segment, ds_segmented, segmented_name, tensor, save_path=save_path)
         return tensor
     return mri_projected_segmentation
 
@@ -1109,17 +1113,17 @@ def _lv_spheroid(rb, l, z, h, e, psi0, spheroid_only=False, npoints_prolate=700,
     return extrude.GetOutput()
 
 
-def _align_parametric_model(model, target_center, target_axis):
-    model_axis = np.array([0.0, 0.0, 1.0])
+def _align_parametric_shape(shape, target_center, target_axis):
+    shape_axis = np.array([0.0, 0.0, 1.0])
     bounds = model.GetBounds()
     
     # If already aligned, rotation is just identity, else compute skew
     R = np.eye(3)
-    if np.linalg.norm(target_axis - model_axis) > EPS:
-        v_cross = np.cross(model_axis, target_axis)
+    if np.linalg.norm(target_axis - shape_axis) > EPS:
+        v_cross = np.cross(shape_axis, target_axis)
 
         s = np.linalg.norm(v_cross)
-        c = np.dot(model_axis, target_axis)
+        c = np.dot(shape_axis, target_axis)
 
         v_skew = np.array([[0.0, -v_cross[2], v_cross[1]],
                            [v_cross[2], 0.0, -v_cross[0]],
@@ -1128,12 +1132,12 @@ def _align_parametric_model(model, target_center, target_axis):
         v_skew2 = np.dot(v_skew, v_skew)
         R += v_skew + v_skew2 * (1.0 - c)/s/s
     
-    model_center = np.array([0.5*(bounds[0]+bounds[1]),
+    shape_center = np.array([0.5*(bounds[0]+bounds[1]),
                              0.5*(bounds[2]+bounds[3]),
                              0.5*(bounds[4]+bounds[5])])
 
-    model_center = np.dot(R, model_center)
-    translation = target_center - model_center
+    shape_center = np.dot(R, shape_center)
+    translation = target_center - shape_center
     
     transform = vtk.vtkTransform()
     transform.SetMatrix([R[0, 0], R[0, 1], R[0, 2], translation[0],
@@ -1142,7 +1146,7 @@ def _align_parametric_model(model, target_center, target_axis):
                          0.0, 0.0, 0.0, 1.0])
 
     transform_polydata = vtk.vtkTransformPolyDataFilter()
-    transform_polydata.SetInputData(model)
+    transform_polydata.SetInputData(shape)
     transform_polydata.SetTransform(transform)
     transform_polydata.Update()
 
@@ -1151,6 +1155,35 @@ def _align_parametric_model(model, target_center, target_axis):
     transform_writer.SetInputConnection(transform_polydata.GetOutputPort())
     transform_writer.Update()
     return transform_polydata.GetOutput()
+
+
+def _shape_to_imagestencil(shape, extent, spacing, origin):
+    white_image = vtk.vtkImageData()
+    white_image.SetExtent(extent)
+    white_image.SetSpacing(spacing)
+    white_image.SetOrigin(origin)
+    white_image.AllocateScalars(vtk.VTK_UNSIGNED_CHAR, 1)
+    
+    npts = white_image.GetNumberOfPoints()
+    arr  = np.ones((npts,), dtype=np.uint)
+    arr_vtk = ns.numpy_to_vtk(arr)
+    arr_vtk.SetName('ImageScalars')
+    white_image.GetPointData().AddArray(arr_vtk)
+
+    pol2stencil = vtk.vtkPolyDataToImageStencil()
+    pol2stencil.SetInputData(shape)
+    pol2stencil.SetOutputOrigin(origin)
+    pol2stencil.SetOutputSpacing(spacing)
+    pol2stencil.SetOutputWholeExtent(white_image.GetExtent())
+
+    imagestencil = vtk.vtkImageStencil()
+    imagestencil.SetInputData(white_image)
+    imagestencil.SetStencilConnection(pol2stencil.GetOutputPort())
+    imagestencil.ReverseStencilOff()
+    imagestencil.SetBackgroundValue(0)
+    imagestencil.Update()
+
+    return imagestencil
 
 
 def _mismatch_grid_model(short_axis_grid, long_axis_grids, parametric_model, channel='myocardium'):
