@@ -228,6 +228,16 @@ def _first_date_bike_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
     return tm.normalize_and_validate(recovery).reshape(tm.shape)
 
 
+def _warp_ecg(ecg):
+    i = np.arange(ecg.shape[0])
+    warped = i + (np.random.rand() * 100 * np.sin(i / (500 + np.random.rand() * 100))
+                  + np.random.rand() * 100 * np.cos(i / (500 + np.random.rand() * 100)))
+    warped_ecg = np.zeros_like(ecg)
+    for j in range(ecg.shape[1]):
+        warped_ecg[:, j] = np.interp(i, warped, ecg[:, j])
+    return warped_ecg
+
+
 def _first_date_bike_pretest(tm: TensorMap, hd5: h5py.File, dependents=None):
     dates = _all_dates(hd5, tm.group, tm.dtype, tm.name)
     if not dates:
@@ -236,6 +246,31 @@ def _first_date_bike_pretest(tm: TensorMap, hd5: h5py.File, dependents=None):
     first_date_path = tensor_path(source=tm.group, dtype=tm.dtype, name=tm.name, date=first_date)
     tensor = np.array(hd5[first_date_path][:tm.shape[0]], dtype=np.float32)
     tensor = _fail_nan(tensor)
+    return tm.normalize_and_validate(tensor).reshape(tm.shape)
+
+
+def _first_date_bike_early_exercise(tm: TensorMap, hd5: h5py.File, dependents=None):
+    dates = _all_dates(hd5, tm.group, tm.dtype, tm.name)
+    if not dates:
+        raise ValueError(f'No ecg trace available.')
+    first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
+    first_date_path = tensor_path(source=tm.group, dtype=tm.dtype, name=tm.name, date=first_date)
+    pretest_len = 15 * 500
+    tensor = np.array(hd5[first_date_path][pretest_len: pretest_len + tm.shape[0]], dtype=np.float32)
+    tensor = _fail_nan(tensor)
+    return tm.normalize_and_validate(tensor).reshape(tm.shape)
+
+
+def _first_date_bike_early_exercise_augmented(tm: TensorMap, hd5: h5py.File, dependents=None):
+    dates = _all_dates(hd5, tm.group, tm.dtype, tm.name)
+    if not dates:
+        raise ValueError(f'No ecg trace available.')
+    first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
+    first_date_path = tensor_path(source=tm.group, dtype=tm.dtype, name=tm.name, date=first_date)
+    pretest_len = 15 * 500 + np.random.randint(250)  # jitter start position
+    tensor = np.array(hd5[first_date_path][pretest_len: pretest_len + tm.shape[0]], dtype=np.float32)
+    tensor = _fail_nan(tensor)
+    tensor = _warp_ecg(tensor)
     return tm.normalize_and_validate(tensor).reshape(tm.shape)
 
 
@@ -253,7 +288,42 @@ def _first_date_bike_pretest_augmented(tm: TensorMap, hd5: h5py.File, dependents
     tensor[:, 0] *= .9 + .2 * np.random.rand()
     tensor[:, 1] *= .9 + .2 * np.random.rand()
     tensor[:, 2] *= .9 + .2 * np.random.rand()
+    tensor = _warp_ecg(tensor)
     return tm.normalize_and_validate(tensor).reshape(tm.shape)
+
+
+def _first_date_bike_pretest_augmented_zero_mean(tm: TensorMap, hd5: h5py.File, dependents=None):
+    dates = _all_dates(hd5, tm.group, tm.dtype, tm.name)
+    if not dates:
+        raise ValueError(f'No ecg trace available.')
+    first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
+    first_date_path = tensor_path(source=tm.group, dtype=tm.dtype, name=tm.name, date=first_date)
+    pretest_len = 15 * 500
+    start = np.random.randint(pretest_len - tm.shape[0])
+    tensor = np.array(hd5[first_date_path][start: start + tm.shape[0]], dtype=np.float32)
+    tensor = _fail_nan(tensor)
+    tensor += np.random.randn(*tm.shape) * np.random.randint(0, 3)
+    tensor /= 10
+    return (tensor - tensor.mean(axis=0)).reshape(tm.shape)
+
+
+def _build_pretest_one_lead(lead: int):
+
+    def pretest_tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
+        dates = _all_dates(hd5, tm.group, tm.dtype, tm.name)
+        if not dates:
+            raise ValueError(f'No ecg trace available.')
+        first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
+        first_date_path = tensor_path(source=tm.group, dtype=tm.dtype, name=tm.name, date=first_date)
+        pretest_len = 15 * 500
+        start = np.random.randint(pretest_len - tm.shape[0])
+        tensor = np.array(hd5[first_date_path][start: start + tm.shape[0], lead: lead + 1], dtype=np.float32)
+        tensor = _fail_nan(tensor)
+        tensor += np.random.randn(*tm.shape) * np.random.randint(0, 3)
+        tensor *= .9 + .2 * np.random.rand()
+        return tm.normalize_and_validate(tensor).reshape(tm.shape)
+
+    return pretest_tensor_from_file
 
 
 def _first_date_hrr(tm: TensorMap, hd5: h5py.File, dependents=None):
@@ -483,9 +553,28 @@ TMAPS['ecg-bike-recovery'] = TensorMap('full', shape=(30000, 1), group='ecg_bike
 TMAPS['ecg-bike-pretest'] = TensorMap('full', shape=(500 * 15 - 4, 3), group='ecg_bike', validator=no_nans,
                                       normalization={'mean': np.array([7, -7, 3.5])[np.newaxis], 'std': np.array([31, 30, 16])[np.newaxis]},
                                       tensor_from_file=_first_date_bike_pretest, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-early-exercise-normalized'] = TensorMap('full', shape=(4096, 3), group='ecg_bike', validator=no_nans,
+                                                        normalization='zero_mean_std1', tensor_from_file=_first_date_bike_early_exercise, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-early-exercise-normalized-augmented'] = TensorMap('full', shape=(4096, 3), group='ecg_bike', validator=no_nans,
+                                                                  normalization='zero_mean_std1', cacheable=False,
+                                                                  tensor_from_file=_first_date_bike_early_exercise_augmented,
+                                                                  dtype=DataSetType.FLOAT_ARRAY)
 TMAPS['ecg-bike-pretest-augmented'] = TensorMap('full', shape=(4096, 3), group='ecg_bike', validator=no_nans, cacheable=False,
                                                 normalization={'mean': np.array([7, -7, 3.5])[np.newaxis], 'std': np.array([31, 30, 16])[np.newaxis]},
                                                 tensor_from_file=_first_date_bike_pretest_augmented, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-pretest-augmented-normalized'] = TensorMap('full', shape=(4096, 3), group='ecg_bike', validator=no_nans, cacheable=False,
+                                                           normalization='zero_mean_std1', tensor_from_file=_first_date_bike_pretest_augmented, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-pretest-augmented-zero-mean'] = TensorMap('full', shape=(4096, 3), group='ecg_bike', validator=no_nans, cacheable=False,
+                                                          tensor_from_file=_first_date_bike_pretest_augmented_zero_mean, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-pretest-augmented-leadI'] = TensorMap('full', shape=(4096, 1), group='ecg_bike', validator=no_nans, cacheable=False,
+                                                      normalization={'mean': 7, 'std': 31},
+                                                      tensor_from_file=_build_pretest_one_lead(0), dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-pretest-augmented-lead2'] = TensorMap('full', shape=(4096, 1), group='ecg_bike', validator=no_nans, cacheable=False,
+                                                      normalization={'mean': -7, 'std': 31},
+                                                      tensor_from_file=_build_pretest_one_lead(1), dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-pretest-augmented-lead3'] = TensorMap('full', shape=(4096, 1), group='ecg_bike', validator=no_nans, cacheable=False,
+                                                      normalization={'mean': 3.5, 'std': 16},
+                                                      tensor_from_file=_build_pretest_one_lead(2), dtype=DataSetType.FLOAT_ARRAY)
 
 # FOR JEN
 TMAPS['unnormalized_bmi'] = TensorMap('23104_Body-mass-index-BMI_0_0', group='continuous', channel_map={'23104_Body-mass-index-BMI_0_0': 0}, annotation_units=1,
