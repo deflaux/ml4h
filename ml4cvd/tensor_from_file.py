@@ -1276,7 +1276,7 @@ def _align_parametric_shape(shape, target_center, target_axis):
     return transform_polydata.GetOutput()
 
 
-def _shape_to_imagestencil(shape, extent, spacing, origin):
+def _shape_to_imagestencil(shape, extent, spacing, origin, write_path=None):
     white_image = vtk.vtkImageData()
     white_image.SetExtent(extent)
     white_image.SetSpacing(spacing)
@@ -1289,18 +1289,22 @@ def _shape_to_imagestencil(shape, extent, spacing, origin):
     arr_vtk.SetName('ImageScalars')
     white_image.GetPointData().AddArray(arr_vtk)
 
-    pol2stencil = vtk.vtkPolyDataToImageStencil()
-    pol2stencil.SetInputData(shape)
-    pol2stencil.SetOutputOrigin(origin)
-    pol2stencil.SetOutputSpacing(spacing)
-    pol2stencil.SetOutputWholeExtent(white_image.GetExtent())
+    pol_to_stencil = vtk.vtkPolyDataToImageStencil()
+    pol_to_stencil.SetInputData(shape)
+    pol_to_stencil.SetOutputOrigin(origin)
+    pol_to_stencil.SetOutputSpacing(spacing)
+    pol_to_stencil.SetOutputWholeExtent(white_image.GetExtent())
 
-    imagestencil = vtk.vtkImageStencil()
-    imagestencil.SetInputData(white_image)
-    imagestencil.SetStencilConnection(pol2stencil.GetOutputPort())
-    imagestencil.ReverseStencilOff()
-    imagestencil.SetBackgroundValue(0)
-    imagestencil.Update()
+    image_stencil = vtk.vtkImageStencil()
+    image_stencil.SetInputData(white_image)
+    image_stencil.SetStencilConnection(pol2stencil.GetOutputPort())
+    image_stencil.ReverseStencilOff()
+    image_stencil.SetBackgroundValue(0)
+    image_stencil.Update()
+
+    if write_path:
+        image_writer = vtk.vtkXMLImageDataWriter()
+        image_writer.SetInputConnection(imagestencil.GetOutputPort())
 
     return imagestencil
 
