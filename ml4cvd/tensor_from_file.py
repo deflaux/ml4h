@@ -462,6 +462,8 @@ TMAPS['ecg-bike-pretest-augmented'] = TensorMap('full', shape=(4096, 3), group='
                                                 tensor_from_file=_first_date_bike_pretest_augmented, dtype=DataSetType.FLOAT_ARRAY)
 TMAPS['ecg-bike-pretest-augmented-normalized'] = TensorMap('full', shape=(4096, 3), group='ecg_bike', validator=no_nans, cacheable=False,
                                                            normalization='zero_mean_std1', tensor_from_file=_first_date_bike_pretest_augmented, dtype=DataSetType.FLOAT_ARRAY)
+TMAPS['ecg-bike-pretest-augmented-channel-normalized'] = TensorMap('full', shape=(4096, 3), group='ecg_bike', validator=no_nans, cacheable=False,
+                                                                   normalization='zero_mean_std1_by_channel', tensor_from_file=_first_date_bike_pretest_augmented, dtype=DataSetType.FLOAT_ARRAY)
 TMAPS['ecg-bike-pretest-augmented-leadI'] = TensorMap('full', shape=(4096, 1), group='ecg_bike', validator=no_nans, cacheable=False,
                                                       normalization={'mean': 7, 'std': 31},
                                                       tensor_from_file=_build_pretest_one_lead(0), dtype=DataSetType.FLOAT_ARRAY)

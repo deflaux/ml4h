@@ -294,9 +294,21 @@ class TensorMap(object):
     def is_proportional_hazard(self):
         return self.group == 'proportional_hazard'
 
-    def zero_mean_std1(self, np_tensor):
+    @staticmethod
+    def zero_mean_std1(np_tensor):
         np_tensor -= np.mean(np_tensor)
         np_tensor /= np.std(np_tensor) + EPS
+        np_tensor = np.nan_to_num(np_tensor)
+        return np_tensor
+
+    @staticmethod
+    def zero_mean_std1_by_channel(np_tensor):
+        """
+        Each channel gets its own mean and std for normalization
+        """
+        axes = tuple(range(np_tensor.ndim - 1))
+        np_tensor -= np.mean(np_tensor, axis=axes)
+        np_tensor /= np.std(np_tensor, axis=axes) + EPS
         np_tensor = np.nan_to_num(np_tensor)
         return np_tensor
 
@@ -306,6 +318,8 @@ class TensorMap(object):
             return np_tensor
         if 'zero_mean_std1' in self.normalization:
             return self.zero_mean_std1(np_tensor)
+        if 'zero_mean_std1_by_channel' in self.normalization:
+            return self.zero_mean_std1_by_channel(np_tensor)
         if 'mean' in self.normalization and 'std' in self.normalization:
             not_missing_in_channel_map = False
             if self.channel_map is not None:
