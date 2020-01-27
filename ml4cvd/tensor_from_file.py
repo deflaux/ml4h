@@ -505,12 +505,6 @@ TMAPS['ecg-bike-resting-hr'] = TensorMap('resting_hr', group='ecg_bike', loss='l
 TMAPS['ecg-bike-age'] = TensorMap('age', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                   normalization={'mean': 0, 'std': 1},
                                   tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
-TMAPS['ecg-bike-weight'] = TensorMap('weight', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
-                                     normalization={'mean': 0, 'std': 1},
-                                     tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
-TMAPS['ecg-bike-height'] = TensorMap('height', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
-                                     normalization={'mean': 0, 'std': 1},
-                                     tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
 TMAPS['ecg-bike-protocol'] = TensorMap('protocol', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                        normalization={'mean': 0, 'std': 1},
                                        tensor_from_file=_ecg_protocol, dtype=DataSetType.CONTINUOUS)

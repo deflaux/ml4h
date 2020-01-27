@@ -16,8 +16,7 @@ from ml4cvd.defines import MRI_FRAMES, MRI_SEGMENTED, MRI_TO_SEGMENT, MRI_ZOOM_I
 
 np.set_printoptions(threshold=np.inf)
 
-CONTINUOUS_NEVER_ZERO = ['bike_max_hr', 'bike_resting_hr', 'ecg-bike-max-pred-hr-no0',
-                         '25006_Volume-of-grey-matter_2', '25021_Volume-of-amygdala-left_2',
+CONTINUOUS_NEVER_ZERO = ['25006_Volume-of-grey-matter_2', '25021_Volume-of-amygdala-left_2',
                          '25737_Discrepancy-between-dMRI-brain-image-and-T1-brain-image_2', '25738_Discrepancy-between-SWI-brain-image-and-T1-brain-image_2',
                          '25739_Discrepancy-between-rfMRI-brain-image-and-T1-brain-image_2', '25740_Discrepancy-between-tfMRI-brain-image-and-T1-brain-image_2',
                          '25736_Discrepancy-between-T2-FLAIR-brain-image-and-T1-brain-image_2',
@@ -276,12 +275,6 @@ class TensorMap(object):
 
     def is_ecg_categorical_interpretation(self):
         return self.group == 'ecg_categorical_interpretation'
-
-    def is_ecg_bike(self):
-        return self.group == 'ecg_bike'
-
-    def is_ecg_bike_recovery(self):
-        return self.group == 'ecg_bike_recovery'
 
     def is_ecg_text(self):
         return self.group == 'ecg_text'
@@ -785,14 +778,6 @@ def _default_tensor_from_file(tm, hd5, dependents={}):
             return tm.normalize_multi_field_continuous(continuous_data)
         else:
             return tm.normalize_multi_field_continuous_no_missing_channels(continuous_data, missing_array)
-    elif tm.is_ecg_bike():
-        tensor = np.array(hd5[tm.group][tm.name], dtype=np.float32)
-        return tm.normalize_and_validate(tensor)
-    elif tm.is_ecg_bike_recovery():
-        tensor = np.zeros(tm.shape)
-        for channel, idx in tm.channel_map.items():
-            tensor[:, idx] = hd5[tm.group][channel]
-        return tm.normalize_and_validate(tensor)
     elif tm.is_ecg_text():
         tensor = np.zeros(tm.shape, dtype=np.float32)
         dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.float32)
