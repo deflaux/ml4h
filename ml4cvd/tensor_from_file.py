@@ -445,6 +445,10 @@ def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     if final_recovery_hr < 30:
         raise ValueError('Min HR too low.')
 
+    if dependents is not None:  # TODO: is this check necessary?
+        dependents[TMAPS['ecg-bike-max-hr-qc']] = final_exercise_hr  # TODO: making these dependents is weird
+        dependents[TMAPS['ecg-bike-last-hr-qc']] = final_recovery_hr
+
     return tm.normalize_and_validate(np.array(final_exercise_hr - final_recovery_hr))
 
 
@@ -548,6 +552,19 @@ TMAPS['ecg-bike-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metri
                                   normalization={'mean': 25, 'std': 15},
                                   dtype=DataSetType.CONTINUOUS,
                                   tensor_from_file=_hrr_qc)
+TMAPS['ecg-bike-max-hr-qc'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                        normalization={'mean': 150, 'std': 30},  # TODO: get actual numbers
+                                        dtype=DataSetType.CONTINUOUS,
+                                        tensor_from_file=None)  # TODO: does this work if dependent?
+TMAPS['ecg-bike-last-hr-qc'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                         normalization={'mean': 70, 'std': 20},  # TODO: get actual numbers
+                                         dtype=DataSetType.CONTINUOUS,
+                                         tensor_from_file=None)  # TODO: does this work if dependent?
+TMAPS['ecg-bike-hrr-parented'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                           normalization={'mean': 25, 'std': 15},
+                                           dtype=DataSetType.CONTINUOUS,
+                                           tensor_from_file=_hrr_qc,
+                                           parents={TMAPS['ecg-bike-last-hr-qc'], TMAPS['ecg-bike-max-hr-qc']})
 TMAPS['ecg_rest_afib_hazard'] = TensorMap('atrial_fibrillation_or_flutter', group='proportional_hazard', shape=(100,),
                                           tensor_from_file=_survival_tensor('ecg_rest_date', 365 * 5), dtype=DataSetType.SERIES)
 TMAPS['ecg_rest_cad_hazard'] = TensorMap('coronary_artery_disease', group='proportional_hazard', shape=(100,),

@@ -154,6 +154,7 @@ class TensorMapArrayCache:
     def __init__(self, max_size, input_tms: List[TensorMap], output_tms: List[TensorMap], max_rows: int):
         self.max_size = max_size
         self.data = {}
+        # TODO: row_size calculated wrong for autoencoders
         self.row_size = sum(np.zeros(tm.shape, dtype=np.float32).nbytes for tm in input_tms + output_tms)
         self.nrows = min(int(max_size / self.row_size), max_rows)
         for tm in filter(lambda tm: tm.cacheable, input_tms):
@@ -161,7 +162,8 @@ class TensorMapArrayCache:
         for tm in filter(lambda tm: tm.cacheable, output_tms):
             if tm in input_tms:  # Useful for autoencoders
                 self.data[tm.output_name()] = self.data[tm.input_name()]
-            self.data[tm.output_name()] = np.zeros((self.nrows,) + tm.shape, dtype=np.float32)
+            else:
+                self.data[tm.output_name()] = np.zeros((self.nrows,) + tm.shape, dtype=np.float32)
         self.files_seen = Counter()  # name -> max position filled in cache
         self.key_to_index = {}  # file_path, name -> position in self.data
         self.hits = 0
