@@ -397,7 +397,7 @@ def _hrr_johanna_def(tm: TensorMap, hd5: h5py.File, dependents=None):
     return tm.normalize_and_validate(np.array([hrr]))
 
 
-def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
+def _get_hrr_measurements(hd5):
     # Phase lengths long enough?
     _check_phase_full_len(hd5, 'pretest')
     _check_phase_full_len(hd5, 'rest')
@@ -445,11 +445,22 @@ def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     if final_recovery_hr < 30:
         raise ValueError('Min HR too low.')
 
-    if dependents is not None:  # TODO: is this check necessary?
-        dependents[TMAPS['ecg-bike-max-hr-qc']] = final_exercise_hr  # TODO: making these dependents is weird
-        dependents[TMAPS['ecg-bike-last-hr-qc']] = final_recovery_hr
+    return final_exercise_hr, final_recovery_hr
 
+
+def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
+    final_exercise_hr, final_recovery_hr = _get_hrr_measurements(hd5)
     return tm.normalize_and_validate(np.array(final_exercise_hr - final_recovery_hr))
+
+
+def _max_hr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
+    final_exercise_hr, final_recovery_hr = _get_hrr_measurements(hd5)
+    return tm.normalize_and_validate(np.array(final_exercise_hr))
+
+
+def _recovery_hr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
+    final_exercise_hr, final_recovery_hr = _get_hrr_measurements(hd5)
+    return tm.normalize_and_validate(np.array(final_recovery_hr))
 
 
 TMAPS: Dict[str, TensorMap] = dict()
@@ -555,11 +566,11 @@ TMAPS['ecg-bike-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metri
 TMAPS['ecg-bike-max-hr-qc'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                         normalization={'mean': 150, 'std': 30},  # TODO: get actual numbers
                                         dtype=DataSetType.CONTINUOUS,
-                                        tensor_from_file=None)  # TODO: does this work if dependent?
+                                        tensor_from_file=_max_hr_qc)
 TMAPS['ecg-bike-last-hr-qc'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                          normalization={'mean': 70, 'std': 20},  # TODO: get actual numbers
                                          dtype=DataSetType.CONTINUOUS,
-                                         tensor_from_file=None)  # TODO: does this work if dependent?
+                                         tensor_from_file=_recovery_hr_qc)
 TMAPS['ecg-bike-hrr-parented'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                            normalization={'mean': 25, 'std': 15},
                                            dtype=DataSetType.CONTINUOUS,
