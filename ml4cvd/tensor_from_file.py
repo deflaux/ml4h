@@ -564,18 +564,20 @@ TMAPS['ecg-bike-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metri
                                   dtype=DataSetType.CONTINUOUS,
                                   tensor_from_file=_hrr_qc)
 TMAPS['ecg-bike-max-hr-qc'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
-                                        normalization={'mean': 150, 'std': 30},  # TODO: get actual numbers
+                                        normalization={'mean': 110, 'std': 15},  # TODO: get actual numbers
                                         dtype=DataSetType.CONTINUOUS,
                                         tensor_from_file=_max_hr_qc)
-TMAPS['ecg-bike-last-hr-qc'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
-                                         normalization={'mean': 70, 'std': 20},  # TODO: get actual numbers
+TMAPS['ecg-bike-last-hr-qc'] = TensorMap('last_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                         normalization={'mean': 85, 'std': 20},  # TODO: get actual numbers
                                          dtype=DataSetType.CONTINUOUS,
                                          tensor_from_file=_recovery_hr_qc)
 TMAPS['ecg-bike-hrr-parented'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                            normalization={'mean': 25, 'std': 15},
                                            dtype=DataSetType.CONTINUOUS,
                                            tensor_from_file=_hrr_qc,
-                                           parents={TMAPS['ecg-bike-last-hr-qc'], TMAPS['ecg-bike-max-hr-qc']})
+                                           parents=[TMAPS['ecg-bike-last-hr-qc'], TMAPS['ecg-bike-max-hr-qc']])
+
+# REST ECG HAZARDS
 TMAPS['ecg_rest_afib_hazard'] = TensorMap('atrial_fibrillation_or_flutter', group='proportional_hazard', shape=(100,),
                                           tensor_from_file=_survival_tensor('ecg_rest_date', 365 * 5), dtype=DataSetType.SERIES)
 TMAPS['ecg_rest_cad_hazard'] = TensorMap('coronary_artery_disease', group='proportional_hazard', shape=(100,),

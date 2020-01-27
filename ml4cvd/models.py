@@ -402,8 +402,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap] = None,
 
     while len(output_tensor_maps_to_process) > 0:
         tm = output_tensor_maps_to_process.pop(0)
-
-        if not tm.parents is None and any(not p in output_predictions for p in tm.parents):
+        if tm.parents is not None and not set(tm.parents) <= set(output_predictions.keys()):
             output_tensor_maps_to_process.append(tm)
             continue
 
@@ -426,15 +425,15 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap] = None,
                     last_conv = conv_layer(filters=all_filters[-(1 + i)], kernel_size=kernel, padding=padding)(last_conv)
 
             conv_label = conv_layer(tm.shape[channel_axis], _one_by_n_kernel(len(tm.shape)), activation="linear")(last_conv)
-            output_predictions[tm.output_name()] = Activation(tm.activation, name=tm.output_name())(conv_label)
+            output_predictions[tm] = Activation(tm.activation, name=tm.output_name())(conv_label)
         elif tm.parents is not None:
-            parented_activation = concatenate([multimodal_activation] + [output_predictions[p.output_name()] for p in tm.parents])
+            parented_activation = concatenate([multimodal_activation] + [output_predictions[p] for p in tm.parents])
             parented_activation = _dense_layer(parented_activation, layers, tm.annotation_units, activation, conv_normalize)
-            output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(parented_activation)
+            output_predictions[tm] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(parented_activation)
         elif tm.is_categorical_any():
-            output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation='softmax', name=tm.output_name())(multimodal_activation)
+            output_predictions[tm] = Dense(units=tm.shape[0], activation='softmax', name=tm.output_name())(multimodal_activation)
         else:
-            output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(multimodal_activation)
+            output_predictions[tm] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(multimodal_activation)
 
     m = Model(inputs=input_tensors, outputs=list(output_predictions.values()))
     m.summary()
