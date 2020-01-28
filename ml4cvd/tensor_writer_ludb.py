@@ -103,20 +103,20 @@ def _write_tensors_from_wfdb(xml_folder, hd5, sample_id, stats):
         if '<age>' in comment:
             hd5.create_dataset('continuous' + HD5_GROUP_CHAR + 'age', data=int(comment.split()[-1]), dtype=np.int)
         if '<sex>' in comment:
-            hd5.create_dataset('categorical' + HD5_GROUP_CHAR + 'sex', data=str(comment.split()[-1]), dtype=np.str)
+            hd5.create_dataset('categorical' + HD5_GROUP_CHAR + 'sex', data=comment.split()[-1])
         if '<diagnoses>' in comment:
             if 'ecg_rest_text' in hd5:
                 continue
             diagnosis_text = []
-            for d in diagnosis_comments[i:]:
-                diagnosis_text.append(d.text.replace(',', '').replace('*', '').replace('&', 'and').replace('  ', ' '))
+            for d in diagnosis_comments[i+1:]:
+                diagnosis_text.append(d.lower().replace('.', '').replace(',', '').replace('*', '').replace('&', 'and').replace('  ', ' '))
             diagnosis_str = ' '.join(diagnosis_text)
             hd5.create_dataset('ecg_rest_text', (1,), data=diagnosis_str, dtype=h5py.special_dtype(vlen=str))
 
     lead_data = record.p_signal
     for i, sig in enumerate(record.sig_name):
         dataset_name = 'strip_' + str(sig)
-        hd5.create_dataset(rest_group + dataset_name, data=lead_data[i, :], compression='gzip', dtype=np.float)
+        hd5.create_dataset(rest_group + dataset_name, data=lead_data[:, i], compression='gzip', dtype=np.float)
         stats[dataset_name] += 1
 
     for i, sig in enumerate(record.sig_name):

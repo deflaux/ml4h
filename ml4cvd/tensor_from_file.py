@@ -18,6 +18,13 @@ from ml4cvd.defines import DataSetType, EPS, MRI_TO_SEGMENT, MRI_SEGMENTED, MRI_
 from ml4cvd.defines import MRI_PIXEL_WIDTH, MRI_PIXEL_HEIGHT, MRI_SLICE_THICKNESS, MRI_PATIENT_ORIENTATION, MRI_PATIENT_POSITION, MRI_FRAMES
 
 
+ECG_REST_LUDB_LEADS =  {'i': 0, 'ii': 1, 'iii': 2, 'v1': 3, 'v2': 4, 'v3': 5,
+                        'v4': 6, 'v5': 7, 'v6': 8, 'avf': 9, 'avl': 10, 'avr': 11}
+
+ECG_REST_LUDB_LEADS =  {'i': 0, 'ii': 1, 'v1': 2, 'v2': 3, 'v3': 4, 'v4': 5, 'v5': 6, 'v6': 7}
+
+
+
 """
 For now, all we will map `group` in TensorMap to `source` in tensor_path and `name` to `name`
 """
@@ -427,6 +434,83 @@ TMAPS['ecg_median_1lead'] = TensorMap('median', group='ecg_rest', shape=(600, 1)
 
 TMAPS['ecg_rest_1lead'] = TensorMap('strip', shape=(600, 8), group='ecg_rest', channel_map={'lead': 0}, tensor_from_file=_make_ecg_rest(),
                                     dependent_map=TMAPS['ecg_median_1lead'])
+
+
+def _make_ecg_segmentation(onehot=True, population_normalize=None):
+    def _make_ecg_segmentation_from_file(tm, hd5, dependents={}):
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.int)
+        for channel in tm.channel_map:
+            annotation = np.array(hd5[f'ecg_rest_annotation/annotation_{channel}'])
+            data = np.array(hd5[f'ecg_rest/strip_{channel}'])
+            parsed_data = np.zeros(tm.shape[0])
+            parsed_range = annotation[-1] - annotation[0]
+            parsed_data[:parsed_range] = data[annotation[0]:annotation[-1]]
+            segmented_data = np.zeros(tm.shape[0], dtype=np.int)
+            i = 1
+            for ia in range(len(annotation)-1):
+                segmented_data[annotation[ia]-annotation[0]:annotation[ia+1]-annotation[0]] = i
+                i += 1
+                if i == len(tm.dependent_map.channel_map)+1:
+                    i = 1
+            tensor[:, ECG_REST_LUDB_LEADS[channel], 0] = parsed_data
+            if len(tm.dependent_map.channel_map) == 7:
+                coarse_maps = {2: 1, 3: 2, 4: 3, 5: 3, 6: 4, 7: 5, 8: 5, 9: 6}
+                for coarse_map in sorted(coarse_maps.keys()):
+                    segmented_data[segmented_data == coarse_map] = coarse_maps[coarse_map]
+            if onehot:
+                    dependents[tm.dependent_map][:, ECG_REST_LUDB_LEADS[channel], :] = to_categorical(segmented_data, len(tm.dependent_map.channel_map))
+            else:
+                dependents[tm.dependent_map][:, ECG_REST_LUDB_LEADS[channel]] = segmented_data
+            if population_normalize is None:
+                tensor = tm.zero_mean_std1(tensor)
+            else:
+                tensor /= population_normalize
+        return tensor
+    return _make_ecg_segmentation_from_file
+
+
+TMAPS['ecg_rest_ludb_segmentation_weighted'] = TensorMap('ecg_rest_ludb_segmentation', group='categorical',
+                                                         loss=weighted_crossentropy([0.13360578, 0.99299064,
+                                                                                     0.7242672 , 0.44307756, 0.432614,
+                                                                                     0.55295341, 0.13033611, 0.90656995,
+                                                                                     0.99999999, 0.78791249],
+                                                                                    'ecg_rest_ludb_segmentation'),
+                                                         dtype=DataSetType.CATEGORICAL,
+                                                         shape=(5000, 8),
+                                                         channel_map={'background': 0, 'qr': 1, 'rs': 2, 'st1': 3, 't1t2': 4, 't2t3': 5,
+                                                                      't3p1': 6, 'p1p2': 7, 'p2p3': 8, 'p3q': 9})
+
+TMAPS['ecg_rest_ludb_coarse_segmentation'] = TensorMap('ecg_rest_ludb_coarse_segmentation', group='categorical',
+                                                       loss='categorical_crossentropy',
+                                                       dtype=DataSetType.CATEGORICAL,
+                                                       shape=(5000, 8),
+                                                       channel_map={'background': 0, 'qrs': 1, 'st': 2, 't': 3, 'tp': 4,
+                                                                    'p': 5, 'pq': 6},
+                                                       tensor_from_file=_make_ecg_segmentation())
+
+TMAPS['ecg_rest_ludb'] = TensorMap('ecg_rest_ludb', group='ecg_rest_ludb', channel_map=ECG_REST_LUDB_LEADS,
+                                   shape = (5000, 8, 1),
+                                   dtype=DataSetType.FLOAT_ARRAY,
+                                   dependent_map=TMAPS['ecg_rest_ludb_coarse_segmentation'],
+                                   tensor_from_file=_make_ecg_segmentation(onehot=False))
+
+
+TMAPS['ecg_rest_ludb_coarse_segmentation'] = TensorMap('ecg_rest_ludb_coarse_segmentation', group='categorical',
+                                                       loss='categorical_crossentropy',
+                                                       dtype=DataSetType.CATEGORICAL,
+                                                       shape=(5000, 8, 7),
+                                                       channel_map={'background': 0, 'qrs': 1, 'st': 2, 't': 3, 'tp': 4,
+                                                                    'p': 5, 'pq': 6},
+                                                       tensor_from_file=_make_ecg_segmentation())
+
+TMAPS['ecg_rest_ludb_stats'] = TensorMap('ecg_rest_ludb_segmentation', group='categorical',
+                                         loss='categorical_crossentropy',
+                                         dtype=DataSetType.CATEGORICAL,
+                                         shape=(5000, 8),
+                                         channel_map={'background': 0, 'qr': 1, 'rs': 2, 'st1': 3, 't1t2': 4, 't2t3': 5,
+                                                      't3p1': 6, 'p1p2': 7, 'p2p3': 8, 'p3q': 9},
+                                         tensor_from_file=_make_ecg_segmentation(onehot=False))
 
 
 def _get_lead_cm(length):
