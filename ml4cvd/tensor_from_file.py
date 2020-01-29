@@ -543,6 +543,35 @@ TMAPS['ecg_rest_ludb'] = TensorMap('ecg_rest_ludb', group='ecg_rest_ludb', chann
                                    tensor_from_file=_make_ecg_segmentation(onehot=True, augment_roll=True, augment_warp_wave=True, augment_warp_time=False))
 
 
+def _make_detect_lead(population_normalize=None):
+    def detect_lead_from_file(tm, hd5, dependents={}):
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, np.float32)
+        key_choices = [k for k in hd5[tm.group] if tm.name in k]        
+        lead_idx = np.random.choice(key_choices)        
+        tensor[:] = np.reshape(hd5[tm.group][lead_idx][: tensor.shape[0] * tensor.shape[1]], tensor.shape, order='F')
+        dependents[tm.dependent_map][:] = to_categorical(tm.channel_map[lead_idx], len(tm.channel_map))    
+        if population_normalize is None:
+            tensor = tm.zero_mean_std1(tensor)
+        else:
+            tensor /= population_normalize
+        return tensor
+    return detect_lead_from_file
+
+
+TMAPS['ecg_lead_detection'] = TensorMap('ecg_lead_detection', group='categorical', loss='categorical_crossentropy',
+                                        dtype=DataSetType.CATEGORICAL,
+                                        cacheable=False,
+                                        channel_map=ECG_REST_LEADS)
+
+TMAPS['ecg_rest_random_lead'] = TensorMap('strip', group='ecg_rest', channel_map=ECG_REST_LEADS, shape=(5000,1),
+                                          dtype=DataSetType.FLOAT_ARRAY,                                          
+                                          dependent_map=TMAPS['ecg_lead_detection'],
+                                          cacheable=False,
+                                          tensor_from_file=_make_detect_lead())
+
+
+
 def _get_lead_cm(length):
     lead_cm = {}
     lead_weights = []
