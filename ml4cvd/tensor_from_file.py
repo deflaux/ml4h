@@ -540,7 +540,7 @@ TMAPS['ecg_rest_ludb'] = TensorMap('ecg_rest_ludb', group='ecg_rest_ludb', chann
                                    dtype=DataSetType.FLOAT_ARRAY,
                                    cacheable=False,
                                    dependent_map=TMAPS['ecg_rest_ludb_segmentation_coarse'],
-                                   tensor_from_file=_make_ecg_segmentation(onehot=True, augment_roll=False, augment_warp_wave=False, augment_warp_time=False))
+                                   tensor_from_file=_make_ecg_segmentation(onehot=True, augment_roll=True, augment_warp_wave=True, augment_warp_time=False))
 
 
 def _get_lead_cm(length):
