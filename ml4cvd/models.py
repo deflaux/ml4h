@@ -435,7 +435,7 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap] = None,
         else:
             output_predictions[tm] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(multimodal_activation)
 
-    m = Model(inputs=input_tensors, outputs=list(output_predictions.values()))
+    m = Model(inputs=input_tensors, outputs=[output_predictions[tm] for tm in tensor_maps_out])
     m.summary()
 
     model_layers = kwargs.get('model_layers', False)
