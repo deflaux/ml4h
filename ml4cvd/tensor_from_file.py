@@ -23,6 +23,10 @@ ECG_REST_LUDB_LEADS =  {'i': 0, 'ii': 1, 'iii': 2, 'v1': 3, 'v2': 4, 'v3': 5,
 
 ECG_REST_LUDB_LEADS =  {'i': 0, 'ii': 1, 'v1': 2, 'v2': 3, 'v3': 4, 'v4': 5, 'v5': 6, 'v6': 7}
 
+ECG_REST_LEADS = {'strip_I': 0, 'strip_II': 1, 'strip_V1': 2, 'strip_V2': 3, 'strip_V3': 4,
+                  'strip_V4': 5, 'strip_V5': 6, 'strip_V6': 7}
+
+
 
 
 """
@@ -399,6 +403,9 @@ def _make_ecg_rest(population_normalize: float = None):
                         tensor[:, tm.channel_map[k]] = hd5[tm.group][k]
         if population_normalize is None:
             tensor = tm.zero_mean_std1(tensor)
+        elif 'by_lead' in population_normalize :
+            for i in range(tensor.shape[1]):
+                tensor[:, i] = tm.zero_mean_std1(tensor[:, i])
         else:
             tensor /= population_normalize
         return tensor
@@ -410,7 +417,7 @@ TMAPS['ecg_rest_raw'] = TensorMap('ecg_rest_raw', shape=(5000, 12), group='ecg_r
 TMAPS['ecg_rest_raw_100'] = TensorMap('ecg_rest_raw_100', shape=(5000, 12), group='ecg_rest', tensor_from_file=_make_ecg_rest(population_normalize=100.0),
                                       channel_map=ECG_REST_LEADS)
 
-TMAPS['ecg_rest'] = TensorMap('strip', shape=(5000, 12), group='ecg_rest', tensor_from_file=_make_ecg_rest(),
+TMAPS['ecg_rest'] = TensorMap('strip', shape=(5000, 8), group='ecg_rest', tensor_from_file=_make_ecg_rest('by_lead'),
                               channel_map=ECG_REST_LEADS)
 
 TMAPS['ecg_rest_fft'] = TensorMap('ecg_rest_fft', shape=(5000, 12), group='ecg_rest', tensor_from_file=_make_ecg_rest(),
@@ -466,7 +473,17 @@ def _augment_roll_ecg(ecg_in, ecg_out):
     return shifted_ecg_in, shifted_ecg_out
 
 
-def _make_ecg_segmentation(onehot=True, population_normalize=None, augment_roll=False, augment_warp_time=False, augment_warp_wave=False):
+def _augment_scale_wave(ecg_in, ecg_out):
+    warped_ecg_in = np.zeros_like(ecg_in)
+    for j in range(ecg_in.shape[1]):
+        scale = np.random.rand()*2.0
+        shift = np.random.rand()*4.0*(np.random.rand()-0.5)
+        warped_ecg_in[:, j, 0] = scale*ecg_in[:, j, 0] + shift
+        
+    return warped_ecg_in, ecg_out
+    
+
+def _make_ecg_segmentation(onehot=True, population_normalize=None, augment_roll=False, augment_warp_time=False, augment_warp_wave=False, augment_scale_wave=False):
     def _make_ecg_segmentation_from_file(tm, hd5, dependents={}):
         tensor = np.zeros(tm.shape, dtype=np.float32)
         dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.int)
@@ -505,10 +522,17 @@ def _make_ecg_segmentation(onehot=True, population_normalize=None, augment_roll=
 
         if augment_warp_wave:
             augmented_in, augmented_out = _augment_warp_ecg_wave(tensor, dependents[tm.dependent_map])
-            tensor[:] = augmented_in        
+            tensor[:] = augmented_in
+
+        if augment_scale_wave:
+            augmented_in, augmented_out = _augment_scale_wave(tensor, dependents[tm.dependent_map])
+            tensor[:] = augmented_in                
                     
         if population_normalize is None:
             tensor = tm.zero_mean_std1(tensor)
+        elif 'by_lead' in population_normalize :
+            for i in range(tensor.shape[1]):
+                tensor[:, i, 0] = tm.zero_mean_std1(tensor[:, i, 0])
         else:
             tensor /= population_normalize
         return tensor
@@ -540,7 +564,7 @@ TMAPS['ecg_rest_ludb'] = TensorMap('ecg_rest_ludb', group='ecg_rest_ludb', chann
                                    dtype=DataSetType.FLOAT_ARRAY,
                                    cacheable=False,
                                    dependent_map=TMAPS['ecg_rest_ludb_segmentation_coarse'],
-                                   tensor_from_file=_make_ecg_segmentation(onehot=True, augment_roll=True, augment_warp_wave=True, augment_warp_time=False))
+                                   tensor_from_file=_make_ecg_segmentation(onehot=True, augment_roll=True, augment_scale_wave=True, population_normalize='by_lead'))
 
 
 def _make_detect_lead(population_normalize=None):
@@ -568,7 +592,7 @@ TMAPS['ecg_rest_random_lead'] = TensorMap('strip', group='ecg_rest', channel_map
                                           dtype=DataSetType.FLOAT_ARRAY,                                          
                                           dependent_map=TMAPS['ecg_lead_detection'],
                                           cacheable=False,
-                                          tensor_from_file=_make_detect_lead())
+                                          tensor_from_file=_make_detect_lead(3000.0))
 
 
 
