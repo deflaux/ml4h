@@ -244,6 +244,17 @@ def _get_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int], slice]
     return _fail_nan(tensor)
 
 
+ECG_ALIGN_OFFSET = 800
+
+
+def _get_aligned_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int], slice]):
+    ecg = _get_bike_ecg(hd5, tm, start - ECG_ALIGN_OFFSET, leads)
+    _, _, rpeaks, _, _, _, _ = biosppy.signals.ecg(ecg[:ECG_ALIGN_OFFSET, 0])
+    first_peak = rpeaks[0]
+    ecg = ecg[first_peak: first_peak + tm.shape[0]]
+    return _fail_nan(ecg)
+
+
 # ECG AUGMENTATIONS #
 def _warp_ecg(ecg):
     i = np.arange(ecg.shape[0])
@@ -309,6 +320,17 @@ def _bike_ecg_augmented(augmentations: [Callable], leads: Union[List[int], slice
     return _tff
 
 
+def _bike_ecg_aligned_augmented(augmentations: [Callable], leads: Union[List[int], slice]):
+    def _tff(tm: TensorMap, hd5: h5py.File, dependents=None):
+        pretest_len = 15 * 500
+        start = np.random.randint(ECG_ALIGN_OFFSET, pretest_len - tm.shape[0])
+        ecg = _get_aligned_bike_ecg(hd5, tm, start, leads)
+        for func in augmentations:
+            ecg = func(ecg)
+        return tm.normalize_and_validate(ecg)
+    return _tff
+
+
 TMAPS: Dict[str, TensorMap] = dict()
 
 
@@ -328,9 +350,15 @@ for i, aug in enumerate(ECG_AUGMENTATIONS):
     TMAPS[name] = TensorMap('full', shape=(2048, 1), group='ecg_bike', dtype=DataSetType.FLOAT_ARRAY,
                             validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False,
                             tensor_from_file=_bike_ecg_augmented(ECG_AUGMENTATIONS[:i + 1], [0]))
+del name
+TMAPS['ecg_bike_aligned_shifted_warped_noised'] = TensorMap(
+    'full', shape=(2048, 1), group='ecg_bike', dtype=DataSetType.FLOAT_ARRAY,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False,
+    tensor_from_file=_bike_ecg_aligned_augmented([_warp_ecg, _rand_add_noise], [0]),)
 
 
 def _ecg_protocol_string(hd5):
+    # TODO: MAKE A CATEGORICAL VARIABLE TO USE AS INPUT
     dates = _all_dates(hd5, 'ecg_bike', DataSetType.STRING, 'protocol')
     if not dates:
         raise ValueError('No protocol values available.')
