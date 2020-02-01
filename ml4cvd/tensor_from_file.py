@@ -244,12 +244,27 @@ def _get_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int], slice]
     return _fail_nan(tensor)
 
 
+def _get_r_peaks(ecg):
+    sampling_rate = 500
+    order = int(0.3 * sampling_rate)
+    filtered, _, _ = biosppy.signals.tools.filter_signal(
+        signal=ecg,
+        ftype='FIR',
+        band='bandpass',
+        order=order,
+        frequency=[3, 45],
+        sampling_rate=sampling_rate
+    )
+    rpeaks, = biosppy.signals.ecg.hamilton_segmenter(signal=filtered, sampling_rate=sampling_rate)
+    return rpeaks
+
+
 ECG_ALIGN_OFFSET = 800
 
 
 def _get_aligned_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int], slice]):
     ecg = _get_bike_ecg(hd5, tm, start - ECG_ALIGN_OFFSET, leads)
-    _, _, rpeaks, _, _, _, _ = biosppy.signals.ecg(ecg[:ECG_ALIGN_OFFSET, 0])
+    rpeaks = _get_r_peaks(ecg)
     first_peak = rpeaks[0]
     ecg = ecg[first_peak: first_peak + tm.shape[0]]
     return _fail_nan(ecg)
