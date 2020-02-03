@@ -396,10 +396,12 @@ def _ecg_protocol_string(hd5):
 
 
 def _ecg_protocol(tm: TensorMap, hd5: h5py.File, dependents=None):
-    proto_to_int = {f'F{i * 10}': i - 3 for i in range(3, 14)}
-    proto_to_int.update({f'M{i * 10}': i - 4 + 100 for i in range(4, 15)})
-    proto = _ecg_protocol_string(hd5)
-    return tm.normalize_and_validate(np.array([proto_to_int[proto]], dtype=np.float32))
+    """
+    There are 22 possible protocols, M40 - M150, F30 - F140
+    """
+    out = np.zeros(tm.shape)  # TODO: this should all be default categorical behaviour
+    out[tm.channel_map[_ecg_protocol_string(hd5)]] = 1
+    return tm.normalize_and_validate(out)
 
 
 def _regress_hr_exercise_recovery(hd5: h5py.File):
@@ -519,9 +521,12 @@ TMAPS['ecg-bike-resting-hr'] = TensorMap('resting_hr', group='ecg_bike', loss='l
 TMAPS['ecg-bike-age'] = TensorMap('age', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                   normalization={'mean': 0, 'std': 1},
                                   tensor_from_file=normalized_first_date, dtype=DataSetType.CONTINUOUS)
-TMAPS['ecg-bike-protocol'] = TensorMap('protocol', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
-                                       normalization={'mean': 0, 'std': 1},
-                                       tensor_from_file=_ecg_protocol, dtype=DataSetType.CONTINUOUS)
+TMAPS['ecg-bike-protocol'] = TensorMap('protocol', group='ecg_bike', shape=(22,), tensor_from_file=_ecg_protocol,
+                                       dtype=DataSetType.CATEGORICAL,
+                                       channel_map={
+                                           **{f'M{i[1]}': i[0] for i in enumerate(range(40, 150, 10))},
+                                           **{f'F{i[1]}': i[0] + 11 for i in enumerate(range(30, 140, 10))},
+                                       })
 # trend measurements
 TMAPS['ecg-bike-trend-hr'] = TensorMap('trend_heartrate', shape=(120, 1), group='ecg_bike',
                                        normalization={'mean': 0, 'std': 1},
