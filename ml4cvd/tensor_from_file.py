@@ -424,7 +424,7 @@ TMAPS['ecg_rest_raw_100'] = TensorMap('ecg_rest_raw_100', shape=(5000, 12), grou
                                       channel_map=ECG_REST_LEADS)
 
 TMAPS['ecg_rest'] = TensorMap('strip', shape=(5000, 8), group='ecg_rest', tensor_from_file=_make_ecg_rest(),
-                              channel_map=ECG_REST_LEADS)
+                              channel_map=ECG_REST_LEADS, loss='logcosh')
 
 TMAPS['ecg_rest_masked'] = TensorMap('masked_strip', shape=(5000, 8), group='ecg_rest', tensor_from_file=_make_ecg_rest(mask_samples=5),
                                      cacheable=False, channel_map=ECG_REST_LEADS)
