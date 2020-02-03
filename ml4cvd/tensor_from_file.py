@@ -245,10 +245,11 @@ def _get_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int], slice]
 
 
 def _get_r_peaks(ecg):
-    sampling_rate = 500
+    downsample = 2
+    sampling_rate = 500 / downsample
     order = int(0.1 * sampling_rate)
     filtered, _, _ = biosppy.signals.tools.filter_signal(
-        signal=ecg,
+            signal=ecg[::downsample],
         ftype='FIR',
         band='bandpass',
         order=order,
@@ -256,16 +257,19 @@ def _get_r_peaks(ecg):
         sampling_rate=sampling_rate
     )
     rpeaks, = biosppy.signals.ecg.hamilton_segmenter(signal=filtered, sampling_rate=sampling_rate)
-    return rpeaks
+    return np.array(rpeaks) * downsample
 
 
-ECG_ALIGN_OFFSET = 800
+def _simple_r_peak(ecg):
+    return np.argmax(ecg)
+
+
+ECG_ALIGN_OFFSET = 800  # Should see at least one beat in ECG_ALIGN_OFFSET / 500 seconds
 
 
 def _get_aligned_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int], slice]):
     ecg = _get_bike_ecg(hd5, tm, start - ECG_ALIGN_OFFSET, leads, stop=tm.shape[0] + start)
-    rpeaks = _get_r_peaks(ecg[:ECG_ALIGN_OFFSET, 0])
-    first_peak = rpeaks[0]
+    first_peak = _simple_r_peak(ecg[:ECG_ALIGN_OFFSET, 0])
     ecg = ecg[first_peak: first_peak + tm.shape[0]]
     return _fail_nan(ecg)
 
