@@ -406,7 +406,7 @@ def _make_ecg_rest(population_normalize: float = None, mask_samples=0, mask_widt
                 masks = np.random.choice(tm.shape[0], mask_samples)
                 for mask in masks:
                     end_idx = mask + mask_width if mask + mask_width < tm.shape[0] else tm.shape[0]
-                    tensor[mask:end_idx, :] = 0.0
+                    tensor[mask:end_idx, :] = tensor[mask, :] + (tensor[end_idx, :]-tensor[mask, :])*np.linspace(0.0, 1.0, end_idx-mask)
         if population_normalize is None:
             tensor = tm.zero_mean_std1(tensor)
         elif 'by_lead' in population_normalize :
