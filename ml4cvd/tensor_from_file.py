@@ -5,6 +5,7 @@ import os
 import csv
 import vtk
 import h5py
+import random
 import logging
 import numpy as np
 import vtk.util.numpy_support
@@ -378,7 +379,7 @@ TMAPS['enroll_diabetes2_hazard'] = TensorMap('diabetes_type_2', group='proportio
                                              tensor_from_file=_survival_tensor('dates/enroll_date', 365 * 10), dtype=DataSetType.SERIES)
 
 
-def _make_ecg_rest(population_normalize: float = None):
+def _make_ecg_rest(population_normalize: float = None, mask_samples=0, mask_width=100):
     def ecg_rest_from_file(tm, hd5, dependents={}):
         tensor = np.zeros(tm.shape, dtype=np.float32)
         if tm.dependent_map is not None:
@@ -401,6 +402,11 @@ def _make_ecg_rest(population_normalize: float = None):
                         tensor[:, tm.channel_map[k]] = np.log(np.abs(np.fft.fft(hd5[tm.group][k])) + EPS)
                     else:
                         tensor[:, tm.channel_map[k]] = hd5[tm.group][k]
+            if mask_samples > 0:
+                masks = np.random.choice(tm.shape[0], mask_samples)
+                for mask in masks:
+                    end_idx = mask + mask_width if mask + mask_width < tm.shape[0] else tm.shape[0]
+                    tensor[mask:end_idx, :] = 0.0
         if population_normalize is None:
             tensor = tm.zero_mean_std1(tensor)
         elif 'by_lead' in population_normalize :
@@ -417,8 +423,11 @@ TMAPS['ecg_rest_raw'] = TensorMap('ecg_rest_raw', shape=(5000, 12), group='ecg_r
 TMAPS['ecg_rest_raw_100'] = TensorMap('ecg_rest_raw_100', shape=(5000, 12), group='ecg_rest', tensor_from_file=_make_ecg_rest(population_normalize=100.0),
                                       channel_map=ECG_REST_LEADS)
 
-TMAPS['ecg_rest'] = TensorMap('strip', shape=(5000, 8), group='ecg_rest', tensor_from_file=_make_ecg_rest('by_lead'),
+TMAPS['ecg_rest'] = TensorMap('strip', shape=(5000, 8), group='ecg_rest', tensor_from_file=_make_ecg_rest(),
                               channel_map=ECG_REST_LEADS)
+
+TMAPS['ecg_rest_masked'] = TensorMap('masked_strip', shape=(5000, 8), group='ecg_rest', tensor_from_file=_make_ecg_rest(mask_samples=5),
+                                     cacheable=False, channel_map=ECG_REST_LEADS)
 
 TMAPS['ecg_rest_fft'] = TensorMap('ecg_rest_fft', shape=(5000, 12), group='ecg_rest', tensor_from_file=_make_ecg_rest(),
                                   channel_map=ECG_REST_LEADS)
@@ -441,6 +450,14 @@ TMAPS['ecg_median_1lead'] = TensorMap('median', group='ecg_rest', shape=(600, 1)
 
 TMAPS['ecg_rest_1lead'] = TensorMap('strip', shape=(600, 8), group='ecg_rest', channel_map={'lead': 0}, tensor_from_file=_make_ecg_rest(),
                                     dependent_map=TMAPS['ecg_median_1lead'])
+
+
+def _make_ecg_rest_saliency(population_normalize=None):
+    def ecg_rest_saliency_from_file(tm, hd5, dependents={}):
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        saliency = np.array(hd5[f'{tm.group}/continuous/'])
+        
+        
 
 
 def _augment_warp_ecg_time(ecg_in, ecg_out):
@@ -483,32 +500,45 @@ def _augment_scale_wave(ecg_in, ecg_out):
     return warped_ecg_in, ecg_out
     
 
-def _make_ecg_segmentation(onehot=True, population_normalize=None, augment_roll=False, augment_warp_time=False, augment_warp_wave=False, augment_scale_wave=False):
+def _make_ecg_segmentation(onehot=True, population_normalize=None, augment_roll=False, augment_warp_time=False,
+                           augment_warp_wave=False, augment_scale_wave=False, nleads=8):
     def _make_ecg_segmentation_from_file(tm, hd5, dependents={}):
         tensor = np.zeros(tm.shape, dtype=np.float32)
         dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.int)
+        cnt = 0
         for channel in tm.channel_map:
             annotation = np.array(hd5[f'ecg_rest_annotation/annotation_{channel}'])
             data = np.array(hd5[f'ecg_rest/strip_{channel}'])
-            parsed_data = np.zeros(tm.shape[0])
+            parsed_data = np.zeros(data.shape)
             parsed_range = annotation[-1] - annotation[0]
             parsed_data[:parsed_range] = data[annotation[0]:annotation[-1]]
-            segmented_data = np.zeros(tm.shape[0], dtype=np.int)
+            segmented_data = np.zeros(data.shape[0], dtype=np.int)
             i = 1
             for ia in range(len(annotation)-1):
                 segmented_data[annotation[ia]-annotation[0]:annotation[ia+1]-annotation[0]] = i
                 i += 1
                 if i == 10:
                     i = 1
-            tensor[:, ECG_REST_LUDB_LEADS[channel], 0] = parsed_data
+            start_idx = 0
+            end_idx = tm.shape[0]
+            if parsed_range > tm.shape[0]:
+                start_idx = np.random.randint(data.shape[0]-tm.shape[0]-annotation[0])+annotation[0]
+                end_idx = start_idx + tm.shape[0]
+            tensor[:, tm.channel_map[channel], 0] = parsed_data[start_idx:end_idx]
             if len(tm.dependent_map.channel_map) == 7:
                 coarse_maps = {2: 1, 3: 2, 4: 3, 5: 3, 6: 4, 7: 5, 8: 5, 9: 6}
                 for coarse_map in sorted(coarse_maps.keys()):
                     segmented_data[segmented_data == coarse_map] = coarse_maps[coarse_map]
             if onehot:
-                    dependents[tm.dependent_map][:, ECG_REST_LUDB_LEADS[channel], :] = to_categorical(segmented_data, len(tm.dependent_map.channel_map))
+                if tm.dependent_map.shape[1] > 1:
+                    dependents[tm.dependent_map][:, ECG_REST_LUDB_LEADS[channel], :] = to_categorical(segmented_data[start_idx:end_idx], len(tm.dependent_map.channel_map))
+                else:
+                    dependents[tm.dependent_map][:, 0, :] = to_categorical(segmented_data[start_idx:end_idx], len(tm.dependent_map.channel_map))
             else:
-                dependents[tm.dependent_map][:, ECG_REST_LUDB_LEADS[channel]] = segmented_data
+                if tm.dependent_map.shape[1] > 1:
+                    dependents[tm.dependent_map][:, ECG_REST_LUDB_LEADS[channel]] = segmented_data[start_idx:end_idx]
+                else:
+                    dependents[tm.dependent_map][:, 0] = segmented_data[start_idx:end_idx]
 
         if augment_roll:
             augmented_in, augmented_out = _augment_roll_ecg(tensor, dependents[tm.dependent_map])
@@ -564,7 +594,23 @@ TMAPS['ecg_rest_ludb'] = TensorMap('ecg_rest_ludb', group='ecg_rest_ludb', chann
                                    dtype=DataSetType.FLOAT_ARRAY,
                                    cacheable=False,
                                    dependent_map=TMAPS['ecg_rest_ludb_segmentation_coarse'],
-                                   tensor_from_file=_make_ecg_segmentation(onehot=True, augment_roll=True, augment_scale_wave=True, population_normalize='by_lead'))
+                                   tensor_from_file=_make_ecg_segmentation(onehot=True, augment_roll=True, augment_scale_wave=True))
+
+
+TMAPS['ecg_rest_ludb_1beat_segmentation_coarse'] = TensorMap('ecg_rest_ludb_segmentation', group='categorical',
+                                                              loss=weighted_crossentropy([0.178062, 0.570486, 0.555773, 0.340790, 0.173300, 0.658749, 1.000000],
+                                                                                         'ecg_rest_ludb_segmentation'),
+                                                              dtype=DataSetType.CATEGORICAL,
+                                                              shape=(1200, 8, 7),
+                                                              cacheable=False,
+                                                              channel_map={'background': 0, 'qrs': 1, 'st': 2, 't': 3, 'tp': 4, 'p': 5, 'pq': 6})
+
+TMAPS['ecg_rest_ludb_1beat'] = TensorMap('ecg_rest_ludb', group='ecg_rest_ludb', channel_map=ECG_REST_LUDB_LEADS,
+                                          shape = (1200, 8, 1),
+                                          dtype=DataSetType.FLOAT_ARRAY,
+                                          cacheable=False,
+                                          dependent_map=TMAPS['ecg_rest_ludb_1beat_segmentation_coarse'],
+                                          tensor_from_file=_make_ecg_segmentation(onehot=True, augment_roll=False, augment_scale_wave=True))
 
 
 def _make_detect_lead(population_normalize=None):
