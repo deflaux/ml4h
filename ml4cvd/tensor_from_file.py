@@ -1,5 +1,5 @@
 import datetime
-from typing import List, Dict, Tuple, Callable, Union
+from typing import List, Dict, Tuple, Callable, Union, Optional
 
 import os
 import csv
@@ -234,19 +234,19 @@ def _first_date_bike_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
     return tm.normalize_and_validate(recovery).reshape(tm.shape)
 
 
-def _get_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int], slice]):
+def _get_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int], slice], stop: Optional[int] = None):
     dates = _all_dates(hd5, tm.group, tm.dtype, tm.name)
     if not dates:
         raise ValueError(f'No ecg trace available.')
     first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
     first_date_path = tensor_path(source=tm.group, dtype=tm.dtype, name=tm.name, date=first_date)
-    tensor = np.array(hd5[first_date_path][start: tm.shape[0] + start, leads], dtype=np.float32)
+    tensor = np.array(hd5[first_date_path][start: tm.shape[0] + start if stop is None else stop, leads], dtype=np.float32)
     return _fail_nan(tensor)
 
 
 def _get_r_peaks(ecg):
     sampling_rate = 500
-    order = int(0.3 * sampling_rate)
+    order = int(0.1 * sampling_rate)
     filtered, _, _ = biosppy.signals.tools.filter_signal(
         signal=ecg,
         ftype='FIR',
@@ -263,8 +263,8 @@ ECG_ALIGN_OFFSET = 800
 
 
 def _get_aligned_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int], slice]):
-    ecg = _get_bike_ecg(hd5, tm, start - ECG_ALIGN_OFFSET, leads)
-    rpeaks = _get_r_peaks(ecg)
+    ecg = _get_bike_ecg(hd5, tm, start - ECG_ALIGN_OFFSET, leads, stop=tm.shape[0] + start)
+    rpeaks = _get_r_peaks(ecg[:ECG_ALIGN_OFFSET, 0])
     first_peak = rpeaks[0]
     ecg = ecg[first_peak: first_peak + tm.shape[0]]
     return _fail_nan(ecg)
@@ -272,6 +272,9 @@ def _get_aligned_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int]
 
 # ECG AUGMENTATIONS #
 def _warp_ecg(ecg):
+    """
+    Warning: does some weird stuff at the boundaries
+    """
     i = np.arange(ecg.shape[0])
     warped = i + (np.random.rand() * 100 * np.sin(i / (500 + np.random.rand() * 100))
                   + np.random.rand() * 100 * np.cos(i / (500 + np.random.rand() * 100)))
@@ -283,7 +286,7 @@ def _warp_ecg(ecg):
 
 def _downsample(ecg, rate: float):
     """
-    rate 2 halves the signal
+    rate=2 halves the sampling rate. Uses linear interpolation.
     """
     i = np.arange(0, ecg.shape[0], rate)
     downsampled = np.zeros((ecg.shape[0] // rate, ecg.shape[1]))
@@ -331,7 +334,7 @@ def _bike_ecg_augmented(augmentations: [Callable], leads: Union[List[int], slice
         ecg = _get_bike_ecg(hd5, tm, start, leads)
         for func in augmentations:
             ecg = func(ecg)
-        return tm.normalize_and_validate(ecg)
+        return _fail_nan(tm.normalize_and_validate(ecg))
     return _tff
 
 
@@ -370,6 +373,12 @@ TMAPS['ecg_bike_aligned_shifted_warped_noised'] = TensorMap(
     'full', shape=(2048, 1), group='ecg_bike', dtype=DataSetType.FLOAT_ARRAY,
     validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False,
     tensor_from_file=_bike_ecg_aligned_augmented([_warp_ecg, _rand_add_noise], [0]),)
+
+
+TMAPS['ecg_bike_aligned_shifted_noised'] = TensorMap(
+    'full', shape=(2048, 1), group='ecg_bike', dtype=DataSetType.FLOAT_ARRAY,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False,
+    tensor_from_file=_bike_ecg_aligned_augmented([_rand_add_noise], [0]),)
 
 
 def _ecg_protocol_string(hd5):
