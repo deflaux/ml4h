@@ -28,6 +28,7 @@ def write_tensor_maps(args) -> None:
         _write_phecode_tensor_maps(f, args.phecode_definitions, db_client)
         _write_continuous_tensor_maps(f, db_client)
 
+        _write_partners_csv_tensor_maps(f, args.partners_csv_folder)
         f.write('\n')
         logging.info(f"Wrote the tensor maps to {tensor_maps_file}.")
 
