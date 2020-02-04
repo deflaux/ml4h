@@ -385,6 +385,12 @@ TMAPS['ecg_bike_aligned_shifted_noised'] = TensorMap(
     tensor_from_file=_bike_ecg_aligned_augmented([_rand_add_noise], [0]),)
 
 
+TMAPS['ecg_bike_normalized_aligned_shifted_noised'] = TensorMap(
+    'full', shape=(2048, 1), group='ecg_bike', dtype=DataSetType.FLOAT_ARRAY,
+    validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False,
+    tensor_from_file=_bike_ecg_aligned_augmented([_rand_add_noise], [0]),)
+
+
 def _ecg_protocol_string(hd5):
     # TODO: MAKE A CATEGORICAL VARIABLE TO USE AS INPUT
     dates = _all_dates(hd5, 'ecg_bike', DataSetType.STRING, 'protocol')
