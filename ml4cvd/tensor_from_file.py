@@ -379,7 +379,7 @@ TMAPS['enroll_diabetes2_hazard'] = TensorMap('diabetes_type_2', group='proportio
                                              tensor_from_file=_survival_tensor('dates/enroll_date', 365 * 10), dtype=DataSetType.SERIES)
 
 
-def _make_ecg_rest(population_normalize: float = None, mask_samples=0, mask_width=100):
+def _make_ecg_rest(population_normalize: float = None, mask_samples=0, mask_width=500):
     def ecg_rest_from_file(tm, hd5, dependents={}):
         tensor = np.zeros(tm.shape, dtype=np.float32)
         if tm.dependent_map is not None:
@@ -407,7 +407,7 @@ def _make_ecg_rest(population_normalize: float = None, mask_samples=0, mask_widt
                 for mask in masks:
                     end_idx = mask + mask_width if mask + mask_width < tm.shape[0] else tm.shape[0]
                     for j in range(tensor.shape[1]):
-                        tensor[mask:end_idx, j] = tensor[mask, j] + (tensor[end_idx, j]-tensor[mask, j])*np.linspace(0.0, 1.0, end_idx-mask)
+                        tensor[mask:end_idx, j, 0] = tensor[mask, j, 0] + (tensor[end_idx-1, j, 0]-tensor[mask, j, 0])*np.linspace(0.0, 1.0, end_idx-mask)
         if population_normalize is None:
             tensor = tm.zero_mean_std1(tensor)
         elif 'by_lead' in population_normalize :
@@ -427,7 +427,10 @@ TMAPS['ecg_rest_raw_100'] = TensorMap('ecg_rest_raw_100', shape=(5000, 12), grou
 TMAPS['ecg_rest'] = TensorMap('strip', shape=(5000, 8), group='ecg_rest', tensor_from_file=_make_ecg_rest(),
                               channel_map=ECG_REST_LEADS, loss='logcosh')
 
-TMAPS['ecg_rest_masked'] = TensorMap('masked_strip', shape=(5000, 8), group='ecg_rest', tensor_from_file=_make_ecg_rest(mask_samples=5),
+TMAPS['ecg_rest_output'] = TensorMap('strip', shape=(5000, 8, 1), group='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                     channel_map=ECG_REST_LEADS, loss='logcosh')
+
+TMAPS['ecg_rest_masked'] = TensorMap('masked_strip', shape=(5000, 8, 1), group='ecg_rest', tensor_from_file=_make_ecg_rest(mask_samples=1),
                                      cacheable=False, channel_map=ECG_REST_LEADS)
 
 TMAPS['ecg_rest_fft'] = TensorMap('ecg_rest_fft', shape=(5000, 12), group='ecg_rest', tensor_from_file=_make_ecg_rest(),
