@@ -189,7 +189,7 @@ def plot_scatter(prediction, truth, title, prefix='./figures/', paths=None, top_
 
     ax1.set_xlabel('Predictions')
     ax1.set_ylabel('Actual')
-    ax1.set_title(title + '\n')
+    ax1.set_title(f'{title} n={prediction.flatten().shape[0]}\n')
     ax1.legend(loc="lower right")
 
     sns.distplot(prediction, label='Predicted', color='r', ax=ax2)
@@ -224,7 +224,7 @@ def plot_scatters(predictions, truth, title, prefix='./figures/', paths=None, to
                 _text_on_plot(plt, predictions[k][idx] + margin, truth[idx] + margin, os.path.basename(paths[idx]))
     plt.xlabel('Predictions')
     plt.ylabel('Actual')
-    plt.title(title + '\n')
+    plt.title(f'{title} n={truth.flatten().shape[0]}\n')
     plt.legend(loc="upper left")
 
     figure_path = os.path.join(prefix, 'scatters_' + title + IMAGE_EXT)
@@ -256,7 +256,7 @@ def subplot_scatters(scatters: List[Tuple[np.ndarray, np.ndarray, str, Optional[
                 _text_on_plot(axes[row, col], prediction[idx] + margin, truth[idx] + margin, os.path.basename(paths[idx]))
         axes[row, col].set_xlabel('Predictions')
         axes[row, col].set_ylabel('Actual')
-        axes[row, col].set_title(title + '\n')
+        axes[row, col].set_title(f'{title} n={truth.flatten().shape[0]}\n')
         pearson = np.corrcoef(prediction.flatten(), truth.flatten())[1, 0]  # corrcoef returns full covariance matrix
         r2 = pearson*pearson
         big_r2 = coefficient_of_determination(truth.flatten(), prediction.flatten())
@@ -302,7 +302,7 @@ def subplot_comparison_scatters(scatters: List[Tuple[Dict[str, np.ndarray], np.n
                     _text_on_plot(axes[row, col], predictions[k][idx] + margin, truth[idx] + margin, os.path.basename(paths[idx]))
         axes[row, col].set_xlabel('Predictions')
         axes[row, col].set_ylabel('Actual')
-        axes[row, col].set_title(title + '\n')
+        axes[row, col].set_title(f'{title} n={truth.flatten().shape[0]}\n')
 
         row += 1
         if row == rows:
