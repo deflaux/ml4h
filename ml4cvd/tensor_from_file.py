@@ -493,8 +493,38 @@ def _get_hrr_measurements(hd5):
     return final_exercise_hr, final_recovery_hr
 
 
+def _hrr_measurements_from_raw(hd5):
+    _check_phase_full_len(hd5, 'pretest')
+    _check_phase_full_len(hd5, 'rest')
+    group, dtype, name = 'ecg_bike', DataSetType.FLOAT_ARRAY, 'full'
+    dates = _all_dates(hd5, group, dtype, name)
+    if not dates:
+        raise ValueError(f'No ecg trace available.')
+    first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
+    first_date_path = tensor_path(source=group, dtype=dtype, name=name, date=first_date)
+    exercise_end = -500 * (60 + 2.5)
+    recovery_begin = -500 * (60 - 2.5)
+    recovery_end = -500 * 2.5
+    at_peak = np.array(hd5[first_date_path][exercise_end: recovery_begin, [0]], dtype=np.float32)
+    at_end = np.array(hd5[first_date_path][recovery_end:, [0]], dtype=np.float32)
+    _, _, _, _, _, _, peak_hrs = biosppy.signals.ecg.ecg(at_peak, sampling_rate=500, show=False)
+    _, _, _, _, _, _, end_hrs = biosppy.signals.ecg.ecg(at_end, sampling_rate=500, show=False)
+    final_exercise_hr = np.mean(peak_hrs)
+    final_recovery_hr = np.mean(end_hrs)
+    if final_exercise_hr > 220:
+        raise ValueError('Max HR too high.')
+    if final_recovery_hr < 30:
+        raise ValueError('Min HR too low.')
+    return final_exercise_hr, final_recovery_hr
+
+
 def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     final_exercise_hr, final_recovery_hr = _get_hrr_measurements(hd5)
+    return tm.normalize_and_validate(np.array(final_exercise_hr - final_recovery_hr))
+
+
+def _hrr_raw(tm: TensorMap, hd5: h5py.File, dependents=None):
+    final_exercise_hr, final_recovery_hr = _hrr_measurements_from_raw(hd5)
     return tm.normalize_and_validate(np.array(final_exercise_hr - final_recovery_hr))
 
 
@@ -570,6 +600,10 @@ TMAPS['ecg-bike-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metri
                                   normalization={'mean': 25, 'std': 15},
                                   dtype=DataSetType.CONTINUOUS,
                                   tensor_from_file=_hrr_qc)
+TMAPS['ecg-bike-hrr-raw'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                      normalization={'mean': 25, 'std': 15},
+                                      dtype=DataSetType.CONTINUOUS,
+                                      tensor_from_file=_hrr_raw)
 TMAPS['ecg-bike-max-hr-qc'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                         normalization={'mean': 110, 'std': 15},  # TODO: get actual numbers
                                         dtype=DataSetType.CONTINUOUS,
