@@ -121,7 +121,7 @@ class TensorGenerator:
                                   args=())
                 process.start()
                 self.workers.append(process)
-        logging.info(f'Initialized {i} workers with cache of size {self.cache_size * self.cache.nrows / 1e9:.3f} GB.')
+        logging.info(f'Initialized {i} workers with cache of size {self.cache_size/1e9:.3f} GB.')
 
     def __next__(self) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray], Optional[List[str]]]:
         if not self._started:
