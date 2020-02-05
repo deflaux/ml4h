@@ -322,6 +322,8 @@ TMAPS['adjusted_myocardium_mass_y_true_sqr_logcosh'] = TensorMap('adjusted_myoca
 
 TMAPS['adjusted_myocardium_mass_asymmetric_outlier'] = TensorMap('adjusted_myocardium_mass', Interpretation.CONTINUOUS, validator=make_range_validator(0, 400), path_prefix='continuous',
                                                   loss=asymmetric_outlier_mse, channel_map={'adjusted_myocardium_mass': 0}, normalization={'mean': 89.70, 'std': 24.80})
+TMAPS['adjusted_myocardium_mass_asymmetric_outlier_sentinel'] = TensorMap('adjusted_myocardium_mass', Interpretation.CONTINUOUS, sentinel=0, path_prefix='continuous',
+                                                  loss=asymmetric_outlier_mse, channel_map={'adjusted_myocardium_mass': 0}, normalization={'mean': 89.70, 'std': 24.80})
 
 TMAPS['proton_fat'] = TensorMap('22402_Proton-density-fat-fraction-PDFF_2_0', Interpretation.CONTINUOUS, channel_map={'22402_Proton-density-fat-fraction-PDFF_2_0': 0},
                                activation='linear', loss='logcosh',  annotation_units=1, path_prefix='continuous',
