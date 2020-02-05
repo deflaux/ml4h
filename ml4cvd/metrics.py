@@ -115,7 +115,7 @@ def asymmetric_logcosh(y_true, y_pred):
 
 
 def asymmetric_mse(y_true, y_pred):
-    return 15*K.maximum(y_true-y_pred, 0.0)*mean_squared_error(y_true, y_pred) + K.maximum(y_pred-y_true, 0.0)*logcosh(y_true, y_pred)
+    return 3*K.maximum(y_true-y_pred, 0.0)*mean_squared_error(y_true, y_pred) + K.maximum(y_pred-y_true, 0.0)*logcosh(y_true, y_pred)
 
 
 def y_true_squared_times_mse(y_true, y_pred):
