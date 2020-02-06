@@ -1102,13 +1102,13 @@ def _plot_dot_model_in_color(dot, image_path, inspect_show_labels):
     dot.write_png(image_path)
 
 
-def saliency_map(input_tensor: np.ndarray, model: Model, output_layer_name: str, output_index: int) -> np.ndarray:
+def saliency_map(inputs: Union[np.ndarray, List[np.ndarray]], model: Model, output_layer_name: str, output_index: int) -> np.ndarray:
     """Compute saliency maps of the given model (presumably already trained) on a batch of inputs with respect to the desired output layer and index.
 
     For example, with a trinary classification layer called quality and classes good, medium, and bad output layer name would be "quality_output"
     and output_index would be 0 to get gradients w.r.t. good, 1 to get gradients w.r.t. medium, and 2 for gradients w.r.t. bad.
 
-    :param input_tensor: A batch of input tensors
+    :param inputs: A batch of input tensors, or list of batches of inputs for multimodal models
     :param model: A trained model expecting those inputs
     :param output_layer_name: The name of the output layer that the derivative will be taken with respect to
     :param output_index: The index within the output layer that the derivative will be taken with respect to
@@ -1116,7 +1116,10 @@ def saliency_map(input_tensor: np.ndarray, model: Model, output_layer_name: str,
     :return: Array of the gradients same shape as input_tensor
     """
     get_gradients = _gradients_from_output(model, output_layer_name, output_index)
-    activation, gradients = get_gradients([input_tensor])
+    if isinstance(inputs, list):
+        activation, gradients = get_gradients(inputs)
+    else:
+        activation, gradients = get_gradients([inputs])
     return gradients
 
 
