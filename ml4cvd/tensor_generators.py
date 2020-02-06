@@ -135,8 +135,8 @@ class TensorGenerator:
     def kill_workers(self):
         if self._started and not self.run_on_main_thread:
             for worker in self.workers:
-                logging.info(f'Stopping {worker.name}.')
                 worker.terminate()
+            logging.info(f'Stopped {len(self.workers)} workers.')
         self.workers = []
 
     def __iter__(self):  # This is so python type annotations recognize TensorGenerator as an iterator
