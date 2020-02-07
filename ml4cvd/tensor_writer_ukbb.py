@@ -132,24 +132,8 @@ def write_tensors(a_id: str,
                 _write_tensors_from_zipped_niftis(zip_folder, mri_field_ids, hd5, sample_id, stats)
                 _write_tensors_from_xml(xml_field_ids, xml_folder, hd5, sample_id, write_pngs, stats, continuous_stats)
                 stats['Tensors written'] += 1
-        except AttributeError:
-            logging.exception('Encountered AttributeError trying to write a UKBB tensor at path:{}'.format(tp))
-            logging.info('Deleting attempted tensor at path:{}'.format(tp))
-            os.remove(tp)
-        except ValueError:
-            logging.exception('Encountered ValueError trying to write a UKBB tensor at path:{}'.format(tp))
-            logging.info('Deleting attempted tensor at path:{}'.format(tp))
-            os.remove(tp)
-        except RuntimeError:
-            logging.exception('Encountered RuntimeError trying to write a UKBB tensor at path:{}'.format(tp))
-            logging.info('Deleting attempted tensor at path:{}'.format(tp))
-            os.remove(tp)
-        except IndexError:
-            logging.exception('Encountered IndexError trying to write a UKBB tensor at path:{}'.format(tp))
-            logging.info('Deleting attempted tensor at path:{}'.format(tp))
-            os.remove(tp)
-        except OSError:
-            logging.exception('Encountered OSError trying to write a UKBB tensor at path:{}'.format(tp))
+        except (OSError, KeyError, IndexError, ValueError, RuntimeError, AttributeError) as e:
+            logging.warning(f"Error trying to write:{tp} \nError:{e}\n\n{traceback.format_exc()}\n")
             logging.info('Deleting attempted tensor at path:{}'.format(tp))
             os.remove(tp)
 
