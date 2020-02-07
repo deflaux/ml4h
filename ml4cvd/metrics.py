@@ -135,7 +135,7 @@ def asymmetric_myocardium(y_true, y_pred):
     y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
     loss = y_true * K.log(y_pred) * [1.0, 40.0, 40.0]
     loss = -K.sum(loss, -1)
-    return top_over + top_under + loss
+    return loss
 
 
 def y_true_squared_times_mse(y_true, y_pred):
