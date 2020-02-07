@@ -508,3 +508,7 @@ def concordance_index(prediction, truth, tied_tol=1e-8):
 
     cindex = numerator / denominator
     return cindex, concordant, discordant, tied_risk, tied_time
+
+
+def sqrt_error(pred, true):
+    return K.sqrt(K.abs(pred - true))

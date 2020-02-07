@@ -12,7 +12,7 @@ from scipy.stats import linregress
 import vtk.util.numpy_support
 from keras.utils import to_categorical
 
-from ml4cvd.metrics import weighted_crossentropy
+from ml4cvd.metrics import weighted_crossentropy, sqrt_error
 from ml4cvd.tensor_writer_ukbb import tensor_path, path_date_to_datetime
 from ml4cvd.TensorMap import TensorMap, no_nans, str2date, make_range_validator
 from ml4cvd.defines import ECG_REST_LEADS, ECG_REST_MEDIAN_LEADS, ECG_REST_AMP_LEADS
@@ -89,7 +89,15 @@ def _build_tensor_from_file(file_name: str, target_column: str, normalization: b
             reader = csv.reader(f, delimiter=delimiter)
             header = next(reader)
             index = header.index(target_column)
-            table = {row[0]: np.array([float(row[index])]) for row in reader}
+            table = {}
+            fail_count = 0
+            for row in reader:
+                try:
+                    table[row[0]] = np.array([float(row[index])])
+                except ValueError:
+                    fail_count += 1
+                    continue
+            logging.info(f'{fail_count} samples failed out of {len(table) + fail_count}.')
             if normalization:
                 value_array = np.array([sub_array[0] for sub_array in table.values()])
                 mean = value_array.mean()
@@ -110,6 +118,28 @@ def _build_tensor_from_file(file_name: str, target_column: str, normalization: b
             return tn
         except KeyError:
             raise KeyError(f'User id not in file {file_name}.')
+    return tensor_from_file
+
+
+def _build_tensor_from_sample_id_file(file_name: str, id_column: str, delimiter: str):
+    """
+    Build a binary categorical tensor_from_file function based on inclusion in provided file.
+    """
+    error = None
+    try:
+        with open(file_name, 'r') as f:
+            reader = csv.reader(f, delimiter=delimiter)
+            header = next(reader)
+            index = header.index(id_column)
+            table = {row[index] for row in reader}
+    except FileNotFoundError as e:
+        error = e
+
+    def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
+        if error:
+            raise error
+        sample_id = os.path.basename(hd5.filename).replace('.hd5', '')
+        return tm.normalize_and_validate(np.array([1, 0]) if sample_id in table else np.array([0, 1]))
     return tensor_from_file
 
 
@@ -496,15 +526,17 @@ def _hrr_measurements_from_raw(hd5):
         raise ValueError(f'No ecg trace available.')
     first_date = path_date_to_datetime(min(dates))  # Date format is sortable.
     first_date_path = tensor_path(source=group, dtype=dtype, name=name, date=first_date)
-    exercise_end = -500 * (60 + 2.5)
-    recovery_begin = -500 * (60 - 2.5)
-    recovery_end = -500 * 2.5
-    at_peak = np.array(hd5[first_date_path][exercise_end: recovery_begin, [0]], dtype=np.float32)
-    at_end = np.array(hd5[first_date_path][recovery_end:, [0]], dtype=np.float32)
+    exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike', DataSetType.CONTINUOUS, f'exercise_duration')
+    exercise_end = int(500 * (15 + exercise_dur - 2.5))  # 2.5 seconds before recovery begins
+    recovery_begin = int(500 * (15 + exercise_dur + 2.5))  # 2.5 seconds after recovery begins
+    recovery_end = int(500 * (exercise_dur + 55))  # five seconds before the end of recovery
+    recovery_final = int(500 * (exercise_dur + 60))  # end of recovery
+    at_peak = np.array(hd5[first_date_path][exercise_end: recovery_begin, 0], dtype=np.float32)
+    at_end = np.array(hd5[first_date_path][recovery_end:, 0], dtype=np.float32)
     _, _, _, _, _, _, peak_hrs = biosppy.signals.ecg.ecg(at_peak, sampling_rate=500, show=False)
     _, _, _, _, _, _, end_hrs = biosppy.signals.ecg.ecg(at_end, sampling_rate=500, show=False)
-    final_exercise_hr = np.mean(peak_hrs)
-    final_recovery_hr = np.mean(end_hrs)
+    final_exercise_hr = _fail_nan(np.median(peak_hrs))
+    final_recovery_hr = _fail_nan(np.median(end_hrs))
     if final_exercise_hr > 220:
         raise ValueError('Max HR too high.')
     if final_recovery_hr < 30:
@@ -590,14 +622,36 @@ TMAPS['ecg-bike-hrr-johanna'] = TensorMap('hrr', group='ecg_bike', loss='logcosh
                                           tensor_from_file=_hrr_johanna_def)
 
 # HRR FINAL
+TMAPS['ecg-bike-afib'] = TensorMap('afib', group='ecg_bike', shape=(2,),
+                                   dtype=DataSetType.CATEGORICAL, channel_map={'no_afib': 0, 'afib': 1},
+                                   tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/exercise_afib.csv', delimiter=',', id_column='sample_id'))
+TMAPS['ecg-bike-bb'] = TensorMap('beta_blockers', group='ecg_bike', shape=(2,),
+                                   dtype=DataSetType.CATEGORICAL, channel_map={'no_bb': 0, 'bb': 1},
+                                   tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/beta_blockers.csv', delimiter=',', id_column='sample_id'))
+TMAPS['ecg-bike-hrr-raw-file'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                           normalization={'mean': 25, 'std': 15},
+                                           dtype=DataSetType.CONTINUOUS,
+                                           validator=make_range_validator(0, 110),
+                                           tensor_from_file=_build_tensor_from_file('/home/ndiamant/raw_hrr.csv', 'hrr', delimiter=','))
 TMAPS['ecg-bike-hrr'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                   normalization={'mean': 25, 'std': 15},
                                   dtype=DataSetType.CONTINUOUS,
                                   tensor_from_file=_hrr_qc)
+TMAPS['ecg-bike-hrr-sqrt-loss'] = TensorMap('hrr', group='ecg_bike', metrics=['mae', 'logcosh'], shape=(1,),
+                                            normalization={'mean': 25, 'std': 15},
+                                            dtype=DataSetType.CONTINUOUS, loss=sqrt_error,
+                                            tensor_from_file=_hrr_qc)
+TMAPS['ecg-bike-hrr-mse'] = TensorMap('hrr', group='ecg_bike', metrics=['mae', 'logcosh'], shape=(1,),
+                                            normalization={'mean': 25, 'std': 15},
+                                            dtype=DataSetType.CONTINUOUS, loss='mse',
+                                            tensor_from_file=_hrr_qc)
 TMAPS['ecg-bike-hrr-raw'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                       normalization={'mean': 25, 'std': 15},
                                       dtype=DataSetType.CONTINUOUS,
                                       tensor_from_file=_hrr_raw)
+TMAPS['ecg-bike-hrr-raw-no-norm'] = TensorMap('hrr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
+                                              dtype=DataSetType.CONTINUOUS,
+                                              tensor_from_file=_hrr_raw)
 TMAPS['ecg-bike-max-hr-qc'] = TensorMap('max_hr', group='ecg_bike', loss='logcosh', metrics=['mae'], shape=(1,),
                                         normalization={'mean': 110, 'std': 15},  # TODO: get actual numbers
                                         dtype=DataSetType.CONTINUOUS,
