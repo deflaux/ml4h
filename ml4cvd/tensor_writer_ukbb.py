@@ -27,7 +27,9 @@ import sqlite3
 import zipfile
 import numpy as np
 import nibabel as nib
-import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Need this to write images from the GSA servers.  Order matters:
+import matplotlib.pyplot as plt  # First import matplotlib, then use Agg, then import plt
 from PIL import Image, ImageDraw  # Polygon to mask
 import xml.etree.ElementTree as et
 from timeit import default_timer as timer
