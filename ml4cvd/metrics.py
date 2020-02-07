@@ -129,13 +129,13 @@ def asymmetric_myocardium(y_true, y_pred):
     myocardium_threshold = 6000
     myocardium_true = K.sum(y_true[..., MRI_SEGMENTED_CHANNEL_MAP['myocardium']]) - myocardium_threshold
     myocardium_pred = K.sum(y_pred[..., MRI_SEGMENTED_CHANNEL_MAP['myocardium']]) - myocardium_threshold
-    top_over = K.maximum(myocardium_true, myocardium_threshold) * K.maximum(myocardium_true - myocardium_pred, 0.0) / 100.0
-    top_under = K.maximum(myocardium_true, myocardium_threshold) * K.maximum(myocardium_pred - myocardium_true, 0.0) / 200.0
+    top_over = K.maximum(myocardium_true, 0) * K.maximum(myocardium_true - myocardium_pred, 0.0) / 100.0
+    top_under = K.maximum(myocardium_true, 0) * K.maximum(myocardium_pred - myocardium_true, 0.0) / 200.0
     y_pred /= K.sum(y_pred, axis=-1, keepdims=True)
     y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
     loss = y_true * K.log(y_pred) * [1.0, 40.0, 40.0]
     loss = -K.sum(loss, -1)
-    return loss
+    return top_over + top_under + loss
 
 
 def y_true_squared_times_mse(y_true, y_pred):
