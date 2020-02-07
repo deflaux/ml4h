@@ -10,10 +10,10 @@ import numpy as np
 import vtk.util.numpy_support
 from keras.utils import to_categorical
 
-from ml4cvd.metrics import weighted_crossentropy
-from ml4cvd.tensor_writer_ukbb import tensor_path, path_date_to_datetime
+from ml4cvd.tensor_writer_ukbb import tensor_path
+from ml4cvd.metrics import weighted_crossentropy, asymmetric_myocardium
 from ml4cvd.TensorMap import TensorMap, no_nans, str2date, make_range_validator, Interpretation
-from ml4cvd.defines import StorageType, ECG_REST_LEADS, ECG_REST_MEDIAN_LEADS, ECG_REST_AMP_LEADS, EPS
+from ml4cvd.defines import StorageType, ECG_REST_LEADS, ECG_REST_MEDIAN_LEADS, ECG_REST_AMP_LEADS
 from ml4cvd.defines import MRI_TO_SEGMENT, MRI_SEGMENTED, MRI_LAX_SEGMENTED, MRI_SEGMENTED_CHANNEL_MAP, MRI_FRAMES
 from ml4cvd.defines import MRI_PIXEL_WIDTH, MRI_PIXEL_HEIGHT, MRI_SLICE_THICKNESS, MRI_PATIENT_ORIENTATION, MRI_PATIENT_POSITION
 
@@ -1294,11 +1294,15 @@ TMAPS['sax_all_diastole_segmented'] = TensorMap('sax_all_diastole_segmented', In
 TMAPS['sax_all_diastole_segmented_weighted'] = TensorMap('sax_all_diastole_segmented', Interpretation.CATEGORICAL, shape=(256, 256, 13, 3),
                                                          channel_map=MRI_SEGMENTED_CHANNEL_MAP,
                                                          loss=weighted_crossentropy([1.0, 40.0, 40.0], 'sax_all_diastole_segmented'))
+TMAPS['sax_all_diastole_segmented_myocardium_weighted'] = TensorMap('sax_all_diastole_segmented', Interpretation.CATEGORICAL, shape=(256, 256, 13, 3),
+                                                         channel_map=MRI_SEGMENTED_CHANNEL_MAP, loss=asymmetric_myocardium)
 
 TMAPS['sax_all_diastole'] = TensorMap('sax_all_diastole', shape=(256, 256, 13, 1), tensor_from_file=sax_tensor('diastole'),
                                       dependent_map=TMAPS['sax_all_diastole_segmented'])
 TMAPS['sax_all_diastole_weighted'] = TensorMap('sax_all_diastole', shape=(256, 256, 13, 1), tensor_from_file=sax_tensor('diastole'),
                                                dependent_map=TMAPS['sax_all_diastole_segmented_weighted'])
+TMAPS['sax_all_diastole_myocardium_weighted'] = TensorMap('sax_all_diastole', shape=(256, 256, 13, 1), tensor_from_file=sax_tensor('diastole'),
+                                               dependent_map=TMAPS['sax_all_diastole_segmented_myocardium_weighted'])
 
 TMAPS['sax_all_systole_segmented'] = TensorMap('sax_all_systole_segmented', Interpretation.CATEGORICAL, shape=(256, 256, 13, 3),
                                                 channel_map=MRI_SEGMENTED_CHANNEL_MAP)

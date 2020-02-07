@@ -125,8 +125,8 @@ def asymmetric_outlier_mse(y_true, y_pred):
     return top_over + top_under + logcosh(y_true, y_pred)
 
 
-def asymmetric_outlier_cross_entropy(y_true, y_pred):
-    myocardium_threshold = 6000
+def asymmetric_myocardium(y_true, y_pred):
+    myocardium_threshold = 5500
     myocardium_true = K.sum(y_true[..., MRI_SEGMENTED_CHANNEL_MAP['myocardium']]) / myocardium_threshold
     myocardium_pred = K.sum(y_pred[..., MRI_SEGMENTED_CHANNEL_MAP['myocardium']]) / myocardium_threshold
     top_over = 10.0 * K.maximum(myocardium_true, 0.0) * K.maximum(myocardium_true - myocardium_pred, 0.0) * categorical_crossentropy(y_true, y_pred)
