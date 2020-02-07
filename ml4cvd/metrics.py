@@ -33,7 +33,7 @@ def weighted_crossentropy(weights, name='anonymous'):
     string_globe += name + '_kweights = K.variable('+name+'_weights)\n'
     exec(string_globe, globals(), locals())
     fxn_postfix = '_weighted_loss'
-    string_fxn = 'def '+ name + fxn_postfix + '(y_true, y_pred):\n'
+    string_fxn = 'def ' + name + fxn_postfix + '(y_true, y_pred):\n'
     string_fxn += '\ty_pred /= K.sum(y_pred, axis=-1, keepdims=True)\n'
     string_fxn += '\ty_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())\n'
     string_fxn += '\tloss = y_true * K.log(y_pred) * ' + name + '_kweights\n'
@@ -131,7 +131,11 @@ def asymmetric_myocardium(y_true, y_pred):
     myocardium_pred = K.sum(y_pred[..., MRI_SEGMENTED_CHANNEL_MAP['myocardium']]) / myocardium_threshold
     top_over = 10.0 * K.maximum(myocardium_true, 0.0) * K.maximum(myocardium_true - myocardium_pred, 0.0) * categorical_crossentropy(y_true, y_pred)
     top_under = 5.0 * K.maximum(myocardium_true, 0.0) * K.maximum(myocardium_pred - myocardium_true, 0.0) * categorical_crossentropy(y_true, y_pred)
-    return top_over + top_under + categorical_crossentropy(y_true, y_pred)
+    y_pred /= K.sum(y_pred, axis=-1, keepdims=True)
+    y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
+    loss = y_true * K.log(y_pred) * [1.0, 40.0, 40.0]
+    loss = -K.sum(loss, -1)
+    return top_over + top_under + loss
 
 
 def y_true_squared_times_mse(y_true, y_pred):
