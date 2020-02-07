@@ -126,7 +126,7 @@ def asymmetric_outlier_mse(y_true, y_pred):
 
 
 def asymmetric_myocardium(y_true, y_pred):
-    myocardium_threshold = 5500
+    myocardium_threshold = 6000
     myocardium_true = K.sum(y_true[..., MRI_SEGMENTED_CHANNEL_MAP['myocardium']]) - myocardium_threshold
     myocardium_pred = K.sum(y_pred[..., MRI_SEGMENTED_CHANNEL_MAP['myocardium']]) - myocardium_threshold
     top_over = K.maximum(myocardium_true, myocardium_threshold) * K.maximum(myocardium_true - myocardium_pred, 0.0)
