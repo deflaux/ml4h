@@ -133,8 +133,8 @@ def asymmetric_myocardium(y_true, y_pred):
     y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
     ce = y_true * K.log(y_pred) * [1.0, 100.0, 100.0]
     ce = -K.sum(ce, -1)
-    top_over = 4.0 * ce * K.maximum(myocardium_true, 0) * K.minimum(K.maximum(myocardium_true - myocardium_pred, 0.0), 1.0)
-    top_under = 2.0 * ce * K.maximum(myocardium_true, 0) * K.minimum(K.maximum(myocardium_pred - myocardium_true, 0.0), 1.0)
+    top_over = ce * K.maximum(myocardium_true, 0) * K.minimum(K.maximum(myocardium_true - myocardium_pred, 0.0), 1.0)
+    top_under = 0.5 * ce * K.maximum(myocardium_true, 0) * K.minimum(K.maximum(myocardium_pred - myocardium_true, 0.0), 1.0)
     return top_over + top_under + ce
 
 
