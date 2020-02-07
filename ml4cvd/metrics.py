@@ -133,7 +133,7 @@ def asymmetric_myocardium(y_true, y_pred):
     top_under = 5.0 * K.maximum(myocardium_true, 0.0) * K.maximum(myocardium_pred - myocardium_true, 0.0) * categorical_crossentropy(y_true, y_pred)
     y_pred /= K.sum(y_pred, axis=-1, keepdims=True)
     y_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())
-    loss = y_true * K.log(y_pred) * [1.0, 40.0, 40.0]
+    loss = y_true * K.log(y_pred) * [0.5, 80.0, 80.0]
     loss = -K.sum(loss, -1)
     return top_over + top_under + loss
 
