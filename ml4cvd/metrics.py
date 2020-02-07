@@ -1,12 +1,13 @@
 # metrics.py
 import logging
+
 import numpy as np
 import tensorflow as tf
 import keras.backend as K
-
 from sklearn.metrics import roc_curve, auc, average_precision_score
-
 from keras.losses import binary_crossentropy, categorical_crossentropy, logcosh, cosine_proximity, mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
+
+from ml4cvd.defines import MRI_SEGMENTED_CHANNEL_MAP
 
 STRING_METRICS = ['categorical_crossentropy','binary_crossentropy','mean_absolute_error','mae',
                   'mean_squared_error', 'mse', 'cosine_proximity', 'logcosh']
@@ -122,6 +123,15 @@ def asymmetric_outlier_mse(y_true, y_pred):
     top_over = 10.0 * K.maximum(y_true - 2, 0.0) * K.maximum(y_true - y_pred, 0.0) * mean_squared_error(y_true, y_pred)
     top_under = 5.0 * K.maximum(y_true - 2, 0.0) * K.maximum(y_pred - y_true, 0.0) * mean_squared_error(y_true, y_pred)
     return top_over + top_under + logcosh(y_true, y_pred)
+
+
+def asymmetric_outlier_cross_entropy(y_true, y_pred):
+    myocardium_threshold = 6000
+    myocardium_true = K.sum(y_true[..., MRI_SEGMENTED_CHANNEL_MAP['myocardium']]) / myocardium_threshold
+    myocardium_pred = K.sum(y_pred[..., MRI_SEGMENTED_CHANNEL_MAP['myocardium']]) / myocardium_threshold
+    top_over = 10.0 * K.maximum(myocardium_true, 0.0) * K.maximum(myocardium_true - myocardium_pred, 0.0) * categorical_crossentropy(y_true, y_pred)
+    top_under = 5.0 * K.maximum(myocardium_true, 0.0) * K.maximum(myocardium_pred - myocardium_true, 0.0) * categorical_crossentropy(y_true, y_pred)
+    return top_over + top_under + categorical_crossentropy(y_true, y_pred)
 
 
 def y_true_squared_times_mse(y_true, y_pred):
