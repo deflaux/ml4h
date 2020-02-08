@@ -6,6 +6,11 @@ USER root
 # Fix annoying pip warnings in the source image.
 RUN chmod -R a+rwx $HOME/.cache
 
+# Download Plink 1.9
+RUN mkdir $HOME/packages && \
+    wget http://s3.amazonaws.com/plink1-assets/plink_linux_x86_64_20200121.zip -O $HOME/packages/plink_linux.zip && \
+    unzip $HOME/packages/plink_linux.zip
+
 # Add to the PATH so that the tensorflow upgrade does not emit warnings.
 ENV PATH $PATH:$HOME/.local/bin
 
