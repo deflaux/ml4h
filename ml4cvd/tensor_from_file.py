@@ -1360,7 +1360,7 @@ def _bike_ecg_aligned_augmented(augmentations: [Callable], leads: Union[List[int
 
 
 TMAPS['ecg-bike-pretest-leadI'] = TensorMap('full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
-                                            validator=no_nans, normalization={'mean': 7, 'std': 31},
+                                            validator=no_nans, normalization={'mean': 7, 'std': 31}, metrics=['mse'],
                                             tensor_from_file=_build_bike_ecg_tensor_from_file(0, [0]),)
 
 
@@ -1380,22 +1380,29 @@ def _build_augmented_bike_ecg_tmaps():
 
 _build_augmented_bike_ecg_tmaps()
 
+
+TMAPS['ecg_bike_aligned_shifted'] = TensorMap(
+    'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_aligned_augmented([], [0]),)
+
+
 TMAPS['ecg_bike_aligned_shifted_warped_noised'] = TensorMap(
     'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
-    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_aligned_augmented([_warp_ecg, _rand_add_noise], [0]),)
 
 
 TMAPS['ecg_bike_aligned_shifted_noised'] = TensorMap(
     'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
-    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_aligned_augmented([_rand_add_noise], [0]),)
 
 
 TMAPS['ecg_bike_normalized_aligned_shifted_noised'] = TensorMap(
     'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
-    validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False,
-    tensor_from_file=_bike_ecg_aligned_augmented([_rand_add_noise], [0]),)
+    validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_aligned_augmented([_rand_add_noise], [0,]),)
 
 
 def _ecg_protocol_string(hd5):

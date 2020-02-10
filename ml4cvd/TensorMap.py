@@ -244,6 +244,7 @@ class TensorMap(object):
         return np_tensor
 
     def normalize_and_validate(self, np_tensor):
+        np_tensor = np_tensor.reshape(self.shape)
         self.validator(self, np_tensor)
         if self.normalization is None:
             return np_tensor
