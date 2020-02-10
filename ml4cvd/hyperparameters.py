@@ -118,35 +118,37 @@ def optimize_architecture(args):
     dense_blocks_sets = [[16], [32], [48], [32, 16], [32, 32], [32, 24, 16], [48, 32, 24], [48, 48, 48]]
     conv_layers_sets = [[64], [48], [32], [24]]
     dense_layers_sets = [[16, 64], [8, 128], [48], [32], [24], [16]]
-    u_connect = [True, False]
     conv_dilate = [True, False]
     activation = ['leaky', 'prelu', 'elu', 'thresh_relu', 'relu']
-    conv_bn = [True, False]
+    conv_normalize = ['', 'batch_norm']
     pool_type = ['max', 'average']
     space = {
-        'pool_x': hp.quniform('pool_x', 1, 4, 1),
+        'pool_x': hp.quniform('pool_x', 1, 8, 1),
         'conv_layers': hp.choice('conv_layers', conv_layers_sets),
         'dense_blocks': hp.choice('dense_blocks', dense_blocks_sets),
         'dense_layers': hp.choice('dense_layers', dense_layers_sets),
-        'u_connect': hp.choice('u_connect', u_connect),
         'conv_dilate': hp.choice('conv_dilate', conv_dilate),
         'activation': hp.choice('activation', activation),
-        'conv_bn': hp.choice('conv_bn', conv_bn),
+        'conv_normalize': hp.choice('conv_normalize', conv_normalize),
         'pool_type': hp.choice('pool_type', pool_type),
         'dropout': hp.uniform('dropout', 0, .2),
         'conv_dropout': hp.uniform('conv_dropout', 0, .2),
         'conv_width': hp.quniform('conv_width', 2, 128, 1),
-        'block_size': hp.quniform('block_size', 1, 4, 1),
+        'block_size': hp.quniform('block_size', 1, 8, 1),
     }
-    param_lists = {'conv_layers': conv_layers_sets,
-                   'dense_blocks': dense_blocks_sets,
-                   'dense_layers': dense_layers_sets,
-                   'u_connect': u_connect,
-                   'conv_dilate': conv_dilate,
-                   'activation': activation,
-                   'conv_bn': conv_bn,
-                   'pool_type': pool_type,
-                   }
+    param_lists = {
+        'conv_layers': conv_layers_sets,
+        'dense_blocks': dense_blocks_sets,
+        'dense_layers': dense_layers_sets,
+        'conv_dilate': conv_dilate,
+        'activation': activation,
+        'conv_normalize': conv_normalize,
+        'pool_type': pool_type,
+    }
+    if any(tm.axes() > 1 for tm in args.tensor_maps_out):
+        u_connect = [True, False]
+        space['u_connect'] = hp.choice('u_connect', u_connect),
+        param_lists['u_connect'] = u_connect
     hyperparameter_optimizer(args, space, param_lists)
 
 

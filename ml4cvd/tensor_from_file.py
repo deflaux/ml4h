@@ -1339,13 +1339,11 @@ def _build_bike_ecg_tensor_from_file(start, leads: Union[List[int], slice]):
     return lambda tm, hd5, dependents: tm.normalize_and_validate(_get_bike_ecg(hd5, tm, start, leads))
 
 
-def _bike_ecg_augmented(augmentations: [Callable], leads: Union[List[int], slice]):
+def _bike_ecg_shifted(leads: Union[List[int], slice]):
     def _tff(tm: TensorMap, hd5: h5py.File, dependents=None):
         pretest_len = 15 * 500
         start = np.random.randint(pretest_len - tm.shape[0])
         ecg = _get_bike_ecg(hd5, tm, start, leads)
-        for func in augmentations:
-            ecg = func(ecg)
         return _fail_nan(tm.normalize_and_validate(ecg))
     return _tff
 
@@ -1371,12 +1369,13 @@ def _build_augmented_bike_ecg_tmaps():
     name = f'ecg_bike_shifted'
     TMAPS[name] = TensorMap('full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
                             validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False,
-                            tensor_from_file=_bike_ecg_augmented([], [0]),)
+                            tensor_from_file=_bike_ecg_shifted([0]), )
     for i, aug in enumerate(ecg_augmentations):
         name += aug.__name__
         TMAPS[name] = TensorMap('full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
                                 validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False,
-                                tensor_from_file=_bike_ecg_augmented(ecg_augmentations[:i + 1], [0]))
+                                augmentations=list(ecg_augmentations[:i + 1]),
+                                tensor_from_file=_bike_ecg_shifted([0]))
 
 
 _build_augmented_bike_ecg_tmaps()
