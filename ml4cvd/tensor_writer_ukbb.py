@@ -693,7 +693,7 @@ def create_tensor_in_hd5(hd5: h5py.File, path_prefix: str, name: str, value, sta
     else:
         raise NotImplementedError(f'{storage_type} cannot be automatically written yet')  # TODO: Add categorical, etc.
     if date is not None:
-        d.attrs['date'] = time.mktime(date.timetuple())
+        d.attrs.create('date', time.mktime(date.timetuple()), dtype=np.int64)
 
 
 def tensor_path(path_prefix: str, name: str) -> str:
