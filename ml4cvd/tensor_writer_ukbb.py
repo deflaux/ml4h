@@ -56,6 +56,7 @@ MRI_CARDIAC_SERIES = ['cine_segmented_lax_2ch', 'cine_segmented_lax_3ch', 'cine_
 MRI_CARDIAC_SERIES_SEGMENTED = [series+'_segmented' for series in MRI_CARDIAC_SERIES]
 MRI_BRAIN_SERIES = ['t1_p2_1mm_fov256_sag_ti_880', 't2_flair_sag_p2_1mm_fs_ellip_pf78']
 MRI_NIFTI_FIELD_ID_TO_ROOT = {'20251': 'SWI', '20252': 'T1', '20253': 'T2_FLAIR'}
+MRI_NIFTI_TO_SKIP = ['T1_brain', 'T1_orig_defaced', 'T1_unbiased_brain', 'T2_FLAIR_brain', 'T2_FLAIR_orig_defaced', 'T2_FLAIR_unbiased_brain']
 MRI_LIVER_SERIES = ['gre_mullti_echo_10_te_liver', 'lms_ideal_optimised_low_flip_6dyn', 'shmolli_192i', 'shmolli_192i_liver', 'shmolli_192i_fitparams', 'shmolli_192i_t1map']
 MRI_LIVER_SERIES_12BIT = ['gre_mullti_echo_10_te_liver_12bit', 'lms_ideal_optimised_low_flip_6dyn_12bit', 'shmolli_192i_12bit', 'shmolli_192i_liver_12bit']
 MRI_LIVER_IDEAL_PROTOCOL = ['lms_ideal_optimised_low_flip_6dyn', 'lms_ideal_optimised_low_flip_6dyn_12bit']
@@ -853,6 +854,8 @@ def _write_tensors_from_niftis(folder: str, hd5: h5py.File, field_id: str, stats
         nifti_mri = nib.load(nifti)
         nifti_array = nifti_mri.get_fdata()
         nii_name = os.path.basename(nifti).replace('.nii.gz', '')  # removes .nii.gz
+        if nii_name in MRI_NIFTI_TO_SKIP:
+            continue
         parent = nifti.split('/')[-2]
         if parent not in nii_name:
             nii_name = f'{parent}_{nii_name}'
