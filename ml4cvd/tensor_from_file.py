@@ -1387,6 +1387,12 @@ TMAPS['ecg_bike_aligned_shifted'] = TensorMap(
     tensor_from_file=_bike_ecg_aligned_augmented([], [0]),)
 
 
+TMAPS['ecg_bike_normalized_aligned_shifted'] = TensorMap(
+    'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_aligned_augmented([], [0,]),)
+
+
 TMAPS['ecg_bike_aligned_shifted_warped_noised'] = TensorMap(
     'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
