@@ -778,8 +778,8 @@ TMAPS['lesions'] = TensorMap('lesions_final_mask', Interpretation.CATEGORICAL, s
                              tensor_from_file=_mask_from_file, channel_map={'not_lesion': 0, 'lesion': 1}, loss=weighted_crossentropy([0.01, 10.0], 'lesion'))
 
 
-def _combined_subset_tensor(tensor_keys, start, stop, step=1, pad_shape=None):
-    slice_subsets = [_slice_subset_tensor(k, start, stop, step=step, pad_shape=pad_shape, allow_channels=False) for k in tensor_keys]
+def _combined_subset_tensor(tensor_keys, start, stop, step=1, pad_shape=None, flip_swap=False):
+    slice_subsets = [_slice_subset_tensor(k, start, stop, step=step, pad_shape=pad_shape, allow_channels=False, flip_swap=flip_swap) for k in tensor_keys]
 
     def mask_subset_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
         tensor = np.zeros(tm.shape, dtype=np.float32)
