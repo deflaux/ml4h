@@ -27,7 +27,8 @@ ECG_REST_LUDB_LEADS =  {'i': 0, 'ii': 1, 'v1': 2, 'v2': 3, 'v3': 4, 'v4': 5, 'v5
 ECG_REST_LEADS = {'strip_I': 0, 'strip_II': 1, 'strip_V1': 2, 'strip_V2': 3, 'strip_V3': 4,
                   'strip_V4': 5, 'strip_V5': 6, 'strip_V6': 7}
 
-
+##ECG_REST_LEADS = {'strip_i': 0, 'strip_ii': 1, 'strip_v1': 2, 'strip_v2': 3, 'strip_v3': 4,
+#                  'strip_v4': 5, 'strip_v5': 6, 'strip_v6': 7}
 
 
 """
@@ -592,8 +593,14 @@ TMAPS['ecg_rest_ludb_segmentation_coarse'] = TensorMap('ecg_rest_ludb_segmentati
                                                        shape=(5000, 8, 7),
                                                        cacheable=False,
                                                        channel_map={'background': 0, 'qrs': 1, 'st': 2, 't': 3, 'tp': 4, 'p': 5, 'pq': 6})
+TMAPS['ecg_rest_ludb_vanilla'] = TensorMap('strip', group='ecg_rest', channel_map=ECG_REST_LUDB_LEADS,
+                                           shape = (5000, 8),
+                                           dtype=DataSetType.FLOAT_ARRAY,
+                                           cacheable=False,
+                                           tensor_from_file=_make_ecg_segmentation(onehot=False, augment_roll=False, augment_scale_wave=False))
 
-TMAPS['ecg_rest_ludb'] = TensorMap('ecg_rest_ludb', group='ecg_rest_ludb', channel_map=ECG_REST_LUDB_LEADS,
+
+TMAPS['ecg_rest_ludb'] = TensorMap('strip', group='ecg_rest', channel_map=ECG_REST_LUDB_LEADS,
                                    shape = (5000, 8, 1),
                                    dtype=DataSetType.FLOAT_ARRAY,
                                    cacheable=False,
@@ -615,6 +622,44 @@ TMAPS['ecg_rest_ludb_1beat'] = TensorMap('ecg_rest_ludb', group='ecg_rest_ludb',
                                           cacheable=False,
                                           dependent_map=TMAPS['ecg_rest_ludb_1beat_segmentation_coarse'],
                                           tensor_from_file=_make_ecg_segmentation(onehot=True, augment_roll=False, augment_scale_wave=True))
+
+
+def _ecg_interval_from_file(tm, hd5, dependents={}):
+    tensor = np.zeros(tm.shape)
+    key_hd5 = tm.group + '/' + tm.name
+    tensor[:] = hd5[key_hd5][0]
+    return tm.normalize_and_validate(tensor)
+
+TMAPS['ecg-ludb-rr-interval'] = TensorMap('rr-interval-sentinel_prediction', group='continuous', loss='logcosh',
+                                          validator=make_range_validator(0, 2000),
+                                          channel_map={'rr-interval': 0},
+                                          tensor_from_file = _ecg_interval_from_file,
+                                          normalization={'mean': 1040.61, 'std': 175.5})
+
+TMAPS['ecg-ludb-qt-interval'] = TensorMap('qt-interval-sentinel_prediction', group='continuous', loss='logcosh',
+                                          validator=make_range_validator(0, 2000),
+                                          channel_map={'qt-interval': 0},
+                                          tensor_from_file = _ecg_interval_from_file,
+                                          normalization={'mean': 426.1, 'std': 32.24})
+
+TMAPS['ecg-ludb-pq-interval'] = TensorMap('pq-interval-sentinel_prediction', group='continuous', loss='logcosh',
+                                          validator=make_range_validator(0, 2000),
+                                          channel_map={'pq-interval': 0},
+                                          tensor_from_file = _ecg_interval_from_file,
+                                          normalization={'mean': 165.9, 'std': 26.3})
+
+TMAPS['ecg-ludb-p-duration'] = TensorMap('p-duration-sentinel_prediction', group='continuous', loss='logcosh',
+                                         validator=make_range_validator(0, 2000),
+                                         channel_map={'p-duration': 0},
+                                         tensor_from_file = _ecg_interval_from_file,
+                                         normalization={'mean': 96.1, 'std': 18.85})
+
+TMAPS['ecg-ludb-qrs-duration'] = TensorMap('qrs-duration-sentinel_prediction', group='continuous', loss='logcosh',
+                                           validator=make_range_validator(0, 2000),
+                                           channel_map={'qrs-interval': 0},
+                                           tensor_from_file = _ecg_interval_from_file,
+                                           normalization={'mean': 89.53, 'std': 12.21})
+
 
 
 def _make_detect_lead(population_normalize=None):
