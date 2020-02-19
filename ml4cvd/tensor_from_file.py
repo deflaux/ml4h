@@ -493,10 +493,11 @@ def _ecg_lead_detector_from_file(tm, hd5, dependents={}):
         tensor[:, i] = hd5[tm.path_prefix][k]
     return tensor
 
-TMAPS['ecg_rest_3leads_detector'] = TensorMap('lead', Interpretation.CATEGORICAL, shape=(3, 12), path_prefix='ecg_rest', tensor_from_file=_ecg_lead_detector_from_file)
+TMAPS['ecg_rest_1lead_detector'] = TensorMap('lead', Interpretation.CATEGORICAL, shape=(12), cacheable=False, 
+                                              path_prefix='ecg_rest', tensor_from_file=_ecg_lead_detector_from_file)
 
-TMAPS['ecg_rest_3leads'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 3), path_prefix='ecg_rest', tensor_from_file=_ecg_lead_detector_from_file,
-                                     channel_map=ECG_REST_LEADS)
+TMAPS['ecg_rest_1lead'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), cacheable=False, path_prefix='ecg_rest',
+                                     tensor_from_file=_ecg_lead_detector_from_file, channel_map=ECG_REST_LEADS)
 
 
 def _make_rhythm_tensor(skip_poor=True):
