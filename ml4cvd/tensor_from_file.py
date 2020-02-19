@@ -482,6 +482,23 @@ TMAPS['ecg_rest_1lead_categorical'] = TensorMap('strip', shape=(600, 8), path_pr
                                                 dependent_map=TMAPS['ecg_median_1lead_categorical'])
 
 
+def _ecg_lead_detector_from_file(tm, hd5, dependents={}):
+    tensor = np.zeros(tm.shape, dtype=np.float32)
+    leads = random.sample(list(tm.channel_map.keys()), tm.shape[1])
+    if tm.dependent_map is not None:
+        dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.float32)
+        label_tensor = [ECG_REST_LEADS[k] for k in leads]
+        dependents[:] = to_categorical(label_tensor, tm.dependent_map.shape[-1])
+    for i, k in enumerate(leads):
+        tensor[:, i] = hd5[tm.path_prefix][k]
+    return tensor
+
+TMAPS['ecg_rest_3leads_detector'] = TensorMap('lead', Interpretation.CATEGORICAL, shape=(3, 12), path_prefix='ecg_rest', tensor_from_file=_ecg_lead_detector_from_file)
+
+TMAPS['ecg_rest_3leads'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 3), path_prefix='ecg_rest', tensor_from_file=_ecg_lead_detector_from_file,
+                                     channel_map=ECG_REST_LEADS)
+
+
 def _make_rhythm_tensor(skip_poor=True):
     def rhythm_tensor_from_file(tm, hd5, dependents={}):
         categorical_data = np.zeros(tm.shape, dtype=np.float32)
