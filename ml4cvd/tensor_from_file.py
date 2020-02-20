@@ -1359,6 +1359,16 @@ def _bike_ecg_aligned_augmented(augmentations: [Callable], leads: Union[List[int
     return _tff
 
 
+def _bike_ecg_first_r_aligned(augmentations: [Callable], leads: Union[List[int], slice]):
+    def _tff(tm: TensorMap, hd5: h5py.File, dependents=None):
+        pretest_len = 15 * 500
+        ecg = _get_aligned_bike_ecg(hd5, tm, ECG_ALIGN_OFFSET, leads)
+        for func in augmentations:
+            ecg = func(ecg)
+        return tm.normalize_and_validate(ecg)
+    return _tff
+
+
 TMAPS['ecg-bike-pretest-leadI'] = TensorMap('full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
                                             validator=no_nans, normalization={'mean': 7, 'std': 31}, metrics=['mse'],
                                             tensor_from_file=_build_bike_ecg_tensor_from_file(0, [0]),)
@@ -1379,6 +1389,30 @@ def _build_augmented_bike_ecg_tmaps():
 
 
 _build_augmented_bike_ecg_tmaps()
+
+
+TMAPS['ecg_bike_aligned_first_r'] = TensorMap(
+    'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_first_r_aligned([], [0]),)
+
+
+TMAPS['ecg_bike_aligned_first_r_noised'] = TensorMap(
+    'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_first_r_aligned([_rand_add_noise], [0]),)
+
+
+TMAPS['ecg_bike_aligned_first_r_normalized'] = TensorMap(
+    'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_first_r_aligned([], [0]),)
+
+
+TMAPS['ecg_bike_aligned_first_r_noised_normalized'] = TensorMap(
+    'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_first_r_aligned([_rand_add_noise], [0]),)
 
 
 TMAPS['ecg_bike_aligned_shifted'] = TensorMap(
