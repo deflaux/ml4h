@@ -12,7 +12,7 @@ import vtk.util.numpy_support
 from scipy.stats import linregress
 from keras.utils import to_categorical
 
-from ml4cvd.metrics import weighted_crossentropy, sqrt_error
+from ml4cvd.metrics import weighted_crossentropy, sqrt_error, mean_quartic_error
 from ml4cvd.tensor_writer_ukbb import tensor_path, path_date_to_datetime, first_dataset_at_path
 from ml4cvd.TensorMap import TensorMap, no_nans, str2date, make_range_validator, Interpretation
 from ml4cvd.defines import StorageType, ECG_REST_LEADS, ECG_REST_MEDIAN_LEADS, ECG_REST_AMP_LEADS, EPS
@@ -1595,10 +1595,20 @@ TMAPS['ecg-bike-trend-artifact'] = TensorMap('trend_artifact', shape=(120, 1), p
 TMAPS['ecg-bike-afib'] = TensorMap('afib', shape=(2,),
                                    interpretation=Interpretation.CATEGORICAL, channel_map={'no_afib': 0, 'afib': 1},
                                    tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/exercise_afib.csv', delimiter=',', id_column='sample_id'))
+TMAPS['ecg-bike-cigarettes'] = TensorMap('cigarettes', shape=(2,),
+                                         interpretation=Interpretation.CATEGORICAL, channel_map={'no_cig': 0, 'cig': 1},
+                                         tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/20116_0_or_1.csv', delimiter=',', id_column='sample_id'))
 TMAPS['ecg-bike-bb'] = TensorMap('beta_blockers', shape=(2,),
                                  interpretation=Interpretation.CATEGORICAL, channel_map={'no_bb': 0, 'bb': 1},
                                  tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/beta_blockers.csv', delimiter=',', id_column='sample_id'))
 TMAPS['ecg-bike-hrr-raw-file'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
+                                           normalization={'mean': 25, 'std': 15},
+                                           interpretation=Interpretation.CONTINUOUS,
+                                           validator=make_range_validator(0, 110),
+                                           tensor_from_file=_build_tensor_from_file('/home/ndiamant/raw_hrr.csv', 'hrr', delimiter=','))
+
+
+TMAPS['ecg-bike-hrr-raw-file-4th-order'] = TensorMap('hrr', loss=mean_quartic_error, metrics=['mae', 'logcosh'], shape=(1,),
                                            normalization={'mean': 25, 'std': 15},
                                            interpretation=Interpretation.CONTINUOUS,
                                            validator=make_range_validator(0, 110),
