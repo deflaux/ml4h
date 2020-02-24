@@ -1380,6 +1380,24 @@ def _bike_ecg_first_r_aligned_downsampled(augmentations: [Callable], leads: Unio
     return _tff
 
 
+def _peak_exercise(tm: TensorMap, hd5: h5py.File, dependents=None):
+    _check_phase_full_len(hd5, 'pretest')
+    _check_phase_full_len(hd5, 'rest')
+
+    exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike/continuous', 'exercise_duration')
+    exercise_end = int(500 * (15 + exercise_dur - 2.5))  # 2.5 seconds before recovery begins
+    return tm.normalize_and_validate(_get_bike_ecg(hd5, tm, exercise_end, leads=[0, 1, 2]))
+
+
+def _end_recovery(tm: TensorMap, hd5: h5py.File, dependents=None):
+    _check_phase_full_len(hd5, 'pretest')
+    _check_phase_full_len(hd5, 'rest')
+
+    exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike/continuous', 'exercise_duration')
+    recovery_end = int(500 * (15 + exercise_dur + 60 - 5))  # 5 seconds before recovery ends
+    return tm.normalize_and_validate(_get_bike_ecg(hd5, tm, recovery_end, leads=[0, 1, 2]))
+
+
 TMAPS['ecg-bike-pretest-leadI'] = TensorMap('full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
                                             validator=no_nans, normalization={'mean': 7, 'std': 31}, metrics=['mse'],
                                             tensor_from_file=_build_bike_ecg_tensor_from_file(0, [0]),)
@@ -1466,6 +1484,18 @@ TMAPS['ecg_bike_normalized_aligned_shifted_noised'] = TensorMap(
     'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_aligned_augmented([_rand_add_noise], [0,]),)
+
+
+TMAPS['ecg_bike_normalized_peak_exercise'] = TensorMap(
+    'full', shape=(2400, 3), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=True, metrics=['mse'],
+    tensor_from_file=_peak_exercise,)
+
+
+TMAPS['ecg_bike_normalized_end_recovery'] = TensorMap(
+    'full', shape=(2400, 3), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=True, metrics=['mse'],
+    tensor_from_file=_peak_exercise,)
 
 
 def _ecg_protocol_string(hd5):
@@ -1578,7 +1608,6 @@ def _hrr_measurements_from_raw(hd5):
     if final_recovery_hr < 30:
         raise ValueError('Min HR too low.')
     return final_exercise_hr, final_recovery_hr
-
 
 def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     final_exercise_hr, final_recovery_hr = _get_hrr_measurements(hd5)
