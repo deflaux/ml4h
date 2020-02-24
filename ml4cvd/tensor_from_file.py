@@ -1231,7 +1231,7 @@ TMAPS['sax_all_weighted'] = TensorMap('sax_all_weighted', shape=(256, 256, 26, 1
 
 # BIKE ECG
 def _check_phase_full_len(hd5: h5py.File, phase: str):
-    phase_len = _get_tensor_at_first_date(hd5, 'ecg_bike', f'{phase}_duration')
+    phase_len = _get_tensor_at_first_date(hd5, 'ecg_bike/continuous', f'{phase}_duration')
     valid = True
     if phase == 'pretest':
         valid &= phase_len == 15
@@ -1487,13 +1487,13 @@ TMAPS['ecg_bike_normalized_aligned_shifted_noised'] = TensorMap(
 
 
 TMAPS['ecg_bike_normalized_peak_exercise'] = TensorMap(
-    'full', shape=(2400, 3), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    'peak_exercise', shape=(2400, 3), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=True, metrics=['mse'],
     tensor_from_file=_peak_exercise,)
 
 
 TMAPS['ecg_bike_normalized_end_recovery'] = TensorMap(
-    'full', shape=(2400, 3), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    'end_recovery', shape=(2400, 3), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=True, metrics=['mse'],
     tensor_from_file=_peak_exercise,)
 
