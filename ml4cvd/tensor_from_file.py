@@ -1402,8 +1402,8 @@ def _build_end_recovery(augmentations: [Callable], leads: Union[List[int], slice
         _check_phase_full_len(hd5, 'rest')
 
         exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike/continuous', 'exercise_duration')
-        shift = 500 * np.random.rand()
-        recovery_end = int(500 * (15 + exercise_dur + 60 - 5) + shift)  # 5 seconds before recovery ends
+        shift = -500 * np.random.rand()
+        recovery_end = int(500 * (15 + exercise_dur + 60 - 7) + shift)  # 5 seconds before recovery ends
         ecg = _get_bike_ecg(hd5, tm, recovery_end, leads=leads)
         for func in augmentations:
             ecg = func(ecg)
@@ -1512,13 +1512,13 @@ TMAPS['ecg_bike_normalized_end_recovery'] = TensorMap(
     tensor_from_file=_build_end_recovery([], [0, 1, 2]),)
 
 
-TMAPS['ecg_bike_normalized_peak_exercise'] = TensorMap(
+TMAPS['ecg_bike_normalized_warped_noised_peak_exercise'] = TensorMap(
     'peak_exercise', shape=(2400, 3), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
     tensor_from_file=_build_peak_exercise([_warp_ecg, _rand_add_noise], [0, 1, 2]),)
 
 
-TMAPS['ecg_bike_normalized_end_recovery'] = TensorMap(
+TMAPS['ecg_bike_normalized_warped_noised_end_recovery'] = TensorMap(
     'end_recovery', shape=(2400, 3), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
     tensor_from_file=_build_end_recovery([_warp_ecg, _rand_add_noise], [0, 1, 2]),)
@@ -1715,6 +1715,11 @@ TMAPS['ecg-bike-hrr-raw-file'] = TensorMap('hrr', loss='logcosh', metrics=['mae'
                                            interpretation=Interpretation.CONTINUOUS,
                                            validator=make_range_validator(0, 110),
                                            tensor_from_file=_build_tensor_from_file('/home/ndiamant/raw_hrr.csv', 'hrr', delimiter=','))
+TMAPS['ecg-bike-hrr-raw-ensemble'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
+                                           normalization={'mean': 25, 'std': 15},
+                                           interpretation=Interpretation.CONTINUOUS,
+                                           validator=make_range_validator(0, 110),
+                                           tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
 TMAPS['ecg-bike-hrr'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
                                   normalization={'mean': 25, 'std': 15},
                                   interpretation=Interpretation.CONTINUOUS,
