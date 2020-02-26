@@ -520,3 +520,7 @@ def concordance_index(prediction, truth, tied_tol=1e-8):
 
 def sqrt_error(pred, true):
     return K.sqrt(K.abs(pred - true))
+
+
+def mean_quartic_error(pred, true):
+    return K.pow(true - pred, 4)

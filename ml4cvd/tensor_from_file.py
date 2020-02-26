@@ -12,7 +12,7 @@ import vtk.util.numpy_support
 from scipy.stats import linregress
 from keras.utils import to_categorical
 
-from ml4cvd.metrics import weighted_crossentropy, sqrt_error
+from ml4cvd.metrics import weighted_crossentropy, sqrt_error, mean_quartic_error
 from ml4cvd.tensor_writer_ukbb import tensor_path, path_date_to_datetime, first_dataset_at_path
 from ml4cvd.TensorMap import TensorMap, no_nans, str2date, make_range_validator, Interpretation
 from ml4cvd.defines import StorageType, ECG_REST_LEADS, ECG_REST_MEDIAN_LEADS, ECG_REST_AMP_LEADS, EPS
@@ -1368,6 +1368,17 @@ def _bike_ecg_first_r_aligned(augmentations: [Callable], leads: Union[List[int],
     return _tff
 
 
+def _bike_ecg_shifted_downsampled(augmentations: [Callable], leads: Union[List[int], slice], rate: float):
+    def _tff(tm: TensorMap, hd5: h5py.File, dependents=None):
+        pretest_len = 15 * 500
+        ecg = _get_bike_ecg(hd5, tm, ECG_ALIGN_OFFSET, leads, length=int(rate * tm.shape[0]))
+        ecg =_downsample(ecg, rate)
+        for func in augmentations:
+            ecg = func(ecg)
+        return tm.normalize_and_validate(ecg)
+    return _tff
+
+
 def _bike_ecg_first_r_aligned_downsampled(augmentations: [Callable], leads: Union[List[int], slice], rate: float):
     def _tff(tm: TensorMap, hd5: h5py.File, dependents=None):
         ecg = _get_aligned_bike_ecg(hd5, tm, ECG_ALIGN_OFFSET, leads, length=int(rate * tm.shape[0]))
@@ -1468,6 +1479,30 @@ TMAPS['ecg_bike_aligned_first_r_noised_normalized_8xdownsampled'] = TensorMap(
     'full', shape=(512, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_first_r_aligned_downsampled([_rand_add_noise], [0], 8),)
+
+
+TMAPS['ecg_bike_shifted_8xdownsampled'] = TensorMap(
+    'full', shape=(1024, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_first_r_aligned_downsampled([], [0], 8),)
+
+
+TMAPS['ecg_bike_warped_noised_8xdownsampled'] = TensorMap(
+    'full', shape=(1024, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_first_r_aligned_downsampled([_warp_ecg, _rand_add_noise], [0], 8),)
+
+
+TMAPS['ecg_bike_shifted_normalized_8xdownsampled'] = TensorMap(
+    'full', shape=(1024, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_first_r_aligned_downsampled([], [0], 8),)
+
+
+TMAPS['ecg_bike_warped_noised_normalized_8xdownsampled'] = TensorMap(
+    'full', shape=(1024, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_first_r_aligned_downsampled([_warp_ecg, _rand_add_noise], [0], 8),)
 
 
 TMAPS['ecg_bike_aligned_shifted'] = TensorMap(
@@ -1707,6 +1742,9 @@ TMAPS['ecg-bike-trend-artifact'] = TensorMap('trend_artifact', shape=(120, 1), p
 TMAPS['ecg-bike-afib'] = TensorMap('afib', shape=(2,),
                                    interpretation=Interpretation.CATEGORICAL, channel_map={'no_afib': 0, 'afib': 1},
                                    tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/exercise_afib.csv', delimiter=',', id_column='sample_id'))
+TMAPS['ecg-bike-cigarettes'] = TensorMap('cigarettes', shape=(2,),
+                                         interpretation=Interpretation.CATEGORICAL, channel_map={'no_cig': 0, 'cig': 1},
+                                         tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/20116_0_or_1.csv', delimiter=',', id_column='sample_id'))
 TMAPS['ecg-bike-bb'] = TensorMap('beta_blockers', shape=(2,),
                                  interpretation=Interpretation.CATEGORICAL, channel_map={'no_bb': 0, 'bb': 1},
                                  tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/beta_blockers.csv', delimiter=',', id_column='sample_id'))
@@ -1720,6 +1758,13 @@ TMAPS['ecg-bike-hrr-raw-ensemble'] = TensorMap('hrr', loss='logcosh', metrics=['
                                            interpretation=Interpretation.CONTINUOUS,
                                            validator=make_range_validator(0, 110),
                                            tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
+
+
+TMAPS['ecg-bike-hrr-raw-file-4th-order'] = TensorMap('hrr', loss=mean_quartic_error, metrics=['mae', 'logcosh'], shape=(1,),
+                                           normalization={'mean': 25, 'std': 15},
+                                           interpretation=Interpretation.CONTINUOUS,
+                                           validator=make_range_validator(0, 110),
+                                           tensor_from_file=_build_tensor_from_file('/home/ndiamant/raw_hrr.csv', 'hrr', delimiter=','))
 TMAPS['ecg-bike-hrr'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
                                   normalization={'mean': 25, 'std': 15},
                                   interpretation=Interpretation.CONTINUOUS,
