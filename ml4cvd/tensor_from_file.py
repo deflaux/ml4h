@@ -13,16 +13,11 @@ from scipy.stats import linregress
 from keras.utils import to_categorical
 
 from ml4cvd.metrics import weighted_crossentropy, sqrt_error, mean_quartic_error
-from ml4cvd.tensor_writer_ukbb import tensor_path, path_date_to_datetime, first_dataset_at_path
+from ml4cvd.tensor_writer_ukbb import tensor_path, first_dataset_at_path
 from ml4cvd.TensorMap import TensorMap, no_nans, str2date, make_range_validator, Interpretation
 from ml4cvd.defines import StorageType, ECG_REST_LEADS, ECG_REST_MEDIAN_LEADS, ECG_REST_AMP_LEADS, EPS
 from ml4cvd.defines import MRI_TO_SEGMENT, MRI_SEGMENTED, MRI_LAX_SEGMENTED, MRI_SEGMENTED_CHANNEL_MAP, MRI_FRAMES
 from ml4cvd.defines import MRI_PIXEL_WIDTH, MRI_PIXEL_HEIGHT, MRI_SLICE_THICKNESS, MRI_PATIENT_ORIENTATION, MRI_PATIENT_POSITION
-
-
-"""
-For now, all we will map `group` in TensorMap to `source` in tensor_path and `name` to `name`
-"""
 
 
 def normalized_first_date(tm: TensorMap, hd5: h5py.File, dependents=None):
@@ -1693,6 +1688,51 @@ def _recovery_hr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     return np.array(final_recovery_hr)
 
 
+def _build_noised_tensor_from_file(file_name: str, target_column: str, noise_column: str, normalization: bool = False, delimiter: str = '\t'):
+    """
+    Build a tensor_from_file function from a column in a file.
+    Only works for continuous values.
+    When normalization is True values will be normalized according to the mean and std of all of the values in the column.
+    """
+    error = None
+    try:
+        with open(file_name, 'r') as f:
+            reader = csv.reader(f, delimiter=delimiter)
+            header = next(reader)
+            index = header.index(target_column)
+            noise_index = header.index(noise_column)
+            table = {}
+            fail_count = 0
+            for row in reader:
+                try:
+                    table[row[0]] = np.array([float(row[index])])
+                    table[f'{row[0]}_std'] = np.array([float(row[noise_index])])
+                except ValueError:
+                    fail_count += 1
+                    continue
+            logging.info(f'{fail_count} samples failed out of {len(table) + fail_count} in {file_name}.')
+            if normalization:
+                value_array = np.array([sub_array[0] for sub_array in table.values()])
+                mean = value_array.mean()
+                std = value_array.std()
+                logging.info(f'Normalizing TensorMap from file {file_name}, column {target_column} with mean: '
+                             f'{mean:.2f}, std: {std:.2f}')
+    except FileNotFoundError as e:
+        error = e
+
+    def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
+        if error:
+            raise error
+        if normalization:
+            tm.normalization = {'mean': mean, 'std': std}
+        try:
+            key = os.path.basename(hd5.filename).replace('.hd5', '')
+            return table[key].copy() + np.random.randn() * table[f'{key}_std']
+        except KeyError:
+            raise KeyError(f'User id not in file {file_name}.')
+    return tensor_from_file
+
+
 # FOR JEN
 TMAPS['ecg-bike-pretest-duration'] = TensorMap('pretest_duration', path_prefix='ecg_bike/continuous', loss='logcosh', metrics=['mae'], shape=(1,),
                                                normalization={'mean': 0, 'std': 1},
@@ -1761,6 +1801,11 @@ TMAPS['ecg-bike-hrr-raw-ensemble'] = TensorMap('hrr', loss='logcosh', metrics=['
                                                interpretation=Interpretation.CONTINUOUS,
                                                validator=make_range_validator(0, 110),
                                                tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
+TMAPS['ecg-bike-hrr-raw-ensemble-noised'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
+                                                      normalization={'mean': 25, 'std': 15},
+                                                      interpretation=Interpretation.CONTINUOUS,
+                                                      validator=make_range_validator(0, 110),
+                                                      tensor_from_file=_build_noised_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', 'hrr_std', delimiter=','))
 TMAPS['ecg-bike-hrr-raw-ensemble-discretized'] = TensorMap(
     'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
     discretization_bounds=[20, 25, 30, 40],
