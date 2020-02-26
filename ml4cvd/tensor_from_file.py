@@ -132,7 +132,7 @@ def _build_tensor_from_sample_id_file(file_name: str, id_column: str, delimiter:
         if error:
             raise error
         sample_id = os.path.basename(hd5.filename).replace('.hd5', '')
-        return tm.normalize_and_validate(np.array([1, 0]) if sample_id in table else np.array([0, 1]))
+        return (np.array([1, 0]) if sample_id in table else np.array([0, 1]))
     return tensor_from_file
 
 
@@ -1336,7 +1336,7 @@ def _rand_roll(ecg):
 
 # BIKE ECG TENSOR FROM FILE #
 def _build_bike_ecg_tensor_from_file(start, leads: Union[List[int], slice]):
-    return lambda tm, hd5, dependents: tm.normalize_and_validate(_get_bike_ecg(hd5, tm, start, leads))
+    return lambda tm, hd5, dependents: (_get_bike_ecg(hd5, tm, start, leads))
 
 
 def _bike_ecg_shifted(leads: Union[List[int], slice]):
@@ -1344,7 +1344,7 @@ def _bike_ecg_shifted(leads: Union[List[int], slice]):
         pretest_len = 15 * 500
         start = np.random.randint(pretest_len - tm.shape[0])
         ecg = _get_bike_ecg(hd5, tm, start, leads)
-        return _fail_nan(tm.normalize_and_validate(ecg))
+        return _fail_nan(ecg)
     return _tff
 
 
@@ -1355,7 +1355,7 @@ def _bike_ecg_aligned_augmented(augmentations: [Callable], leads: Union[List[int
         ecg = _get_aligned_bike_ecg(hd5, tm, start, leads)
         for func in augmentations:
             ecg = func(ecg)
-        return tm.normalize_and_validate(ecg)
+        return ecg
     return _tff
 
 
@@ -1364,7 +1364,7 @@ def _bike_ecg_first_r_aligned(augmentations: [Callable], leads: Union[List[int],
         ecg = _get_aligned_bike_ecg(hd5, tm, ECG_ALIGN_OFFSET, leads)
         for func in augmentations:
             ecg = func(ecg)
-        return tm.normalize_and_validate(ecg)
+        return ecg
     return _tff
 
 
@@ -1375,7 +1375,7 @@ def _bike_ecg_shifted_downsampled(augmentations: [Callable], leads: Union[List[i
         ecg =_downsample(ecg, rate)
         for func in augmentations:
             ecg = func(ecg)
-        return tm.normalize_and_validate(ecg)
+        return ecg
     return _tff
 
 
@@ -1385,7 +1385,7 @@ def _bike_ecg_first_r_aligned_downsampled(augmentations: [Callable], leads: Unio
         ecg =_downsample(ecg, rate)
         for func in augmentations:
             ecg = func(ecg)
-        return tm.normalize_and_validate(ecg)
+        return ecg
     return _tff
 
 
@@ -1401,7 +1401,7 @@ def _build_peak_exercise(augmentations: [Callable], leads: Union[List[int], slic
         ecg = _get_bike_ecg(hd5, tm, exercise_end, leads=leads)
         for func in augmentations:
             ecg = func(ecg)
-        return tm.normalize_and_validate(ecg)
+        return ecg
 
     return tff
 
@@ -1418,7 +1418,7 @@ def _build_end_recovery(augmentations: [Callable], leads: Union[List[int], slice
         ecg = _get_bike_ecg(hd5, tm, recovery_end, leads=leads)
         for func in augmentations:
             ecg = func(ecg)
-        return tm.normalize_and_validate(ecg)
+        return ecg
 
     return tff
 
@@ -1574,7 +1574,7 @@ def _ecg_protocol(tm: TensorMap, hd5: h5py.File, dependents=None):
     """
     out = np.zeros(tm.shape)  # TODO: this should all be default categorical behaviour
     out[tm.channel_map[_ecg_protocol_string(hd5)]] = 1
-    return tm.normalize_and_validate(out)
+    return out
 
 
 def _regress_hr_exercise_recovery(hd5: h5py.File):
@@ -1670,24 +1670,25 @@ def _hrr_measurements_from_raw(hd5):
         raise ValueError('Min HR too low.')
     return final_exercise_hr, final_recovery_hr
 
+
 def _hrr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     final_exercise_hr, final_recovery_hr = _get_hrr_measurements(hd5)
-    return tm.normalize_and_validate(np.array(final_exercise_hr - final_recovery_hr))
+    return np.array(final_exercise_hr - final_recovery_hr)
 
 
 def _hrr_raw(tm: TensorMap, hd5: h5py.File, dependents=None):
     final_exercise_hr, final_recovery_hr = _hrr_measurements_from_raw(hd5)
-    return tm.normalize_and_validate(np.array(final_exercise_hr - final_recovery_hr))
+    return np.array(final_exercise_hr - final_recovery_hr)
 
 
 def _max_hr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     final_exercise_hr, final_recovery_hr = _get_hrr_measurements(hd5)
-    return tm.normalize_and_validate(np.array(final_exercise_hr))
+    return np.array(final_exercise_hr)
 
 
 def _recovery_hr_qc(tm: TensorMap, hd5: h5py.File, dependents=None):
     final_exercise_hr, final_recovery_hr = _get_hrr_measurements(hd5)
-    return tm.normalize_and_validate(np.array(final_recovery_hr))
+    return np.array(final_recovery_hr)
 
 
 # FOR JEN
