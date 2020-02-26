@@ -288,6 +288,18 @@ class TensorMap(object):
         np_tensor = self.normalize(np_tensor)
         return self.discretize(np_tensor)
 
+    def rescale(self, np_tensor):
+        if self.normalization is None:
+            return np_tensor
+        elif 'mean' in self.normalization and 'std' in self.normalization:
+            np_tensor = np.array(np_tensor) * self.normalization['std']
+            np_tensor = np.array(np_tensor) + self.normalization['mean']
+            return np_tensor
+        elif 'zero_mean_std1' in self.normalization:
+            return self.zero_mean_std1(np_tensor)
+        else:
+            return np_tensor
+
     def apply_augmentations(self, tensor: np.ndarray, augment: bool) -> np.ndarray:
         if augment and self.augmentations is not None:
             for augmentation in self.augmentations:

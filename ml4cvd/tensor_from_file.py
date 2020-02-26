@@ -1249,6 +1249,8 @@ def _get_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int], slice]
     path_prefix, name = 'ecg_bike/float_array', 'full'
     ecg_dataset = first_dataset_at_path(hd5, tensor_path(path_prefix, name))
     tensor = np.array(ecg_dataset[start: tm.shape[0] + start if stop is None else stop, leads], dtype=np.float32)
+    if np.max(np.abs(tensor)) > 1000:
+        raise ValueError('ECG range too large.')
     return _fail_nan(tensor)
 
 
