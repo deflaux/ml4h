@@ -1757,10 +1757,15 @@ TMAPS['ecg-bike-hrr-raw-file'] = TensorMap('hrr', loss='logcosh', metrics=['mae'
                                            validator=make_range_validator(0, 110),
                                            tensor_from_file=_build_tensor_from_file('/home/ndiamant/raw_hrr.csv', 'hrr', delimiter=','))
 TMAPS['ecg-bike-hrr-raw-ensemble'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
-                                           normalization={'mean': 25, 'std': 15},
-                                           interpretation=Interpretation.CONTINUOUS,
-                                           validator=make_range_validator(0, 110),
-                                           tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
+                                               normalization={'mean': 25, 'std': 15},
+                                               interpretation=Interpretation.CONTINUOUS,
+                                               validator=make_range_validator(0, 110),
+                                               tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
+TMAPS['ecg-bike-hrr-raw-ensemble-discretized'] = TensorMap(
+    'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
+    discretization_bounds=[20, 25, 30, 40],
+    loss=weighted_crossentropy([4.151638434795473, 5.0337219730941705, 4.877128953771289, 3.7263311645199844, 11.48475547370575], 'hrr'),
+    tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
 
 
 TMAPS['ecg-bike-hrr-raw-file-4th-order'] = TensorMap('hrr', loss=mean_quartic_error, metrics=['mae', 'logcosh'], shape=(1,),
