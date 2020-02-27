@@ -6,6 +6,7 @@
 # TensorMaps can perform any computation by providing a callback function called tensor_from_file.
 # A default tensor_from_file will be attempted when a callback tensor_from_file is not provided.
 # TensorMaps guarantee shape, name, interpretation and mapping from hd5 to numpy array.
+import copy
 
 import logging
 import datetime
@@ -225,16 +226,17 @@ class TensorMap(object):
 
     def normalize_and_validate(self, np_tensor):
         self.validator(self, np_tensor)
+        np_tensor_copy = copy.copy(np_tensor)
         if self.normalization is None:
-            return np_tensor
+            return np_tensor_copy
         elif 'zero_mean_std1' in self.normalization:
-            np_tensor -= np.mean(np_tensor)
-            np_tensor /= np.std(np_tensor) + EPS
-            return np_tensor
+            np_tensor_copy -= np.mean(np_tensor_copy)
+            np_tensor_copy /= np.std(np_tensor_copy) + EPS
+            return np_tensor_copy
         elif 'mean' in self.normalization and 'std' in self.normalization:
-            np_tensor -= self.normalization['mean']
-            np_tensor /= (self.normalization['std'] + EPS)
-            return np_tensor
+            np_tensor_copy -= self.normalization['mean']
+            np_tensor_copy /= (self.normalization['std'] + EPS)
+            return np_tensor_copy
         else:
             raise ValueError(f'No way to normalize Tensor Map named:{self.name}')
 

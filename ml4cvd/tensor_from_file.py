@@ -5,6 +5,7 @@ import os
 import csv
 import vtk
 import h5py
+import random
 import logging
 import numpy as np
 import vtk.util.numpy_support
@@ -482,22 +483,140 @@ TMAPS['ecg_rest_1lead_categorical'] = TensorMap('strip', shape=(600, 8), path_pr
                                                 dependent_map=TMAPS['ecg_median_1lead_categorical'])
 
 
-def _ecg_lead_detector_from_file(tm, hd5, dependents={}):
+def _ecg_rest_lead_detector_from_file(tm, hd5, dependents={}):
     tensor = np.zeros(tm.shape, dtype=np.float32)
-    leads = random.sample(list(tm.channel_map.keys()), tm.shape[1])
+    leads = random.sample(list(tm.channel_map.keys()), tm.shape[-1])
     if tm.dependent_map is not None:
         dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.float32)
         label_tensor = [ECG_REST_LEADS[k] for k in leads]
-        dependents[:] = to_categorical(label_tensor, tm.dependent_map.shape[-1])
+        dependents[tm.dependent_map][:] = to_categorical(label_tensor, tm.dependent_map.shape[-1])
     for i, k in enumerate(leads):
         tensor[:, i] = hd5[tm.path_prefix][k]
     return tensor
 
-TMAPS['ecg_rest_1lead_detector'] = TensorMap('lead', Interpretation.CATEGORICAL, shape=(12), cacheable=False, 
-                                              path_prefix='ecg_rest', tensor_from_file=_ecg_lead_detector_from_file)
+TMAPS['ecg_rest_1lead_detector_categorical'] = TensorMap('lead', Interpretation.CATEGORICAL, shape=(12,), cacheable=False,
+                                                        channel_map=ECG_REST_LEADS, path_prefix='ecg_rest', tensor_from_file=_ecg_rest_lead_detector_from_file)
 
-TMAPS['ecg_rest_1lead'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), cacheable=False, path_prefix='ecg_rest',
-                                     tensor_from_file=_ecg_lead_detector_from_file, channel_map=ECG_REST_LEADS)
+TMAPS['ecg_rest_1lead_detector'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), cacheable=False, path_prefix='ecg_rest',
+                                             dependent_map = TMAPS['ecg_rest_1lead_detector_categorical'],
+                                             normalization='zero_mean_std1',
+                                             tensor_from_file=_ecg_rest_lead_detector_from_file, channel_map=ECG_REST_LEADS)
+
+class full_generator(object):
+    def __init__(self, original, stride_size, slice_size):
+        self.stride_size = stride_size
+        self.slice_size = slice_size
+        self.original = original
+        self.cnt = 0
+        self.length = (len(original) - slice_size) // stride_size + 1
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return self.next()
+
+    def next(self):
+        if self.cnt < self.length:
+            self.cnt += 1
+            return self.original[(self.cnt-1)*self.stride_size:(self.cnt-1)*self.stride_size+self.slice_size]
+
+
+def _make_bike_lead_detector(lead_idx, lead_idx2=None):
+    def ecg_bike_lead_detector_from_file(tm, hd5, dependents={}):
+        original = _get_tensor_at_first_date(hd5, tm.path_prefix, 'full')
+        lead_idxs = [lead_idx]
+        if lead_idx2 is not None:
+            lead_idxs.append(lead_idx2)
+        if len(tm.shape) == 2:
+            pretest = original[:tm.shape[0], lead_idxs]
+        else:
+            pretest = full_generator(original[:, lead_idxs], 500, 5000)
+        return pretest
+    return ecg_bike_lead_detector_from_file
+
+TMAPS['ecg_bike_1lead_detector_categorical'] = TensorMap('lead', Interpretation.CATEGORICAL, shape=(12,), cacheable=False, sentinel=0,
+                                                        channel_map=ECG_REST_LEADS, path_prefix='ecg_rest', tensor_from_file=_ecg_rest_lead_detector_from_file)
+
+TMAPS['ecg_bike_1lead_detector'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), cacheable=False, path_prefix='ecg_bike/float_array',
+                                             normalization='zero_mean_std1',
+                                             tensor_from_file=_make_bike_lead_detector(0), channel_map=ECG_REST_LEADS)
+
+TMAPS['ecg_bike_2lead_detector'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), cacheable=False, path_prefix='ecg_bike/float_array',
+                                             normalization='zero_mean_std1',
+                                             tensor_from_file=_make_bike_lead_detector(1), channel_map=ECG_REST_LEADS)
+
+TMAPS['ecg_bike_3lead_detector'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), cacheable=False, path_prefix='ecg_bike/float_array',
+                                             normalization='zero_mean_std1',
+                                             tensor_from_file=_make_bike_lead_detector(2), channel_map=ECG_REST_LEADS)
+
+
+def _make_hr_phase(tm, hd5, dependents={}):
+    heart_rate = _get_tensor_at_first_date(hd5, tm.path_prefix, 'trend_heartrate')
+    phases = _get_tensor_at_first_date(hd5, tm.path_prefix, 'trend_phasename')    
+    return np.mean(heart_rate[phases==0])
+
+TMAPS['ecg_bike_pretest_hr'] = TensorMap('VentricularRate', path_prefix='ecg_bike/float_array', shape=(1,),
+                                         tensor_from_file=_make_hr_phase, loss='logcosh', normalization={'mean': 59.3, 'std': 10.6})
+
+TMAPS['ecg_bike_pretest_I_II'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 2), path_prefix='ecg_bike/float_array',
+                                           normalization='zero_mean_std1',
+                                           tensor_from_file=_make_bike_lead_detector(0, 1), channel_map=ECG_REST_LEADS)
+
+TMAPS['ecg_bike_pretest_I_II_cyclical'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(100, 5000, 2), path_prefix='ecg_bike/float_array',
+                                                    normalization='zero_mean_std1',
+                                                    tensor_from_file=_make_bike_lead_detector(0, 1), channel_map=ECG_REST_LEADS)
+
+TMAPS['ecg_bike_pretest_I'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_bike/float_array',
+                                        normalization='zero_mean_std1',
+                                        tensor_from_file=_make_bike_lead_detector(0), channel_map=ECG_REST_LEADS)
+
+TMAPS['ecg_bike_pretest_I_cyclical'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(1000, 5000, 1), path_prefix='ecg_bike/float_array',
+                                        normalization='zero_mean_std1',
+                                        tensor_from_file=_make_bike_lead_detector(0), channel_map=ECG_REST_LEADS)
+
+TMAPS['ecg_bike_pretest_II'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_bike/float_array',
+                                         normalization='zero_mean_std1',
+                                         tensor_from_file=_make_bike_lead_detector(1), channel_map=ECG_REST_LEADS)
+
+TMAPS['ecg_bike_pretest_III']= TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_bike/float_array',
+                                         normalization='zero_mean_std1',
+                                         tensor_from_file=_make_bike_lead_detector(2), channel_map=ECG_REST_LEADS)
+
+TMAPS['ecg_bike_pretest_III_II'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 2), path_prefix='ecg_bike/float_array',
+                                            normalization='zero_mean_std1',
+                                            tensor_from_file=_make_bike_lead_detector(2, 1), channel_map=ECG_REST_LEADS)
+
+TMAPS['ecg_bike_pretest_III_II_cyclical'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(100, 5000, 2), path_prefix='ecg_bike/float_array',
+                                                      normalization='zero_mean_std1',
+                                                      tensor_from_file=_make_bike_lead_detector(2, 1), channel_map=ECG_REST_LEADS)
+
+TMAPS['ecg_rest_I'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                channel_map={'strip_I': 0})
+TMAPS['ecg_rest_II'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_II': 0})
+TMAPS['ecg_rest_III'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                  channel_map={'strip_III': 0})
+TMAPS['ecg_rest_V1'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_V1': 0})
+TMAPS['ecg_rest_V2'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_V2': 0})
+TMAPS['ecg_rest_V3'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_V3': 0})
+TMAPS['ecg_rest_V4'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_V4': 0})
+TMAPS['ecg_rest_V5'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_V5': 0})
+TMAPS['ecg_rest_V6'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_V6': 0})
+TMAPS['ecg_rest_aVR'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                  channel_map={'strip_aVR': 0})
+TMAPS['ecg_rest_aVL'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                  channel_map={'strip_aVL': 0})
+TMAPS['ecg_rest_aVF'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                  channel_map={'strip_aVF': 0})
+TMAPS['ecg_rest_I_aVR'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 2), path_prefix='ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                    channel_map={'strip_I': 0, 'strip_aVR': 1})
 
 
 def _make_rhythm_tensor(skip_poor=True):

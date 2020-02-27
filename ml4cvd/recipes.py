@@ -4,6 +4,7 @@
 import os
 import csv
 import copy
+import h5py
 import logging
 import numpy as np
 from functools import reduce
@@ -44,6 +45,8 @@ def run(args):
             compare_multimodal_multitask_models(args)
         elif 'infer' == args.mode:
             infer_multimodal_multitask(args)
+        elif 'infer_cyclical' == args.mode:
+            infer_cyclical_multimodal_multitask(args)
         elif 'infer_hidden' == args.mode:
             infer_hidden_layer_multimodal_multitask(args)
         elif 'infer_pixels' == args.mode:
@@ -225,6 +228,64 @@ def infer_multimodal_multitask(args):
             stats['count'] += 1
             if stats['count'] % 250 == 0:
                 logging.info(f"Wrote:{stats['count']} rows of inference.  Last tensor:{tensor_path[0]}")
+
+
+def infer_cyclical_multimodal_multitask(args):
+    stats = Counter()
+    tensor_paths_inferred = {}
+    
+    tensor_paths = [args.tensors + tp for tp in sorted(os.listdir(args.tensors)) if os.path.splitext(tp)[-1].lower() == TENSOR_EXT]
+    if args.variational:
+        model, encoder, decoder = make_variational_multimodal_multitask_model(**args.__dict__)
+    else:
+        model = make_multimodal_multitask_model(**args.__dict__)
+    no_fail_tmaps_out = [_make_tmap_nan_on_fail(tmap) for tmap in args.tensor_maps_out]
+    # hard code batch size to 1 so we can iterate over file names and generated tensors together in the tensor_paths for loop
+    generate_test = TensorGenerator(1, args.tensor_maps_in, no_fail_tmaps_out, tensor_paths, num_workers=0,
+                                    cache_size=0, keep_paths=True, mixup=args.mixup_alpha)
+    for tensor_path in tensor_paths:
+        if tensor_path in tensor_paths_inferred:
+            logging.info(f"Inference on {stats['count']} tensors finished. Inference TSV file at: {inference_tsv}")
+            break
+        fname = os.path.basename(tensor_path).replace(TENSOR_EXT, '')
+        inference_tsv = os.path.join(args.output_folder, args.id, 'inference_' + args.id + '_' + fname + '.tsv')
+        with open(inference_tsv, mode='w') as inference_file:
+            # TODO: csv.DictWriter is much nicer for this
+            inference_writer = csv.writer(inference_file, delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+            header = []
+            for ot, otm in zip(args.output_tensors, args.tensor_maps_out):
+                if len(otm.shape) == 1 and otm.is_continuous():
+                    header.extend([ot+'_prediction'])
+                elif len(otm.shape) == 1 and otm.is_categorical():
+                    channel_columns = []
+                    for k in otm.channel_map:
+                        channel_columns.append(ot + '_' + k + '_prediction')
+                    header.extend(channel_columns)
+            inference_writer.writerow(header)
+
+            input_data = {}
+            with h5py.File(tensor_path, 'r') as hd5:
+                print(tensor_path)
+                try:
+                    input_generator = args.tensor_maps_in[0].tensor_from_file(args.tensor_maps_in[0], hd5)
+                except KeyError:
+                    continue
+                for input_data in input_generator:
+                    if input_data is None: break                                           
+                    csv_row = []  # extract sample id
+                    input_data =  args.tensor_maps_in[0].normalize_and_validate(input_data)
+                    prediction = model.predict(input_data.reshape((1, args.tensor_maps_in[0].shape[1], args.tensor_maps_in[0].shape[2])))
+                    for y, tm in zip(prediction, no_fail_tmaps_out):
+                        if len(tm.shape) == 1 and tm.is_continuous():
+                            csv_row.append(str(tm.rescale(y)[0][0]))
+                        elif len(tm.shape) == 1 and tm.is_categorical():
+                            for k, i in tm.channel_map.items():
+                                csv_row.append(str(y[0][tm.channel_map[k]]))
+                    inference_writer.writerow(csv_row)
+            tensor_paths_inferred[tensor_path] = True
+            stats['count'] += 1
+            if stats['count'] % 250 == 0:
+                logging.info(f"Wrote:{stats['count']} rows of inference.  Last tensor:{tensor_path}")
 
 
 def infer_hidden_layer_multimodal_multitask(args):
