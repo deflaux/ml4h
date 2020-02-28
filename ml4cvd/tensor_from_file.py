@@ -1781,6 +1781,29 @@ TMAPS['ecg-bike-trend-artifact'] = TensorMap('trend_artifact', shape=(120, 1), p
                                              normalization={'mean': 0, 'std': 1},
                                              tensor_from_file=normalized_first_date, interpretation=Interpretation.CONTINUOUS)
 
+TMAPS['ecg-bike-rr-interval-csv'] = TensorMap('rr-interval', loss='logcosh', shape=(1,),
+                                              normalization={'mean': 1040.61, 'std': 175.5},
+                                              interpretation=Interpretation.CONTINUOUS,
+                                              tensor_from_file=_build_tensor_from_file('/home/pdiachil/workspace/p/projects/2020_02_hrr/inference_ecg_bike_I_II_all_intervals_inference.csv', 'rr-interval_ensemble', delimiter='\t'))
+
+TMAPS['ecg-bike-qrs-duration-csv'] = TensorMap('qrs-duration', loss='logcosh', shape=(1,),
+                                               normalization={'mean': 89.53, 'std': 12.21},
+                                               interpretation=Interpretation.CONTINUOUS,
+                                               tensor_from_file=_build_tensor_from_file('/home/pdiachil/workspace/p/projects/2020_02_hrr/inference_ecg_bike_I_II_all_intervals_inference.csv', 'qrs-duration_ensemble', delimiter='\t'))
+
+TMAPS['ecg-bike-pq-interval-csv'] = TensorMap('pq-interval', loss='logcosh', shape=(1,),
+                                              normalization={'mean': 165.9, 'std': 26.3},
+                                              interpretation=Interpretation.CONTINUOUS,
+                                              tensor_from_file=_build_tensor_from_file('/home/pdiachil/workspace/p/projects/2020_02_hrr/inference_ecg_bike_I_II_all_intervals_inference.csv', 'pq-interval_ensemble', delimiter='\t'))
+
+TMAPS['ecg-bike-qt-interval-csv'] = TensorMap('qt-interval', loss='logcosh', shape=(1,),
+                                              normalization={'mean': 426.1, 'std': 32.24},
+                                              interpretation=Interpretation.CONTINUOUS,
+                                              tensor_from_file=_build_tensor_from_file('/home/pdiachil/workspace/p/projects/2020_02_hrr/inference_ecg_bike_I_II_all_intervals_inference.csv', 'qt-interval_ensemble', delimiter='\t'))
+
+
+
+
 # HRR FINAL
 TMAPS['ecg-bike-afib'] = TensorMap('afib', shape=(2,),
                                    interpretation=Interpretation.CATEGORICAL, channel_map={'no_afib': 0, 'afib': 1},
@@ -1800,17 +1823,22 @@ TMAPS['ecg-bike-hrr-raw-ensemble'] = TensorMap('hrr', loss='logcosh', metrics=['
                                                normalization={'mean': 25, 'std': 15},
                                                interpretation=Interpretation.CONTINUOUS,
                                                validator=make_range_validator(0, 110),
-                                               tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
+                                               tensor_from_file=_build_tensor_from_file('/home/pdiachil/workspace/projects/2020_02_hrr/ensemble_hrr.csv', 'hrr', delimiter=','))
 TMAPS['ecg-bike-hrr-raw-ensemble-noised'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
                                                       normalization={'mean': 25, 'std': 15},
                                                       interpretation=Interpretation.CONTINUOUS,
                                                       validator=make_range_validator(0, 110),
                                                       tensor_from_file=_build_noised_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', 'hrr_std', delimiter=','))
 TMAPS['ecg-bike-hrr-raw-ensemble-discretized'] = TensorMap(
+      'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
+      discretization_bounds=[20, 25, 30, 40],
+      loss=weighted_crossentropy([4.151638434795473, 5.0337219730941705, 4.877128953771289, 3.7263311645199844, 11.48475547370575], 'hrr'),
+      tensor_from_file=_build_tensor_from_file('/home/pdiachil/workspace/p/projects/2020_02_hrr/ensemble_hrr.csv', 'hrr', delimiter=','))
+
+TMAPS['ecg-bike-hrr-raw-ensemble-less-discretized'] = TensorMap(
     'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
-    discretization_bounds=[20, 25, 30, 40],
-    loss=weighted_crossentropy([4.151638434795473, 5.0337219730941705, 4.877128953771289, 3.7263311645199844, 11.48475547370575], 'hrr'),
-    tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
+    discretization_bounds=[20, 40],
+    tensor_from_file=_build_tensor_from_file('/home/pdiachil/workspace/p/projects/2020_02_hrr/ensemble_hrr.csv', 'hrr', delimiter=','))
 
 
 TMAPS['ecg-bike-hrr-raw-file-4th-order'] = TensorMap('hrr', loss=mean_quartic_error, metrics=['mae', 'logcosh'], shape=(1,),
