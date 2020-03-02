@@ -1802,7 +1802,7 @@ TMAPS['ecg-bike-hrr-raw-ensemble'] = TensorMap('hrr', loss='logcosh', metrics=['
                                                validator=make_range_validator(0, 110),
                                                tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
 TMAPS['ecg-bike-hrr-raw-ensemble-noised'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
-                                                      normalization={'mean': 25, 'std': 15},
+                                                      normalization={'mean': 25, 'std': 15}, cacheable=False,
                                                       interpretation=Interpretation.CONTINUOUS,
                                                       validator=make_range_validator(0, 110),
                                                       tensor_from_file=_build_noised_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', 'hrr_std', delimiter=','))
