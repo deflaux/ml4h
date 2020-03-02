@@ -1283,9 +1283,9 @@ def sax_tensor(b_series_prefix):
         for b in range(tm.shape[-2]):
             try:
                 tm_shape = (tm.shape[0], tm.shape[1])
-                dataset = tm.hd5_first_dataset_in_group(hd5, f'{tm.path_prefix}/{b_series_prefix}_frame_b{b}')
+                dataset = tm.hd5_first_dataset_in_group(hd5, f'{tm.path_prefix}/{b_series_prefix}_frame_b{b}/')
                 tensor[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(dataset, dtype=np.float32))
-                dataset_index = tm.hd5_first_dataset_in_group(hd5, f'{tm.path_prefix}/{b_series_prefix}_mask_b{b}')
+                dataset_index = tm.hd5_first_dataset_in_group(hd5, f'{tm.path_prefix}/{b_series_prefix}_mask_b{b}/')
                 index_tensor = _pad_or_crop_array_to_shape(tm_shape, np.array(dataset_index, dtype=np.float32))
                 dependents[tm.dependent_map][:, :, b, :] = to_categorical(index_tensor, tm.dependent_map.shape[-1])
             except KeyError:
