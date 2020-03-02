@@ -20,7 +20,7 @@ matplotlib.use('Agg')  # Need this to write images from the GSA servers.  Order 
 import matplotlib.pyplot as plt  # First import matplotlib, then use Agg, then import plt
 
 from ml4cvd.plots import plot_value_counter, plot_histograms
-from ml4cvd.defines import DataSetType, dataset_name_from_meaning
+from ml4cvd.defines import dataset_name_from_meaning
 from ml4cvd.defines import TENSOR_EXT, JOIN_CHAR, CONCAT_CHAR, HD5_GROUP_CHAR, DATE_FORMAT
 
 MISSING_DATE = datetime.date(year=1900, month=1, day=1)
