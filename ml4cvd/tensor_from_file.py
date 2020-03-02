@@ -1806,6 +1806,14 @@ TMAPS['ecg-bike-hrr-raw-ensemble-noised'] = TensorMap('hrr', loss='logcosh', met
                                                       interpretation=Interpretation.CONTINUOUS,
                                                       validator=make_range_validator(0, 110),
                                                       tensor_from_file=_build_noised_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', 'hrr_std', delimiter=','))
+TMAPS['ecg-bike-hrr-raw-ensemble-binary'] = TensorMap(
+    'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
+    discretization_bounds=[25,],
+    tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
+TMAPS['ecg-bike-hrr-raw-ensemble-discretized-not-weighted'] = TensorMap(
+    'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
+    discretization_bounds=[20, 25, 30, 40],
+    tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
 TMAPS['ecg-bike-hrr-raw-ensemble-discretized'] = TensorMap(
     'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
     discretization_bounds=[20, 25, 30, 40],
