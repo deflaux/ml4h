@@ -1858,3 +1858,20 @@ TMAPS['ecg-bike-hrr-parented'] = TensorMap('hrr', loss='logcosh', metrics=['mae'
                                            interpretation=Interpretation.CONTINUOUS,
                                            tensor_from_file=_hrr_qc,
                                            parents=[TMAPS['ecg-bike-last-hr-qc'], TMAPS['ecg-bike-max-hr-qc']])
+
+
+# Transfer learning to rest ECGs
+def _make_ecg_rest_downsampled(rate: float):
+    def ecg_rest_from_file(tm, hd5, dependents=None):
+        length = int(tm.shape[0] * rate)
+        start = np.random.randint(5000 - length)
+        ecg = hd5[tm.path_prefix][start: start + length]
+        ecg = _downsample(ecg, rate)
+        return ecg
+    return ecg_rest_from_file
+
+
+TMAPS['ecg_rest_shifted_8xdownsampled'] = TensorMap('full', Interpretation.CONTINUOUS, shape=(1024, 1), path_prefix='ecg_rest',
+                                                    tensor_from_file=_make_ecg_rest_downsampled(8),
+                                                    normalization={'mean': 0, 'std': 2000},
+                                                    augmentations=[_warp_ecg, _rand_add_noise, _rand_roll])
