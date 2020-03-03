@@ -1865,7 +1865,7 @@ def _make_ecg_rest_downsampled(rate: float):
     def ecg_rest_from_file(tm, hd5, dependents=None):
         length = int(tm.shape[0] * rate)
         start = np.random.randint(5000 - length)
-        ecg = hd5[tm.path_prefix][start: start + length]
+        ecg = hd5[tm.path_prefix][start: start + length, 0]
         ecg = _downsample(ecg, rate)
         return ecg
     return ecg_rest_from_file
