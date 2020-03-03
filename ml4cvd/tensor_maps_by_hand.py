@@ -173,9 +173,13 @@ TMAPS['bsa_mosteller'] = TensorMap('bsa_mosteller',  Interpretation.CONTINUOUS, 
 TMAPS['bsa_dubois'] = TensorMap('bsa_dubois',  Interpretation.CONTINUOUS, normalization={'mean': 1.8671809970639703, 'std': 0.20913930961120797}, loss='logcosh', channel_map={'bsa_dubois': 0})
 
 TMAPS['lv_mass'] = TensorMap('lv_mass', Interpretation.CONTINUOUS, activation='linear', loss='logcosh', validator=make_range_validator(0, 500),
-                             channel_map={'lv_mass': 0}, normalization={'mean': 89.7, 'std': 24.8})
+                             path_prefix='continuous', channel_map={'lv_mass': 0}, normalization={'mean': 89.7, 'std': 24.8})
+
+TMAPS['lv_mass_raw'] = TensorMap('lv_mass', Interpretation.CONTINUOUS, activation='linear', loss='logcosh', validator=make_range_validator(0, 10000),
+                                 path_prefix='continuous', channel_map={'lv_mass': 0})
+
 TMAPS['lv_mass_no0'] = TensorMap('lv_mass', Interpretation.CONTINUOUS, activation='linear', loss=ignore_zeros_logcosh,
-                             channel_map={'lv_mass': 0}, normalization={'mean': 89.7, 'std': 24.8})
+                                 channel_map={'lv_mass': 0}, normalization={'mean': 89.7, 'std': 24.8})
 
 TMAPS['lv_mass_sentinel'] = TensorMap('lv_mass', Interpretation.CONTINUOUS, activation='linear', sentinel=0,
                                       channel_map={'lv_mass': 0}, normalization={'mean': 89.7, 'std': 24.8})
@@ -213,12 +217,16 @@ TMAPS['lvm_mosteller_index_prediction_sentinel'] = TensorMap('lvm_mosteller_inde
 
 
 
-TMAPS['end_systole_volume'] = TensorMap('end_systole_volume', Interpretation.CONTINUOUS, activation='linear', validator=make_range_validator(0, 300),
-                                    loss='logcosh', channel_map={'end_systole_volume': 0},
-                                    normalization={'mean': 47.0, 'std': 10.0})
-TMAPS['end_diastole_volume'] = TensorMap('end_diastole_volume', Interpretation.CONTINUOUS, activation='linear', validator=make_range_validator(0, 400),
-                                     loss='logcosh', channel_map={'end_diastole_volume': 0},
-                                     normalization={'mean': 142.0, 'std': 21.0})
+TMAPS['end_systole_volume'] = TensorMap('lvesv', Interpretation.CONTINUOUS, activation='linear', validator=make_range_validator(0, 10000),
+                                        loss='logcosh', channel_map={'end_systole_volume': 0}, path_prefix='continuous',
+                                        normalization={'mean': 47.0, 'std': 10.0})
+TMAPS['end_diastole_volume'] = TensorMap('lvedv', Interpretation.CONTINUOUS, activation='linear', validator=make_range_validator(0, 10000),
+                                         path_prefix='continuous', loss='logcosh', channel_map={'end_diastole_volume': 0},
+                                         normalization={'mean': 142.0, 'std': 21.0})
+TMAPS['end_systole_volume_raw'] = TensorMap('lvesv', Interpretation.CONTINUOUS, activation='linear', validator=make_range_validator(0, 10000),
+                                        loss='logcosh', channel_map={'end_systole_volume': 0}, path_prefix='continuous')
+TMAPS['end_diastole_volume_raw'] = TensorMap('lvedv', Interpretation.CONTINUOUS, activation='linear', validator=make_range_validator(0, 10000),
+                                         path_prefix='continuous', loss='logcosh', channel_map={'end_diastole_volume': 0})
 TMAPS['ejection_fraction'] = TensorMap('ejection_fraction', Interpretation.CONTINUOUS, activation='linear', validator=make_range_validator(0.2, 0.9),
                                    normalization={'mean': 0.50, 'std': 0.046},
                                    loss='logcosh', loss_weight=1.0, channel_map={'ejection_fraction': 0})
@@ -344,10 +352,10 @@ TMAPS['shmolli_192i_12bit'] = TensorMap('shmolli_192i_12bit', shape=(288, 384, 7
 TMAPS['shmolli_192i_fitparams'] = TensorMap('shmolli_192i_fitparams', shape=(288, 384, 7), normalization={'zero_mean_std1': 1.0})
 TMAPS['shmolli_192i_t1map'] = TensorMap('shmolli_192i_t1map', shape=(288, 384, 2), normalization={'zero_mean_std1': 1.0})
 
-TMAPS['sax_pixel_width'] = TensorMap('mri_pixel_width_cine_segmented_sax_inlinevf', Interpretation.CONTINUOUS, annotation_units=2, channel_map={'mri_pixel_width_cine_segmented_sax_inlinevf': 0},
-                                     validator=make_range_validator(0, 4), normalization={'mean': 1.83, 'std': 0.1})
-TMAPS['sax_pixel_height'] = TensorMap('mri_pixel_height_segmented_sax_inlinevf', Interpretation.CONTINUOUS, annotation_units=2, channel_map={'mri_pixel_height_cine_segmented_sax_inlinevf': 0},
-                                      validator=make_range_validator(0, 4), normalization={'mean': 1.83, 'std': 0.1})
+# TMAPS['sax_pixel_width'] = TensorMap('mri_pixel_width_cine_segmented_sax_inlinevf', Interpretation.CONTINUOUS, annotation_units=2, channel_map={'mri_pixel_width_cine_segmented_sax_inlinevf': 0},
+#                                      validator=make_range_validator(0, 4), normalization={'mean': 1.83, 'std': 0.1})
+# TMAPS['sax_pixel_height'] = TensorMap('mri_pixel_height_segmented_sax_inlinevf', Interpretation.CONTINUOUS, annotation_units=2, channel_map={'mri_pixel_height_cine_segmented_sax_inlinevf': 0},
+#                                       validator=make_range_validator(0, 4), normalization={'mean': 1.83, 'std': 0.1})
 
 TMAPS['ejection_fractionp'] = TensorMap('ejection_fraction', Interpretation.CONTINUOUS, activation='linear',
                                     normalization={'mean': 0.50, 'std': 0.046},
@@ -356,8 +364,13 @@ TMAPS['ejection_fractionp'] = TensorMap('ejection_fraction', Interpretation.CONT
 
 TMAPS['cine_segmented_sax_b1'] = TensorMap('cine_segmented_sax_b1', shape=(256, 256, 50), loss='mse')
 TMAPS['cine_segmented_sax_b2'] = TensorMap('cine_segmented_sax_b2', shape=(256, 256, 50), loss='mse')
+TMAPS['cine_segmented_sax_b3'] = TensorMap('cine_segmented_sax_b3', shape=(256, 256, 50), loss='mse')
 TMAPS['cine_segmented_sax_b4'] = TensorMap('cine_segmented_sax_b4', shape=(256, 256, 50), loss='mse')
+TMAPS['cine_segmented_sax_b5'] = TensorMap('cine_segmented_sax_b5', shape=(256, 256, 50), loss='mse')
 TMAPS['cine_segmented_sax_b6'] = TensorMap('cine_segmented_sax_b6', shape=(256, 256, 50), loss='mse')
+TMAPS['cine_segmented_sax_b7'] = TensorMap('cine_segmented_sax_b7', shape=(256, 256, 50), loss='mse')
+TMAPS['cine_segmented_sax_b8'] = TensorMap('cine_segmented_sax_b8', shape=(256, 256, 50), loss='mse')
+
 
 TMAPS['cine_segmented_lax_2ch'] = TensorMap('cine_segmented_lax_2ch', shape=(256, 256, 50), normalization={'zero_mean_std1': True})
 TMAPS['cine_segmented_lax_3ch'] = TensorMap('cine_segmented_lax_3ch', shape=(256, 256, 50), normalization={'zero_mean_std1': True})

@@ -1282,8 +1282,8 @@ def sax_tensor(b_series_prefix):
         for b in range(tm.shape[-2]):
             try:
                 tm_shape = (tm.shape[0], tm.shape[1])
-                tensor[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{b_series_prefix}_frame_b{b}'], dtype=np.float32))
-                index_tensor = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{b_series_prefix}_mask_b{b}'], dtype=np.float32))
+                tensor[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'/ukb_cardiac_mri/{b_series_prefix}_frame_b{b}/instance_0'], dtype=np.float32))
+                index_tensor = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'/ukb_cardiac_mri/{b_series_prefix}_mask_b{b}/instance_0'], dtype=np.float32))
                 dependents[tm.dependent_map][:, :, b, :] = to_categorical(index_tensor, tm.dependent_map.shape[-1])
             except KeyError:
                 missing += 1
@@ -1294,6 +1294,71 @@ def sax_tensor(b_series_prefix):
         return tensor
     return sax_tensor_from_file
 
+
+def sax_lvm(b_series_prefix):
+    def sax_lvm_from_file(tm, hd5, dependents={}):
+        missing=0
+        lv_mass = np.zeros(tm.shape, dtype=np.float32)
+        try:
+            keys = list(hd5['ukb_cardiac_mri/cine_segmented_sax_inlinevf_zoom_segmented'])
+        except KeyError:
+            raise ValueError(f'Keys are not available')
+        keys = sorted(list(map(int, keys)))
+        pixel_width =  hd5['mri_pixel_width_cine_segmented_sax_inlinevf'][()]
+        try:
+            for b, s in enumerate(keys[::MRI_FRAMES]):
+                _, counts = np.unique(hd5[f'/ukb_cardiac_mri/cine_segmented_sax_inlinevf_zoom_segmented/{s}/instance_0'], return_counts = True)
+                lv_mass[:] += counts[2]
+        except KeyError:
+            missing += 1
+        if missing == 13:
+            raise ValueError(f'Could not find any slices in {tm.name} was hoping for 13')
+        return lv_mass*pixel_width*pixel_width*10.0/1000.0
+    return sax_lvm_from_file
+
+
+def sax_lvedv(b_series_prefix):
+    def sax_lvedv_from_file(tm, hd5, dependents={}):
+        missing=0
+        lv_edv = np.zeros(tm.shape, dtype=np.float32)
+        try:
+            keys = list(hd5['ukb_cardiac_mri/cine_segmented_sax_inlinevf_zoom_segmented'])
+        except KeyError:
+            raise ValueError(f'Keys are not available')
+        keys = sorted(list(map(int, keys)))
+        pixel_width =  hd5['mri_pixel_width_cine_segmented_sax_inlinevf'][()]
+        try:
+            for b, s in enumerate(keys[::MRI_FRAMES]):
+                _, counts = np.unique(hd5[f'/ukb_cardiac_mri/cine_segmented_sax_inlinevf_zoom_segmented/{s}/instance_0'], return_counts = True)
+                lv_edv[:] += counts[1]
+        except KeyError:
+            missing += 1
+        if missing == 13:
+            raise ValueError(f'Could not find any slices in {tm.name} was hoping for 13')
+        return lv_edv*pixel_width*pixel_width*10.0/1000.0
+    return sax_lvedv_from_file
+
+def _sax_pixel_width(tm, hd5, dependents={}):
+    pixel_width = np.zeros(tm.shape, dtype=np.float32)
+    pixel_width[:] = hd5['mri_pixel_width_cine_segmented_sax_inlinevf'][()]
+    return pixel_width
+
+def _sax_pixel_height(tm, hd5, dependents={}):
+    pixel_height = np.zeros(tm.shape, dtype=np.float32)
+    pixel_height[:] = hd5['mri_pixel_height_cine_segmented_sax_inlinevf'][()]
+    return pixel_height
+
+
+TMAPS['sax_pixel_width'] = TensorMap('sax_pixel_width', Interpretation.CONTINUOUS, shape=(1,), tensor_from_file=_sax_pixel_width)
+TMAPS['sax_pixel_height'] = TensorMap('sax_pixel_height', Interpretation.CONTINUOUS, shape=(1,), tensor_from_file=_sax_pixel_height)
+
+TMAPS['sax_all_diastole_lvm'] = TensorMap('sax_all_diastole_lvm', Interpretation.CONTINUOUS, shape=(1,), tensor_from_file=sax_lvm('diastole'))
+
+TMAPS['sax_all_diastole_lvedv'] = TensorMap('sax_all_diastole_lvedv', Interpretation.CONTINUOUS, shape=(1,), tensor_from_file=sax_lvedv('diastole'))
+
+TMAPS['sax_all_systole_lvm'] = TensorMap('sax_all_systole_lvm', Interpretation.CONTINUOUS, shape=(1,), tensor_from_file=sax_lvm('systole'))
+
+TMAPS['sax_all_systole_lv'] = TensorMap('sax_all_systole_lv', Interpretation.CONTINUOUS, shape=(1,), tensor_from_file=sax_lvedv('systole'))
 
 TMAPS['sax_all_diastole_segmented'] = TensorMap('sax_all_diastole_segmented', Interpretation.CATEGORICAL, shape=(256, 256, 13, 3),
                                                 channel_map=MRI_SEGMENTED_CHANNEL_MAP)
