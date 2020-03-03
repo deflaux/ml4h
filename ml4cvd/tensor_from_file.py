@@ -1871,7 +1871,7 @@ def _make_ecg_rest_downsampled(rate: float):
     return ecg_rest_from_file
 
 
-TMAPS['ecg_rest_shifted_8xdownsampled'] = TensorMap('full', Interpretation.CONTINUOUS, shape=(1024, 1), path_prefix='ecg_rest',
+TMAPS['ecg_rest_shifted_8xdownsampled'] = TensorMap('full', Interpretation.CONTINUOUS, shape=(256, 1), path_prefix='ecg_rest',
                                                     tensor_from_file=_make_ecg_rest_downsampled(8),
                                                     normalization={'mean': 0, 'std': 2000},
                                                     augmentations=[_warp_ecg, _rand_add_noise, _rand_roll])
