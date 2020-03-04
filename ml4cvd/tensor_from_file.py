@@ -1795,7 +1795,7 @@ TMAPS['ecg-bike-afib'] = TensorMap('afib', shape=(2,),
                                    tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/exercise_afib.csv', delimiter=',', id_column='sample_id'))
 TMAPS['ecg-bike-cigarettes'] = TensorMap('cigarettes', shape=(2,),
                                          interpretation=Interpretation.CATEGORICAL, channel_map={'no_cig': 0, 'cig': 1},
-                                         tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/20116_0_or_1.csv', delimiter=',', id_column='sample_id'))
+                                         tensor_from_file=_build_tensor_from_sample_id_file('/home/workspace/p/projects/2020_ecg_features_hrr_correlation/20116_0_or_1.csv', delimiter=',', id_column='sample_id'))
 TMAPS['ecg-bike-bb'] = TensorMap('beta_blockers', shape=(2,),
                                  interpretation=Interpretation.CATEGORICAL, channel_map={'no_bb': 0, 'bb': 1},
                                  tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/beta_blockers.csv', delimiter=',', id_column='sample_id'))
@@ -1808,7 +1808,7 @@ TMAPS['ecg-bike-hrr-raw-ensemble'] = TensorMap('hrr', loss='logcosh', metrics=['
                                                normalization={'mean': 25, 'std': 15},
                                                interpretation=Interpretation.CONTINUOUS,
                                                validator=make_range_validator(0, 110),
-                                               tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
+                                               tensor_from_file=_build_tensor_from_file('/home/pdiachil/workspace/p/projects/2020_02_ecg_features/ensemble_hrr.csv', 'hrr', delimiter=','))
 TMAPS['ecg-bike-hrr-raw-ensemble-noised'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
                                                       normalization={'mean': 25, 'std': 15}, cacheable=False,
                                                       interpretation=Interpretation.CONTINUOUS,
