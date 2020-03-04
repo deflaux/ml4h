@@ -1373,14 +1373,14 @@ def _bike_ecg_first_r_aligned(augmentations: [Callable], leads: Union[List[int],
     return _tff
 
 
-def _bike_ecg_shifted_downsampled(augmentations: [Callable], leads: Union[List[int], slice], rate: float):
+def _bike_ecg_shifted_downsampled(leads: Union[List[int], slice], rate: float):
     def _tff(tm: TensorMap, hd5: h5py.File, dependents=None):
         pretest_len = 15 * 500
-        ecg = _get_bike_ecg(hd5, tm, ECG_ALIGN_OFFSET, leads, length=int(rate * tm.shape[0]))
-        ecg =_downsample(ecg, rate)
-        for func in augmentations:
-            ecg = func(ecg)
-        return ecg
+        length = int(tm.shape[0] * rate)
+        start = np.random.randint(pretest_len - length)
+        ecg = _get_bike_ecg(hd5, tm, start, leads, stop=start + length)
+        ecg = _downsample(ecg, rate)
+        return _fail_nan(ecg)
     return _tff
 
 
@@ -1485,12 +1485,12 @@ TMAPS['ecg_bike_aligned_first_r_noised_normalized_8xdownsampled'] = TensorMap(
     validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_first_r_aligned_downsampled([_rand_add_noise], [0], 8),)
 
-
 TMAPS['ecg_bike_shifted_8xdownsampled'] = TensorMap(
-    'full', shape=(1024, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    'full', shape=(512, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
-    tensor_from_file=_bike_ecg_first_r_aligned_downsampled([], [0], 8),)
-
+    tensor_from_file=_bike_ecg_shifted_downsampled([0], 8),
+    augmentations=[_warp_ecg, _rand_add_noise],
+)
 
 TMAPS['ecg_bike_warped_noised_8xdownsampled'] = TensorMap(
     'full', shape=(1024, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
