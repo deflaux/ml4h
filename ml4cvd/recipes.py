@@ -136,7 +136,7 @@ def test_multimodal_scalar_tasks(args):
 
 def compare_multimodal_multitask_models(args):
     _, _, generate_test = test_train_valid_tensor_generators(**args.__dict__)
-    models_inputs_outputs = get_model_inputs_outputs(args.model_files, args.tensor_maps_in, args.tensor_maps_out)
+    models_inputs_outputs = get_model_inputs_outputs(args.model_files, args.tensor_maps_in, args.tensor_maps_out, args.optimizer)
     input_data, output_data, paths = big_batch_from_minibatch_generator(generate_test, args.test_steps)
     common_outputs = _get_common_outputs(models_inputs_outputs, 'output')
     predictions = _get_predictions(args, models_inputs_outputs, input_data, common_outputs, 'input', 'output')
@@ -145,7 +145,7 @@ def compare_multimodal_multitask_models(args):
 
 def compare_multimodal_scalar_task_models(args):
     _, _, generate_test = test_train_valid_tensor_generators(**args.__dict__)
-    models_io = get_model_inputs_outputs(args.model_files, args.tensor_maps_in, args.tensor_maps_out)
+    models_io = get_model_inputs_outputs(args.model_files, args.tensor_maps_in, args.tensor_maps_out, args.optimizer)
     outs = _get_common_outputs(models_io, "output")
     predictions, labels, paths = _scalar_predictions_from_generator(args, models_io, generate_test, args.test_steps, outs, "input", "output")
     _calculate_and_plot_prediction_stats(args, predictions, labels, paths)

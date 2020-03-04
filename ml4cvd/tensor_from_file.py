@@ -1873,13 +1873,13 @@ def _make_ecg_rest_downsampled(rate: float):
     def ecg_rest_from_file(tm, hd5, dependents=None):
         length = int(tm.shape[0] * rate)
         start = np.random.randint(5000 - length)
-        ecg = hd5[tm.path_prefix][start: start + length, 0]
+        ecg = np.array(hd5[tm.path_prefix][start: start + length])[:, np.newaxis]
         ecg = _downsample(ecg, rate)
         return ecg
     return ecg_rest_from_file
 
 
-TMAPS['ecg_rest_shifted_8xdownsampled'] = TensorMap('full', Interpretation.CONTINUOUS, shape=(256, 1), path_prefix='ecg_rest',
+TMAPS['ecg_rest_shifted_8xdownsampled'] = TensorMap('full', Interpretation.CONTINUOUS, shape=(256, 1), path_prefix='ecg_rest/strip_I',
                                                     tensor_from_file=_make_ecg_rest_downsampled(8),
-                                                    normalization={'mean': 0, 'std': 2000},
+                                                    normalization={'mean': 0, 'std': 2000}, cacheable=False,
                                                     augmentations=[_warp_ecg, _rand_add_noise, _rand_roll])
