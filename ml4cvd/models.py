@@ -1239,7 +1239,9 @@ def _get_tensor_maps_for_characters(tensor_maps_in: List[TensorMap], base_model:
 
 def get_model_inputs_outputs(model_files: List[str],
                              tensor_maps_in: List[TensorMap],
-                             tensor_maps_out: List[TensorMap]) -> Dict[str, Dict[str, TensorMap]]:
+                             tensor_maps_out: List[TensorMap],
+                             optimizer: str,
+                             ) -> Dict[str, Dict[str, TensorMap]]:
     """Organizes given input and output tensors as nested dictionary.
 
     Returns:
@@ -1268,7 +1270,9 @@ def get_model_inputs_outputs(model_files: List[str],
     models_inputs_outputs = dict()
 
     for model_file in model_files:
-        custom = get_metric_dict(tensor_maps_out)
+        opt = get_optimizer(optimizer, 1)
+        metric_dict = get_metric_dict(tensor_maps_out)
+        custom = {**metric_dict, type(opt).__name__: opt}
         logging.info(f'custom keysssss: {list(custom.keys())}')
         m = load_model(model_file, custom_objects=custom)
         model_inputs_outputs = defaultdict(list)

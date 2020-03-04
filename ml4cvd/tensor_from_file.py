@@ -10,6 +10,7 @@ import logging
 import numpy as np
 
 import vtk.util.numpy_support
+from scipy.stats import linregress
 from tensorflow.keras.utils import to_categorical
 
 from ml4cvd.metrics import weighted_crossentropy, sqrt_error, mean_quartic_error
@@ -1372,14 +1373,14 @@ def _bike_ecg_first_r_aligned(augmentations: [Callable], leads: Union[List[int],
     return _tff
 
 
-def _bike_ecg_shifted_downsampled(augmentations: [Callable], leads: Union[List[int], slice], rate: float):
+def _bike_ecg_shifted_downsampled(leads: Union[List[int], slice], rate: float):
     def _tff(tm: TensorMap, hd5: h5py.File, dependents=None):
         pretest_len = 15 * 500
-        ecg = _get_bike_ecg(hd5, tm, ECG_ALIGN_OFFSET, leads, length=int(rate * tm.shape[0]))
-        ecg =_downsample(ecg, rate)
-        for func in augmentations:
-            ecg = func(ecg)
-        return ecg
+        length = int(tm.shape[0] * rate)
+        start = np.random.randint(pretest_len - length)
+        ecg = _get_bike_ecg(hd5, tm, start, leads, stop=start + length)
+        ecg = _downsample(ecg, rate)
+        return _fail_nan(ecg)
     return _tff
 
 
@@ -1484,12 +1485,12 @@ TMAPS['ecg_bike_aligned_first_r_noised_normalized_8xdownsampled'] = TensorMap(
     validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_first_r_aligned_downsampled([_rand_add_noise], [0], 8),)
 
-
 TMAPS['ecg_bike_shifted_8xdownsampled'] = TensorMap(
-    'full', shape=(1024, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    'full', shape=(512, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
-    tensor_from_file=_bike_ecg_first_r_aligned_downsampled([], [0], 8),)
-
+    tensor_from_file=_bike_ecg_shifted_downsampled([0], 8),
+    augmentations=[_warp_ecg, _rand_add_noise],
+)
 
 TMAPS['ecg_bike_warped_noised_8xdownsampled'] = TensorMap(
     'full', shape=(1024, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
@@ -1865,3 +1866,20 @@ TMAPS['ecg-bike-hrr-parented'] = TensorMap('hrr', loss='logcosh', metrics=['mae'
                                            interpretation=Interpretation.CONTINUOUS,
                                            tensor_from_file=_hrr_qc,
                                            parents=[TMAPS['ecg-bike-last-hr-qc'], TMAPS['ecg-bike-max-hr-qc']])
+
+
+# Transfer learning to rest ECGs
+def _make_ecg_rest_downsampled(rate: float):
+    def ecg_rest_from_file(tm, hd5, dependents=None):
+        length = int(tm.shape[0] * rate)
+        start = np.random.randint(5000 - length)
+        ecg = np.array(hd5[tm.path_prefix][start: start + length])[:, np.newaxis]
+        ecg = _downsample(ecg, rate)
+        return ecg
+    return ecg_rest_from_file
+
+
+TMAPS['ecg_rest_shifted_8xdownsampled'] = TensorMap('full', Interpretation.CONTINUOUS, shape=(256, 1), path_prefix='ecg_rest/strip_I',
+                                                    tensor_from_file=_make_ecg_rest_downsampled(8),
+                                                    normalization={'mean': 0, 'std': 2000}, cacheable=False,
+                                                    augmentations=[_warp_ecg, _rand_add_noise, _rand_roll])
