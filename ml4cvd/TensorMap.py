@@ -15,6 +15,7 @@ from typing import Any, Union, Callable, Dict, List, Optional, Tuple
 import h5py
 import numpy as np
 from tensorflow.keras import Model
+from tensorflow.keras.utils import to_categorical
 
 from ml4cvd.defines import StorageType, EPS, JOIN_CHAR, STOP_CHAR
 from ml4cvd.metrics import sentinel_logcosh_loss, survival_likelihood_loss, pearson
@@ -279,7 +280,7 @@ class TensorMap(object):
     def discretize(self, np_tensor):
         if not self.is_discretized():
             return np_tensor
-        return keras.utils.to_categorical(np.digitize(np_tensor, bins=self.discretization_bounds),
+        return to_categorical(np.digitize(np_tensor, bins=self.discretization_bounds),
                                           num_classes=len(self.discretization_bounds) + 1)
 
     def postprocess_tensor(self, np_tensor, augment: bool):
