@@ -1505,7 +1505,7 @@ TMAPS['ecg_bike_shifted_8xdownsampled_10s'] = TensorMap(
     augmentations=[_warp_ecg, _rand_add_noise],
 )
 TMAPS['ecg_bike_shifted_8xdownsampled_3lead'] = TensorMap(
-    'full', shape=(625, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    'full', shape=(625, 3), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 0, 'std': 100}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_shifted_downsampled([0, 1, 2], 8),
     augmentations=[_warp_ecg, _rand_add_noise],
