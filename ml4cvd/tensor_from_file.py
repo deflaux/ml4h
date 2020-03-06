@@ -1492,6 +1492,13 @@ TMAPS['ecg_bike_shifted_8xdownsampled'] = TensorMap(
     augmentations=[_warp_ecg, _rand_add_noise],
 )
 
+TMAPS['ecg_bike_shifted_8xdownsampled_12s'] = TensorMap(
+    'full', shape=(750, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_shifted_downsampled([0], 8),
+    augmentations=[_warp_ecg, _rand_add_noise],
+)
+
 TMAPS['ecg_bike_warped_noised_8xdownsampled'] = TensorMap(
     'full', shape=(1024, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
@@ -1577,9 +1584,17 @@ def _ecg_protocol(tm: TensorMap, hd5: h5py.File, dependents=None):
     """
     There are 22 possible protocols, M40 - M150, F30 - F140
     """
-    out = np.zeros(tm.shape)  # TODO: this should all be default categorical behaviour
+    out = np.zeros(tm.shape)
     out[tm.channel_map[_ecg_protocol_string(hd5)]] = 1
     return out
+
+
+def _ecg_protocol_watts(tm: TensorMap, hd5: h5py.File, dependents=None):
+
+    """
+    There are 22 possible protocols, M40 - M150, F30 - F140
+    """
+    return np.array([_ecg_protocol_string(hd5)[1:]], dtype=np.float32)
 
 
 def _regress_hr_exercise_recovery(hd5: h5py.File):
@@ -1766,6 +1781,8 @@ TMAPS['ecg-bike-protocol'] = TensorMap('protocol', path_prefix='ecg_bike/continu
                                            **{f'M{i[1]}': i[0] for i in enumerate(range(40, 150, 10))},
                                            **{f'F{i[1]}': i[0] + 11 for i in enumerate(range(30, 140, 10))},
                                        })
+TMAPS['ecg-bike-protocol-watts'] = TensorMap('protocol', path_prefix='ecg_bike/continuous', shape=(1,), tensor_from_file=_ecg_protocol_watts,
+                                       interpretation=Interpretation.CONTINUOUS,)
 # trend measurements
 TMAPS['ecg-bike-trend-hr'] = TensorMap('trend_heartrate', shape=(120, 1), path_prefix='ecg_bike/float_array',
                                        normalization={'mean': 0, 'std': 1},
@@ -1791,7 +1808,7 @@ TMAPS['ecg-bike-trend-artifact'] = TensorMap('trend_artifact', shape=(120, 1), p
 
 # HRR FINAL
 TMAPS['ecg-bike-afib'] = TensorMap('afib', shape=(2,),
-                                   interpretation=Interpretation.CATEGORICAL, channel_map={'no_afib': 0, 'afib': 1},
+                                   interpretation=Interpretation.CATEGORICAL, channel_map={'no_afib': 1, 'afib': 0},
                                    tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/exercise_afib.csv', delimiter=',', id_column='sample_id'))
 TMAPS['ecg-bike-cigarettes'] = TensorMap('cigarettes', shape=(2,),
                                          interpretation=Interpretation.CATEGORICAL, channel_map={'no_cig': 0, 'cig': 1},
