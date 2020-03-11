@@ -1510,6 +1510,24 @@ TMAPS['ecg_bike_shifted_8xdownsampled_3lead'] = TensorMap(
     tensor_from_file=_bike_ecg_shifted_downsampled([0, 1, 2], 8),
     augmentations=[_warp_ecg, _rand_add_noise],
 )
+TMAPS['ecg_bike_shifted_4xdownsampled_10s'] = TensorMap(
+    'full', shape=(1250, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_shifted_downsampled([0], 4),
+    augmentations=[_warp_ecg, _rand_add_noise],
+)
+TMAPS['ecg_bike_shifted_8xdownsampled_3lead_no_warp'] = TensorMap(
+    'full', shape=(625, 3), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 0, 'std': 100}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_shifted_downsampled([0, 1, 2], 8),
+    augmentations=[_rand_add_noise],
+)
+TMAPS['ecg_bike_shifted_8xdownsampled_1lead_no_warp'] = TensorMap(
+    'full', shape=(625, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 0, 'std': 100}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_shifted_downsampled([0], 8),
+    augmentations=[_rand_add_noise],
+)
 TMAPS['ecg_bike_warped_noised_8xdownsampled'] = TensorMap(
     'full', shape=(1024, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
