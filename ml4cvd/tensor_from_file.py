@@ -1339,6 +1339,11 @@ def _rand_roll(ecg):
     return _roll(ecg, shift=np.random.randint(ecg.shape[0]))
 
 
+def _rand_offset(ecg):
+    shift_frac = np.random.rand() * .1  # max of 10% noise
+    return ecg + shift_frac * ecg.mean(axis=0)
+
+
 # BIKE ECG TENSOR FROM FILE #
 def _build_bike_ecg_tensor_from_file(start, leads: Union[List[int], slice]):
     return lambda tm, hd5, dependents: (_get_bike_ecg(hd5, tm, start, leads))
@@ -1504,10 +1509,22 @@ TMAPS['ecg_bike_shifted_8xdownsampled_10s'] = TensorMap(
     tensor_from_file=_bike_ecg_shifted_downsampled([0], 8),
     augmentations=[_warp_ecg, _rand_add_noise],
 )
-TMAPS['ecg_bike_shifted_8xdownsampled_3lead'] = TensorMap(
+TMAPS['ecg_bike_shifted_8xdownsampled_10s_heavy_augment'] = TensorMap(
     'full', shape=(625, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_shifted_downsampled([0], 8),
+    augmentations=[_rand_roll, _rand_add_noise, _rand_offset],
+)
+TMAPS['ecg_bike_shifted_8xdownsampled_3lead'] = TensorMap(
+    'full', shape=(625, 3), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 0, 'std': 100}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_shifted_downsampled([0, 1, 2], 8),
+    augmentations=[_warp_ecg, _rand_add_noise],
+)
+TMAPS['ecg_bike_shifted_4xdownsampled_10s'] = TensorMap(
+    'full', shape=(1250, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_bike_ecg_shifted_downsampled([0], 4),
     augmentations=[_warp_ecg, _rand_add_noise],
 )
 TMAPS['ecg_bike_warped_noised_8xdownsampled'] = TensorMap(
@@ -1842,9 +1859,17 @@ TMAPS['ecg-bike-hrr-raw-ensemble-noised'] = TensorMap('hrr', loss='logcosh', met
                                                       interpretation=Interpretation.CONTINUOUS,
                                                       validator=make_range_validator(0, 110),
                                                       tensor_from_file=_build_noised_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', 'hrr_std', delimiter=','))
+TMAPS['ecg-bike-ensemble-log-squared-error'] = TensorMap('log_squared_error', loss='logcosh', metrics=['mae'], shape=(1,),
+                                                     normalization={'mean': 2.66, 'std': 2.26},
+                                                     interpretation=Interpretation.CONTINUOUS,
+                                                     tensor_from_file=_build_tensor_from_file('/home/ndiamant/hrr_squared_errors.csv', 'log_squared_error', delimiter=','))
 TMAPS['ecg-bike-hrr-raw-ensemble-binary'] = TensorMap(
     'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
     discretization_bounds=[25,],
+    tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
+TMAPS['ecg-bike-hrr-raw-ensemble-binary-perfect-cut'] = TensorMap(
+    'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
+    discretization_bounds=[28.4,],
     tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
 TMAPS['ecg-bike-hrr-raw-ensemble-trinary'] = TensorMap(
     'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
@@ -1853,7 +1878,7 @@ TMAPS['ecg-bike-hrr-raw-ensemble-trinary'] = TensorMap(
 TMAPS['ecg-bike-hrr-raw-ensemble-trinary-weighted'] = TensorMap(
     'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
     discretization_bounds=[20, 40],
-    loss=weighted_crossentropy([4., 1., 1.], 'hrr'),
+    loss=weighted_crossentropy([4., 1., 1.], 'hrr_trinary'),
     tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
 TMAPS['ecg-bike-hrr-raw-ensemble-discretized-not-weighted'] = TensorMap(
     'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},

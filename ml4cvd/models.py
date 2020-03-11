@@ -746,7 +746,9 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap] = None,
     custom_dict = {**metric_dict, type(opt).__name__: opt}
     if 'model_file' in kwargs and kwargs['model_file'] is not None:
         logging.info("Attempting to load model file from: {}".format(kwargs['model_file']))
-        m = load_model(kwargs['model_file'], custom_objects=custom_dict)
+        m = load_model(kwargs['model_file'], custom_objects=custom_dict, compile=False)
+        m.compile(optimizer=opt, loss=[tm.loss for tm in tensor_maps_out],
+                  metrics={tm.output_name(): tm.metrics for tm in tensor_maps_out})
         m.summary()
         logging.info("Loaded model file from: {}".format(kwargs['model_file']))
         return m
@@ -1055,6 +1057,8 @@ def _activation_layer(activation):
         return ELU()
     elif activation == 'thresh_relu':
         return ThresholdedReLU()
+    elif activation == 'swish':
+        return tf.nn.swish
     else:
         return Activation(activation)
 
@@ -1273,8 +1277,10 @@ def get_model_inputs_outputs(model_files: List[str],
         opt = get_optimizer(optimizer, 1)
         metric_dict = get_metric_dict(tensor_maps_out)
         custom = {**metric_dict, type(opt).__name__: opt}
-        logging.info(f'custom keysssss: {list(custom.keys())}')
-        m = load_model(model_file, custom_objects=custom)
+        logging.info(f'custom keys: {list(custom.keys())}')
+        m = load_model(model_file, custom_objects=custom, compile=False)
+        m.compile(optimizer=opt, loss=[tm.loss for tm in tensor_maps_out],
+                  metrics={tm.output_name(): tm.metrics for tm in tensor_maps_out})
         model_inputs_outputs = defaultdict(list)
         for input_tensor_map in tensor_maps_in:
             try:
