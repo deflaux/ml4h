@@ -1455,6 +1455,15 @@ def _build_augmented_bike_ecg_tmaps():
 _build_augmented_bike_ecg_tmaps()
 
 
+def _make_incomplete_exercise(tff: Callable) -> Callable:
+    def new_tff(tm: TensorMap, hd5: h5py.File, dependents=None):
+        out = tff(tm, hd5, dependents)
+        if _get_tensor_at_first_date(hd5, 'ecg_bike/continuous', 'exercise_duration') > 359:
+            raise ValueError('Participant completed exercise.')
+        return out
+    return new_tff
+
+
 TMAPS['ecg_bike_aligned_first_r'] = TensorMap(
     'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
@@ -1866,15 +1875,21 @@ TMAPS['ecg-bike-hrr-raw-ensemble'] = TensorMap('hrr', loss='logcosh', metrics=['
                                                interpretation=Interpretation.CONTINUOUS,
                                                validator=make_range_validator(0, 110),
                                                tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
+TMAPS['ecg-bike-hrr-incomplete_exercise'] = TensorMap(
+    'hrr', loss='logcosh', metrics=['mae'], shape=(1,),
+    normalization={'mean': 25, 'std': 15},
+    interpretation=Interpretation.CONTINUOUS,
+    validator=make_range_validator(0, 110),
+    tensor_from_file=_make_incomplete_exercise(_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=',')))
 TMAPS['ecg-bike-hrr-raw-ensemble-noised'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
                                                       normalization={'mean': 25, 'std': 15}, cacheable=False,
                                                       interpretation=Interpretation.CONTINUOUS,
                                                       validator=make_range_validator(0, 110),
                                                       tensor_from_file=_build_noised_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', 'hrr_std', delimiter=','))
 TMAPS['ecg-bike-ensemble-log-squared-error'] = TensorMap('log_squared_error', loss='logcosh', metrics=['mae'], shape=(1,),
-                                                     normalization={'mean': 2.66, 'std': 2.26},
-                                                     interpretation=Interpretation.CONTINUOUS,
-                                                     tensor_from_file=_build_tensor_from_file('/home/ndiamant/hrr_squared_errors.csv', 'log_squared_error', delimiter=','))
+                                                         normalization={'mean': 2.66, 'std': 2.26},
+                                                         interpretation=Interpretation.CONTINUOUS,
+                                                         tensor_from_file=_build_tensor_from_file('/home/ndiamant/hrr_squared_errors.csv', 'log_squared_error', delimiter=','))
 TMAPS['ecg-bike-hrr-raw-ensemble-binary'] = TensorMap(
     'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
     discretization_bounds=[25,],
