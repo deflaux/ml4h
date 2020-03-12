@@ -215,7 +215,7 @@ def plot_scatters(predictions, truth, title, prefix='./figures/', paths=None, to
         r2 = pearson*pearson
         big_r2 = coefficient_of_determination(truth.flatten(), predictions[k].flatten())
         plt.plot([np.min(predictions[k]), np.max(predictions[k])], [np.min(predictions[k]), np.max(predictions[k])], color=color)
-        plt.scatter(predictions[k], truth, color=color, label=str(k) + f" Pearson:{pearson:0.3f} r^2:{r2:0.3f} R^2:{big_r2:0.3f}", marker='.', alpha=alpha, s=1)
+        plt.scatter(predictions[k], truth, color=color, label=str(k) + f" Pearson:{pearson:0.3f} r^2:{r2:0.3f} R^2:{big_r2:0.3f}", marker='.', alpha=alpha)
         if paths is not None:
             diff = np.abs(predictions[k] - truth)
             arg_sorted = diff[:, 0].argsort()
