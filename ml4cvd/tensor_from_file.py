@@ -1464,48 +1464,45 @@ def _make_incomplete_exercise(tff: Callable) -> Callable:
     return new_tff
 
 
+def _make_ramp(tff: Callable) -> Callable:
+    def new_tff(tm: TensorMap, hd5: h5py.File, dependents=None):
+        out = tff(tm, hd5, dependents)
+        if _ecg_protocol_string(hd5) in {'F30', 'M40'}:
+            raise ValueError('Exercise was not ramped.')
+        return out
+    return new_tff
+
+
 TMAPS['ecg_bike_aligned_first_r'] = TensorMap(
     'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_first_r_aligned([], [0]),)
-
-
 TMAPS['ecg_bike_aligned_first_r_noised'] = TensorMap(
     'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_first_r_aligned([_rand_add_noise], [0]),)
-
-
 TMAPS['ecg_bike_aligned_first_r_normalized'] = TensorMap(
     'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_first_r_aligned([], [0]),)
-
-
 TMAPS['ecg_bike_aligned_first_r_noised_normalized'] = TensorMap(
     'full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_first_r_aligned([_rand_add_noise], [0]),)
-
-
 TMAPS['ecg_bike_aligned_first_r_noised_normalized_downsampled'] = TensorMap(
     'full', shape=(1024, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_first_r_aligned_downsampled([_rand_add_noise], [0], 4),)
-
-
 TMAPS['ecg_bike_aligned_first_r_noised_normalized_8xdownsampled'] = TensorMap(
     'full', shape=(512, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'zero_mean_std1': True}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_first_r_aligned_downsampled([_rand_add_noise], [0], 8),)
-
 TMAPS['ecg_bike_shifted_8xdownsampled'] = TensorMap(
     'full', shape=(512, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_shifted_downsampled([0], 8),
     augmentations=[_warp_ecg, _rand_add_noise],
 )
-
 TMAPS['ecg_bike_shifted_8xdownsampled_12s'] = TensorMap(
     'full', shape=(750, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
@@ -1522,6 +1519,18 @@ TMAPS['ecg_bike_shifted_8xdownsampled_10s_heavy_augment'] = TensorMap(
     'full', shape=(625, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
     tensor_from_file=_bike_ecg_shifted_downsampled([0], 8),
+    augmentations=[_rand_roll, _rand_add_noise, _rand_offset],
+)
+TMAPS['ecg_bike_shifted_8xdownsampled_10s_ramp'] = TensorMap(
+    'full', shape=(625, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_make_ramp(_bike_ecg_shifted_downsampled([0], 8)),
+    augmentations=[_warp_ecg, _rand_add_noise],
+)
+TMAPS['ecg_bike_shifted_8xdownsampled_10s_heavy_augment_ramp'] = TensorMap(
+    'full', shape=(625, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, cacheable=False, metrics=['mse'],
+    tensor_from_file=_make_ramp(_bike_ecg_shifted_downsampled([0], 8)),
     augmentations=[_rand_roll, _rand_add_noise, _rand_offset],
 )
 TMAPS['ecg_bike_shifted_8xdownsampled_3lead'] = TensorMap(
@@ -1881,6 +1890,12 @@ TMAPS['ecg-bike-hrr-incomplete_exercise'] = TensorMap(
     interpretation=Interpretation.CONTINUOUS,
     validator=make_range_validator(0, 110),
     tensor_from_file=_make_incomplete_exercise(_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=',')))
+TMAPS['ecg-bike-hrr-ramp'] = TensorMap(
+    'hrr', loss='logcosh', metrics=['mae'], shape=(1,),
+    normalization={'mean': 25, 'std': 15},
+    interpretation=Interpretation.CONTINUOUS,
+    validator=make_range_validator(0, 110),
+    tensor_from_file=_make_ramp(_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=',')))
 TMAPS['ecg-bike-hrr-raw-ensemble-noised'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
                                                       normalization={'mean': 25, 'std': 15}, cacheable=False,
                                                       interpretation=Interpretation.CONTINUOUS,
