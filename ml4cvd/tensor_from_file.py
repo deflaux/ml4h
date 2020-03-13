@@ -1249,7 +1249,7 @@ def _check_phase_full_len(hd5: h5py.File, phase: str):
 
 
 def _get_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int], slice], stop: Optional[int] = None):
-    path_prefix, name = 'ecg_bike/float_array', 'full'
+    path_prefix, name = 'ecg_bike/float_array', tm.name
     ecg_dataset = first_dataset_at_path(hd5, tensor_path(path_prefix, name))
     tensor = np.array(ecg_dataset[start: tm.shape[0] + start if stop is None else stop, leads], dtype=np.float32)
     if np.max(np.abs(tensor)) > 1000:
@@ -1431,6 +1431,9 @@ def _build_end_recovery(augmentations: [Callable], leads: Union[List[int], slice
 TMAPS['ecg-bike-pretest-leadI'] = TensorMap('full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
                                             validator=no_nans, normalization={'mean': 7, 'std': 31}, metrics=['mse'],
                                             tensor_from_file=_build_bike_ecg_tensor_from_file(0, [0]),)
+TMAPS['ecg-bike-strip-leadI'] = TensorMap('strip', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+                                          validator=no_nans, normalization={'mean': 7, 'std': 31}, metrics=['mse'],
+                                          tensor_from_file=_build_bike_ecg_tensor_from_file(0, [0]),)
 
 
 def _build_augmented_bike_ecg_tmaps():

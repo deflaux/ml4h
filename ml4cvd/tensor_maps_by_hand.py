@@ -216,7 +216,7 @@ TMAPS['lvm_mosteller_index_prediction_sentinel'] = TensorMap('lvm_mosteller_inde
 TMAPS['end_systole_volume'] = TensorMap('end_systole_volume', Interpretation.CONTINUOUS, activation='linear', validator=make_range_validator(0, 300),
                                     loss='logcosh', channel_map={'end_systole_volume': 0},
                                     normalization={'mean': 47.0, 'std': 10.0})
-TMAPS['end_diastole_volume'] = TensorMap('end_diastole_volume', Interpretation.CONTINUOUS, activation='linear', validator=make_range_validator(0, 400),
+TMAPS['end_diastole_volume'] = TensorMap('end_diastole_volume', Interpretation.CONTINUOUS, activation='linear', validator=make_range_validator(0, 600),
                                      loss='logcosh', channel_map={'end_diastole_volume': 0},
                                      normalization={'mean': 142.0, 'std': 21.0})
 TMAPS['ejection_fraction'] = TensorMap('ejection_fraction', Interpretation.CONTINUOUS, activation='linear', validator=make_range_validator(0.2, 0.9),
