@@ -22,7 +22,6 @@ from multiprocessing import Process, Queue
 from itertools import chain
 from typing import List, Dict, Tuple, Set, Optional, Iterator, Callable, Any
 
-
 from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.TensorMap import TensorMap
 
@@ -30,7 +29,7 @@ np.set_printoptions(threshold=np.inf)
 
 
 TENSOR_GENERATOR_TIMEOUT = 64
-TENSOR_GENERATOR_MAX_Q_SIZE = 32
+TENSOR_GENERATOR_MAX_Q_SIZE = 4
 
 Path = str
 PathIterator = Iterator[Path]
@@ -46,11 +45,12 @@ class _ShufflePaths(Iterator):
         self.idx = 0
 
     def __next__(self):
+        path = self.paths[self.idx]
         self.idx += 1
         if self.idx >= len(self.paths):
             self.idx = 0
             np.random.shuffle(self.paths)
-        return self.paths[self.idx - 1]
+        return path
 
 
 class _WeightedPaths(Iterator):
@@ -66,10 +66,12 @@ class _WeightedPaths(Iterator):
 
 
 class TensorGenerator:
-    def __init__(self, batch_size, input_maps, output_maps, paths, num_workers, cache_size, weights=None, keep_paths=False, mixup=0.0, name='worker', siamese=False):
+    def __init__(self, batch_size, input_maps, output_maps, paths, num_workers, cache_size,
+                 weights=None, keep_paths=False, mixup=0.0, name='worker', siamese=False, augment=False):
         """
         :param paths: If weights is provided, paths should be a list of path lists the same length as weights
         """
+        self.augment = augment
         self.run_on_main_thread = num_workers == 0
         self.q = None
         self._started = False
@@ -115,6 +117,7 @@ class TensorGenerator:
                 self.batch_function, self.batch_size, self.keep_paths, self.batch_function_kwargs,
                 self.cache_size,
                 name,
+                self.augment,
             )
             self.worker_instances.append(worker_instance)
             if not self.run_on_main_thread:
@@ -151,31 +154,39 @@ class TensorMapArrayCache:
     Caches numpy arrays created by tensor maps up to a maximum number of bytes
     """
 
-    def __init__(self, max_size, input_tms: List[TensorMap], output_tms: List[TensorMap], max_rows: int):
+    def __init__(self, max_size, input_tms: List[TensorMap], output_tms: List[TensorMap], max_rows: Optional[int] = np.inf):
+        input_tms = [tm for tm in input_tms if tm.cacheable]
+        output_tms = [tm for tm in output_tms if tm.cacheable]
         self.max_size = max_size
         self.data = {}
-        self.row_size = sum(np.zeros(tm.shape, dtype=np.float32).nbytes for tm in input_tms + output_tms)
+        self.row_size = sum(np.zeros(tm.shape, dtype=np.float32).nbytes for tm in set(input_tms + output_tms))
         self.nrows = min(int(max_size / self.row_size), max_rows)
-        for tm in filter(lambda tm: tm.cacheable, input_tms):
+        self.autoencode_names: Dict[str, str] = {}
+        for tm in input_tms:
             self.data[tm.input_name()] = np.zeros((self.nrows,) + tm.shape, dtype=np.float32)
-        for tm in filter(lambda tm: tm.cacheable, output_tms):
+        for tm in output_tms:
             if tm in input_tms:  # Useful for autoencoders
-                self.data[tm.output_name()] = self.data[tm.input_name()]
-            self.data[tm.output_name()] = np.zeros((self.nrows,) + tm.shape, dtype=np.float32)
+                self.autoencode_names[tm.output_name()] = tm.input_name()
+            else:
+                self.data[tm.output_name()] = np.zeros((self.nrows,) + tm.shape, dtype=np.float32)
         self.files_seen = Counter()  # name -> max position filled in cache
         self.key_to_index = {}  # file_path, name -> position in self.data
         self.hits = 0
         self.failed_paths: Set[str] = set()
 
-    def __setitem__(self, key: Tuple[str, str], value):
+    def _fix_key(self, key: Tuple[str, str]) -> Tuple[str, str]:
+        file_path, name = key
+        return file_path, self.autoencode_names.get(name, name)
+
+    def __setitem__(self, key: Tuple[str, str], value) -> bool:
         """
         :param key: should be a tuple file_path, name
         """
-        file_path, name = key
-        if key in self.key_to_index:
+        file_path, name = self._fix_key(key)
+        if key in self.key_to_index:  # replace existing value
             self.data[name][self.key_to_index[key]] = value
             return True
-        if self.files_seen[name] >= self.nrows:
+        if self.files_seen[name] >= self.nrows:  # cache already full
             return False
         self.key_to_index[key] = self.files_seen[name]
         self.data[name][self.key_to_index[key]] = value
@@ -186,19 +197,24 @@ class TensorMapArrayCache:
         """
         :param key: should be a tuple file_path, name
         """
-        file_path, name = key
+        file_path, name = self._fix_key(key)
         val = self.data[name][self.key_to_index[file_path, name]]
         self.hits += 1
         return val
 
     def __contains__(self, key: Tuple[str, str]):
-        return key in self.key_to_index
+        return self._fix_key(key) in self.key_to_index
 
     def __len__(self):
         return sum(self.files_seen.values())
 
     def average_fill(self):
         return np.mean(list(self.files_seen.values()) or [0]) / self.nrows
+
+    def __str__(self):
+        hits = f"The cache has had {self.hits} hits."
+        fullness = ' - '.join(f"{name} has {count} / {self.nrows} tensors" for name, count in self.files_seen.items())
+        return f'{hits} {fullness}.'
 
 
 class _MultiModalMultiTaskWorker:
@@ -210,6 +226,7 @@ class _MultiModalMultiTaskWorker:
                  batch_function: BatchFunction, batch_size: int, return_paths: bool, batch_func_kwargs: Dict,
                  cache_size: float,
                  name: str,
+                 augment: bool,
                  ):
         self.q = q
         self.input_maps = input_maps
@@ -222,6 +239,7 @@ class _MultiModalMultiTaskWorker:
         self.batch_func_kwargs = batch_func_kwargs
         self.cache_size = cache_size
         self.name = name
+        self.augment = augment
 
         self.stats = Counter()
         self.epoch_stats = Counter()
@@ -232,8 +250,6 @@ class _MultiModalMultiTaskWorker:
 
         self.cache = TensorMapArrayCache(cache_size, input_maps, output_maps, true_epoch_len)
         logging.info(f'{name} initialized cache of size {self.cache.row_size * self.cache.nrows / 1e9:.3f} GB.')
-
-        self.all_cacheable = all((tm.cacheable for tm in input_maps + output_maps))
 
         self.dependents = {}
         self.idx = 0
@@ -252,7 +268,7 @@ class _MultiModalMultiTaskWorker:
             return self.hd5
         if self.hd5 is None:  # Don't open hd5 if everything is in the self.cache
             self.hd5 = h5py.File(path, 'r')
-        tensor = tm.tensor_from_file(tm, self.hd5, self.dependents)
+        tensor = tm.postprocess_tensor(tm.tensor_from_file(tm, self.hd5, self.dependents), augment=self.augment)
         batch[name][idx] = tensor
         if tm.cacheable:
             self.cache[path, name] = tensor
@@ -260,7 +276,7 @@ class _MultiModalMultiTaskWorker:
 
     def _handle_tensor_path(self, path: Path) -> None:
         hd5 = None
-        if path in self.cache.failed_paths and self.all_cacheable:
+        if path in self.cache.failed_paths:
             self.epoch_stats['skipped_paths'] += 1
             return
         try:
@@ -293,14 +309,15 @@ class _MultiModalMultiTaskWorker:
             f"The following errors occurred:\n\t\t{error_info}",
             f"Generator looped & shuffled over {self.true_epoch_len} paths.",
             f"{int(self.stats['Tensors presented']/self.stats['epochs'])} tensors were presented.",
-            f"The cache holds {len(self.cache)} out of a possible {self.true_epoch_len * (len(self.input_maps) + len(self.output_maps))} tensors and is {100 * self.cache.average_fill():.0f}% full.",
-            f"So far there have been {self.cache.hits} cache hits.",
             f"{self.epoch_stats['skipped_paths']} paths were skipped because they previously failed.",
+            str(self.cache),
             f"{(time.time() - self.start):.2f} seconds elapsed.",
         ])
         logging.info(f"Worker {self.name} - In true epoch {self.stats['epochs']}:\n\t{info_string}")
         if self.stats['Tensors presented'] == 0:
             raise ValueError(f"Completed an epoch but did not find any tensors to yield")
+        if 'test' in self.name:
+            logging.warning(f'Test worker {self.name} completed a full epoch. Test results may be double counting samples.')
         self.start = time.time()
         self.epoch_stats = Counter()
 
@@ -424,7 +441,7 @@ def get_test_train_valid_paths(tensors, valid_ratio, test_ratio, test_modulo, te
                 train_paths.append(os.path.join(root, name))
 
     logging.info(f"Found {len(train_paths)} train, {len(valid_paths)} validation, and {len(test_paths)} testing tensors at: {tensors}")
-    if len(train_paths) == 0 or len(valid_paths) == 0 or len(test_paths) == 0:
+    if len(train_paths) == 0 and len(valid_paths) == 0 and len(test_paths) == 0:
         raise ValueError(f"Not enough tensors at {tensors}\n")
     return train_paths, valid_paths, test_paths
 
@@ -517,9 +534,9 @@ def test_train_valid_tensor_generators(tensor_maps_in: List[TensorMap],
     else:
         train_paths, valid_paths, test_paths = get_test_train_valid_paths(tensors, valid_ratio, test_ratio, test_modulo, test_csv)
         weights = None
-    generate_train = TensorGenerator(batch_size, tensor_maps_in, tensor_maps_out, train_paths, num_workers, cache_size, weights, keep_paths, mixup_alpha, name='train_worker', siamese=siamese)
-    generate_valid = TensorGenerator(batch_size, tensor_maps_in, tensor_maps_out, valid_paths, num_workers // 2, cache_size, weights, keep_paths, name='validation_worker', siamese=siamese)
-    generate_test = TensorGenerator(batch_size, tensor_maps_in, tensor_maps_out, test_paths, num_workers, 0, weights, keep_paths or keep_paths_test, name='test_worker', siamese=siamese)
+    generate_train = TensorGenerator(batch_size, tensor_maps_in, tensor_maps_out, train_paths, num_workers, cache_size, weights, keep_paths, mixup_alpha, name='train_worker', siamese=siamese, augment=True)
+    generate_valid = TensorGenerator(batch_size, tensor_maps_in, tensor_maps_out, valid_paths, num_workers // 2, cache_size, weights, keep_paths, name='validation_worker', siamese=siamese, augment=False)
+    generate_test = TensorGenerator(batch_size, tensor_maps_in, tensor_maps_out, test_paths, num_workers, 0, weights, keep_paths or keep_paths_test, name='test_worker', siamese=siamese, augment=False)
     return generate_train, generate_valid, generate_test
 
 

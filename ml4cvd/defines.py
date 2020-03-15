@@ -2,15 +2,16 @@ from typing import List
 from enum import Enum, auto
 
 
-class DataSetType(Enum):
-    FLOAT_ARRAY = auto()
+class StorageType(Enum):
     CONTINUOUS = auto()
-    CATEGORICAL = auto()
+    CATEGORICAL_INDEX = auto()
+    CATEGORICAL_FLAG = auto()
+    ONE_HOT = auto()
     STRING = auto()
-    SERIES = auto()
+    BYTE_STRING = auto()
 
     def __str__(self):
-        """DataSetType.FLOAT_ARRAY becomes float_array"""
+        """StorageType.FLOAT_ARRAY becomes float_array"""
         return str.lower(super().__str__().split('.')[1])
 
 
@@ -23,6 +24,7 @@ IMAGE_EXT = '.png'
 PDF_EXT = '.pdf'
 TENSOR_EXT = '.hd5'
 
+STOP_CHAR = '!'
 JOIN_CHAR = '_'
 CONCAT_CHAR = '-'
 HD5_GROUP_CHAR = '/'
@@ -43,6 +45,12 @@ MRI_PATIENT_POSITION = 'mri_patient_position'
 MRI_PATIENT_ORIENTATION = 'mri_patient_orientation'
 MRI_SEGMENTED_CHANNEL_MAP = {'background': 0, 'ventricle': 1, 'myocardium': 2}
 MRI_ANNOTATION_CHANNEL_MAP = {'good': 0, 'included-lvot': 1, 'mistrace': 2, 'phantom-apex': 3, 'hardclip': 4}
+MRI_LAX_3CH_SEGMENTED_CHANNEL_MAP = {'background': 0, 'LV_anteroseptum': 1, 'left_atrium': 2, 'LV_inferior_wall': 3, 'LV_Papillary': 4, 'LV_Cavity': 5}
+MRI_LAX_4CH_SEGMENTED_CHANNEL_MAP = {'background': 0, 'RV_free_wall': 1, 'RA_free_wall': 2, 'LA_free_wall': 3, 'LV_anterolateral_wall': 4,
+                                     'interventricular_septum': 5, 'interatrial_septum': 6, 'crista_terminalis': 7, 'RA_cavity': 8, 'RV_cavity': 9,
+                                     'LA_cavity': 10, 'LV_cavity': 11, 'descending_aorta': 12, 'thoracic_cavity': 13}
+MRI_SAX_SEGMENTED_CHANNEL_MAP = {'background': 0, 'RV_free_wall': 1, 'interventricular_septum': 2, 'LV_free_wall': 3, 'LV_pap': 4, 'LV_cavity': 5,
+                                 'RV_cavity': 6, 'thoracic_cavity': 7, 'liver': 8, 'stomach': 9, 'spleen': 10}
 CAD_ICDS = ['K401', 'K402', 'K403', 'K404', 'K411', 'K412', 'K413', 'K414', 'K451', 'K452', 'K453', 'K454', 'K455',
             'K491', 'K492', 'K498', 'K499', 'K502', 'K751', 'K752', 'K753', 'K754', 'K758', 'K759']
 
@@ -56,6 +64,7 @@ ECG_REST_MEDIAN_LEADS = {'median_I': 0, 'median_II': 1, 'median_III': 2, 'median
                          'median_V4': 6, 'median_V5': 7, 'median_V6': 8, 'median_aVF': 9, 'median_aVL': 10, 'median_aVR': 11}
 ECG_REST_AMP_LEADS = {'I': 0, 'II': 1, 'III': 2, 'aVR': 3, 'aVL': 4, 'aVF': 5,
                       'V1': 6, 'V2': 7, 'V3': 8, 'V4': 9, 'V5': 10, 'V6': 11}
+ECG_SEGMENTED_CHANNEL_MAP = {'unknown': 0, 'TP_segment': 1, 'P_wave': 2, 'PQ_segment': 3, 'QRS_complex': 4, 'ST_segment': 5, 'T_wave': 6, 'U_wave': 7}
 
 ECG_BIKE_LEADS = {"I": 0, "2": 1, "3": 2}
 ECG_BIKE_MEDIAN_SIZE = (5500, len(ECG_BIKE_LEADS))
