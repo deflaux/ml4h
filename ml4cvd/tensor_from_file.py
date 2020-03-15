@@ -1923,6 +1923,10 @@ TMAPS['ecg-bike-hrr-raw-ensemble-trinary'] = TensorMap(
     'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
     discretization_bounds=[20, 40],
     tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
+TMAPS['ecg-bike-hrr-raw-ensemble-trinary-ramp'] = TensorMap(
+    'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
+    discretization_bounds=[20, 40],
+    tensor_from_file=_make_ramp(_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=',')))
 TMAPS['ecg-bike-hrr-raw-ensemble-trinary-weighted'] = TensorMap(
     'hrr', interpretation=Interpretation.DISCRETIZED, validator=make_range_validator(0, 110), channel_map={'hrr': 0},
     discretization_bounds=[20, 40],
