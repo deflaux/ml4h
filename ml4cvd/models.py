@@ -521,7 +521,9 @@ def make_variational_multimodal_multitask_model(
     model_layers = kwargs.get('model_layers', False)
     if model_layers:
         loaded = 0
+        frozen = 0
         freeze = kwargs.get('freeze_model_layers', False)
+        unfreeze = kwargs.get('unfreeze_model_layers', [])
         m.load_weights(model_layers, by_name=True)
         try:
             m_other = load_model(model_layers, custom_objects=custom_dict)
@@ -532,11 +534,15 @@ def make_variational_multimodal_multitask_model(
                     loaded += 1
                     if freeze:
                         target_layer.trainable = False
+                        frozen += 1
+                        if other_layer.name in unfreeze:
+                            frozen -= 1
+                            target_layer.trainable=True
                 except (ValueError, KeyError):
                     logging.warning(f'Error loading layer {other_layer.name} from model: {model_layers}. Will still try to load other layers.')
         except ValueError as e:
             logging.info(f'Loaded model weights, but got ValueError in model loading: {str(e)}')
-        logging.info(f'Loaded {"and froze " if freeze else ""}{loaded} layers from {model_layers}.')
+        logging.info(f'Loaded {loaded}{"and froze " if freeze else ""}{frozen if freeze else ""} layers from {model_layers}.')
 
     m.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=my_metrics)
     return m, encoder, decoder
@@ -803,22 +809,28 @@ def make_multimodal_multitask_model(tensor_maps_in: List[TensorMap] = None,
     model_layers = kwargs.get('model_layers', False)
     if model_layers:
         loaded = 0
+        frozen = 0
         freeze = kwargs.get('freeze_model_layers', False)
-        m.load_weights(model_layers, by_name=True)
+        m.load_weights(model_layers, by_name=True)        
+        unfreeze = kwargs.get('unfreeze_model_layers', [])
         try:
             m_other = load_model(model_layers, custom_objects=custom_dict)
             for other_layer in m_other.layers:
                 try:
                     target_layer = m.get_layer(other_layer.name)
                     target_layer.set_weights(other_layer.get_weights())
-                    loaded += 1
-                    if freeze:
+                    loaded += 1                    
+                    if freeze:                        
                         target_layer.trainable = False
+                        frozen += 1
+                        if other_layer.name in unfreeze:
+                            target_layer.trainable = True
+                            frozen -= 1
                 except (ValueError, KeyError):
                     logging.warning(f'Error loading layer {other_layer.name} from model: {model_layers}. Will still try to load other layers.')
         except ValueError as e:
             logging.info(f'Loaded model weights, but got ValueError in model loading: {str(e)}')
-        logging.info(f'Loaded {"and froze " if freeze else ""}{loaded} layers from {model_layers}.')
+        logging.info(f'Loaded {loaded} {"and froze " if freeze else ""}{frozen if freeze else ""} layers from {model_layers}.')
 
     m.compile(optimizer=opt, loss=losses, loss_weights=loss_weights, metrics=my_metrics)
     return m

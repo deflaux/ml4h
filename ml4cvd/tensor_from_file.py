@@ -1084,6 +1084,16 @@ def _segmented_dicom_slices(dicom_key_prefix, path_prefix='ukb_cardiac_mri'):
         return tensor
     return _segmented_dicom_tensor_from_file
 
+def _segmented_dicom_areas(dicom_key_prefix, path_prefix='ukb_cardiac_mri'):
+    def _segmented_dicom_tensor_from_file(tm, hd5, dependents={}):
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        for i in range(tm.shape[-2]):
+            categorical_index_slice = _get_tensor_at_first_date(hd5, path_prefix, dicom_key_prefix + str(i+1))
+            categorical_one_hot = to_categorical(categorical_index_slice, len(tm.channel_map))
+            tensor[..., i, :] = np.sum(np.sum(categorical_one_hot, axis=0), axis=0)
+        return tensor
+    return _segmented_dicom_tensor_from_file
+
 
 TMAPS['lax_3ch_segmented'] = TensorMap('lax_3ch_segmented',  Interpretation.CATEGORICAL, shape=(256, 256, 50, 6),
                                        tensor_from_file=_segmented_dicom_slices('cine_segmented_lax_3ch_annotated_'),
@@ -1118,6 +1128,11 @@ TMAPS['sax_segmented_b6_192'] = TensorMap('sax_segmented_b6', Interpretation.CAT
                                       tensor_from_file=_segmented_dicom_slices('cine_segmented_sax_b6_annotated_'),
                                       channel_map={'background': 0, 'RV_free_wall': 1, 'interventricular_septum': 2, 'LV_free_wall': 3, 'LV_pap': 4,
                                                    'LV_cavity': 5, 'RV_cavity': 6, 'thoracic_cavity': 7, 'liver': 8, 'stomach': 9, 'spleen': 10})
+
+TMAPS['sax_segmented_b6_areas'] = TensorMap('sax_segmented_b6_areas', Interpretation.CONTINUOUS, shape=(1, 1, 11),
+                                            tensor_from_file=_segmented_dicom_areas('cine_segmented_sax_b6_annotated_'),
+                                            channel_map={'background': 0, 'RV_free_wall': 1, 'interventricular_septum': 2, 'LV_free_wall': 3, 'LV_pap': 4,
+                                                         'LV_cavity': 5, 'RV_cavity': 6, 'thoracic_cavity': 7, 'liver': 8, 'stomach': 9, 'spleen': 10})
 
 
 def _make_fallback_tensor_from_file(tensor_keys):
@@ -1162,15 +1177,19 @@ def sax_tensor(b_series_prefix):
         tensor = np.zeros(tm.shape, dtype=np.float32)
         dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.float32)
         for b in range(tm.shape[-2]):
-            try:
-                tm_shape = (tm.shape[0], tm.shape[1])
-                tensor[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{b_series_prefix}_frame_b{b}'], dtype=np.float32))
-                index_tensor = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{b_series_prefix}_mask_b{b}'], dtype=np.float32))
-                dependents[tm.dependent_map][:, :, b, :] = to_categorical(index_tensor, tm.dependent_map.shape[-1])
-            except KeyError:
-                missing += 1
-                tensor[:, :, b, 0] = 0
-                dependents[tm.dependent_map][:, :, b, MRI_SEGMENTED_CHANNEL_MAP['background']] = 1
+            tm_shape = (tm.shape[0], tm.shape[1])
+            tensor[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{b_series_prefix}_frame_b{b}/instance_0'], dtype=np.float32))
+            index_tensor = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{b_series_prefix}_mask_b{b}/instance_0'], dtype=np.float32))
+            dependents[tm.dependent_map][:, :, b, :] = to_categorical(index_tensor, tm.dependent_map.shape[-1])
+            # try:
+            #     tm_shape = (tm.shape[0], tm.shape[1])
+            #     tensor[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{b_series_prefix}_frame_b{b}'], dtype=np.float32))
+            #     index_tensor = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{b_series_prefix}_mask_b{b}'], dtype=np.float32))
+            #     dependents[tm.dependent_map][:, :, b, :] = to_categorical(index_tensor, tm.dependent_map.shape[-1])
+            # except KeyError:
+            #     missing += 1
+            #     tensor[:, :, b, 0] = 0
+            #     dependents[tm.dependent_map][:, :, b, MRI_SEGMENTED_CHANNEL_MAP['background']] = 1
         if missing == tm.shape[-2]:
             raise ValueError(f'Could not find any slices in {tm.name} was hoping for {tm.shape[-2]}')
         return tensor
@@ -1183,7 +1202,7 @@ TMAPS['sax_all_diastole_segmented_weighted'] = TensorMap('sax_all_diastole_segme
                                                          channel_map=MRI_SEGMENTED_CHANNEL_MAP,
                                                          loss=weighted_crossentropy([1.0, 40.0, 40.0], 'sax_all_diastole_segmented'))
 
-TMAPS['sax_all_diastole'] = TensorMap('sax_all_diastole', shape=(256, 256, 13, 1), tensor_from_file=sax_tensor('diastole'),
+TMAPS['sax_all_diastole'] = TensorMap('sax_all_diastole', shape=(256, 256, 13, 1), tensor_from_file=sax_tensor('ukb_cardiac_mri/diastole'),
                                       dependent_map=TMAPS['sax_all_diastole_segmented'])
 TMAPS['sax_all_diastole_weighted'] = TensorMap('sax_all_diastole', shape=(256, 256, 13, 1), tensor_from_file=sax_tensor('diastole'),
                                                dependent_map=TMAPS['sax_all_diastole_segmented_weighted'])
@@ -1252,6 +1271,8 @@ def _get_bike_ecg(hd5, tm: TensorMap, start: int, leads: Union[List[int], slice]
     path_prefix, name = 'ecg_bike/float_array', tm.name
     ecg_dataset = first_dataset_at_path(hd5, tensor_path(path_prefix, name))
     tensor = np.array(ecg_dataset[start: tm.shape[0] + start if stop is None else stop, leads], dtype=np.float32)
+    if tm.shape[-1] // len(leads) > 1:
+        tensor = np.tile(tensor, [1, tm.shape[-1] // len(leads)])
     if np.max(np.abs(tensor)) > 1000:
         raise ValueError('ECG range too large.')
     return _fail_nan(tensor)
@@ -1434,6 +1455,12 @@ TMAPS['ecg-bike-pretest-leadI'] = TensorMap('full', shape=(2048, 1), path_prefix
 TMAPS['ecg-bike-strip-leadI'] = TensorMap('strip', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
                                           validator=no_nans, normalization={'mean': 7, 'std': 31}, metrics=['mse'],
                                           tensor_from_file=_build_bike_ecg_tensor_from_file(0, [0]),)
+
+TMAPS['ecg-bike-pretest'] = TensorMap('full', shape=(5000, 12), path_prefix='ecg_bike/float_array',
+                                      interpretation=Interpretation.CONTINUOUS,
+                                      validator=no_nans, normalization={'mean': 7, 'std': 31}, 
+                                      tensor_from_file=_build_bike_ecg_tensor_from_file(0, [0, 1, 2]),)
+
 
 
 def _build_augmented_bike_ecg_tmaps():
@@ -1886,3 +1913,18 @@ TMAPS['ecg_rest_shifted_8xdownsampled'] = TensorMap('full', Interpretation.CONTI
                                                     tensor_from_file=_make_ecg_rest_downsampled(8),
                                                     normalization={'mean': 0, 'std': 2000}, cacheable=False,
                                                     augmentations=[_warp_ecg, _rand_add_noise, _rand_roll])
+
+TMAPS['ecg-bike-lvedv'] = TensorMap('lvedv', metrics=['logcosh'], loss='logcosh', shape=(1,),
+                                    interpretation=Interpretation.CONTINUOUS,
+                                    tensor_from_file=_build_tensor_from_file('/home/pdiachil/cMRI_20191005.continuous.csv', 'extracted_lvedv', 
+                                                                             delimiter=',', normalization=True))
+
+TMAPS['ecg-rest-lvedv'] = TensorMap('lvedv', loss='logcosh', shape=(1,),
+                                    interpretation=Interpretation.CONTINUOUS,
+                                    tensor_from_file=_build_tensor_from_file('/home/pdiachil/cMRI_20191005.continuous.csv', 'extracted_lvedv', 
+                                                                             delimiter=',', normalization=False))
+
+TMAPS['ecg-rest-lvesv'] = TensorMap('lvesv', loss='logcosh', shape=(1,),
+                                    interpretation=Interpretation.CONTINUOUS,
+                                    tensor_from_file=_build_tensor_from_file('/home/pdiachil/cMRI_20191005.continuous.csv', 'extracted_lvesv', 
+                                                                             delimiter=',', normalization=False))

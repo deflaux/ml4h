@@ -58,6 +58,7 @@ def parse_args():
     parser.add_argument('--model_files', nargs='*', default=[], help='List of paths to saved model architectures and weights (hd5).')
     parser.add_argument('--model_layers', help='Path to a model file (hd5) which will be loaded by layer, useful for transfer learning.')
     parser.add_argument('--freeze_model_layers', default=False, action='store_true', help='Whether to freeze the layers from model_layers.')
+    parser.add_argument('--unfreeze_model_layers', nargs='*', default=[], help='Names of layers to unfreeze.')
     parser.add_argument('--continuous_file', default=None, help='Path to a file containing continuous values from which a output TensorMap will be made.'
                                                                'Note that setting this argument has the effect of linking the first output_tensors'
                                                                'argument to the TensorMap made from this file.')
