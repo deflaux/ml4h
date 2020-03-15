@@ -40,6 +40,7 @@ class Interpretation(Enum):
     LANGUAGE = auto()
     COX_PROPORTIONAL_HAZARDS = auto()
     DISCRETIZED = auto()
+    MESH = auto()
 
     def __str__(self):
         """class Interpretation.FLOAT_ARRAY becomes float_array"""
@@ -235,6 +236,9 @@ class TensorMap(object):
 
     def is_language(self):
         return self.interpretation == Interpretation.LANGUAGE
+
+    def is_mesh(self):
+        return self.interpretation == Interpretation.MESH
 
     def is_cox_proportional_hazard(self):
         return self.interpretation == Interpretation.COX_PROPORTIONAL_HAZARDS

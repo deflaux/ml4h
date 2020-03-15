@@ -111,7 +111,7 @@ def evaluate_predictions(tm: TensorMap, y_predictions: np.ndarray, y_truth: np.n
     elif tm.is_cox_proportional_hazard():
         plot_survival(y_predictions, y_truth, title, prefix=folder)
         plot_survival_curves(y_predictions, y_truth, title, prefix=folder, paths=test_paths)
-    elif len(tm.shape) > 1:
+    elif tm.axes() > 1 or tm.is_mesh():
         prediction_flat = tm.rescale(y_predictions).flatten()[:max_melt]
         truth_flat = tm.rescale(y_truth).flatten()[:max_melt]
         if prediction_flat.shape[0] == truth_flat.shape[0]:
@@ -1286,21 +1286,6 @@ def _plot_3d_tensor_slices_as_rgb(tensor, figure_path, cols=3, rows=10):
     _, axes = plt.subplots(rows, cols, figsize=(cols * 4, rows * 4))
     for i in range(tensor.shape[-2]):
         axes[i // cols, i % cols].imshow(tensor[:, :, i, :])
-        axes[i // cols, i % cols].set_yticklabels([])
-        axes[i // cols, i % cols].set_xticklabels([])
-
-    if not os.path.exists(os.path.dirname(figure_path)):
-        os.makedirs(os.path.dirname(figure_path))
-    plt.savefig(figure_path)
-    plt.clf()
-
-
-def _plot_3d_tensor_slices_as_gray(tensor, figure_path, cols=3, rows=10):
-    _, axes = plt.subplots(rows, cols, figsize=(cols * 4, rows * 4))
-    vmin = np.min(tensor)
-    vmax = np.max(tensor)
-    for i in range(tensor.shape[-1]):
-        axes[i // cols, i % cols].imshow(tensor[:, :, i], cmap='gray', vmin=vmin, vmax=vmax)
         axes[i // cols, i % cols].set_yticklabels([])
         axes[i // cols, i % cols].set_xticklabels([])
 

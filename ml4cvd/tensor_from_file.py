@@ -17,6 +17,7 @@ from ml4cvd.TensorMap import TensorMap, no_nans, str2date, make_range_validator,
 from ml4cvd.defines import ECG_REST_LEADS, ECG_REST_MEDIAN_LEADS, ECG_REST_AMP_LEADS, ECG_SEGMENTED_CHANNEL_MAP
 from ml4cvd.defines import StorageType, MRI_TO_SEGMENT, MRI_SEGMENTED, MRI_LAX_SEGMENTED, MRI_SEGMENTED_CHANNEL_MAP, MRI_FRAMES
 from ml4cvd.defines import MRI_PIXEL_WIDTH, MRI_PIXEL_HEIGHT, MRI_SLICE_THICKNESS, MRI_PATIENT_ORIENTATION, MRI_PATIENT_POSITION
+from ml4cvd.defines import MRI_LAX_3CH_SEGMENTED_CHANNEL_MAP, MRI_LAX_4CH_SEGMENTED_CHANNEL_MAP, MRI_SAX_SEGMENTED_CHANNEL_MAP, MRI_AO_SEGMENTED_CHANNEL_MAP
 
 
 """
@@ -1473,29 +1474,49 @@ TMAPS['cine_segmented_lax_4ch_proj_from_lax'] = TensorMap('cine_segmented_lax_4c
 
 def _slice_tensor(tensor_key, slice_index):
     def _slice_tensor_from_file(tm, hd5, dependents={}):
-        tensor = np.zeros(tm.shape, dtype=np.float32)
-        tensor[..., 0] = np.array(hd5[tensor_key][slice_index], dtype=np.float32)
+        if tm.shape[-1] == 1:
+            t = _pad_or_crop_array_to_shape(tm.shape[:-1], np.array(hd5[tensor_key][..., slice_index], dtype=np.float32))
+            tensor = np.expand_dims(t, axis=-1)
+        else:
+            tensor = _pad_or_crop_array_to_shape(tm.shape, np.array(hd5[tensor_key][..., slice_index], dtype=np.float32))
         return tensor
     return _slice_tensor_from_file
 
 
-TMAPS['lax_4ch_diastole_slice'] = TensorMap('lax_4ch_diastole_slice', Interpretation.CONTINUOUS, shape=(256, 256, 1), loss='logcosh',
-                                            normalization={'zero_mean_std1': True}, tensor_from_file=_slice_tensor('cine_segmented_lax_4ch', 0))
+TMAPS['lax_4ch_diastole_slice0_3d'] = TensorMap('lax_4ch_diastole_slice0_3d', Interpretation.CONTINUOUS, shape=(200, 160, 1), loss='logcosh',
+                                            normalization={'zero_mean_std1': True}, tensor_from_file=_slice_tensor('ukb_cardiac_mri/cine_segmented_lax_4ch/instance_0', 0))
+TMAPS['lax_3ch_diastole_slice0_3d'] = TensorMap('lax_3ch_diastole_slice0_3d', Interpretation.CONTINUOUS, shape=(200, 160, 1), loss='logcosh',
+                                            normalization={'zero_mean_std1': True}, tensor_from_file=_slice_tensor('ukb_cardiac_mri/cine_segmented_lax_3ch/instance_0', 0))
+TMAPS['cine_segmented_ao_dist_slice0_3d'] = TensorMap('cine_segmented_ao_dist_slice0_3d', Interpretation.CONTINUOUS, shape=(256, 256, 1), loss='logcosh',
+                                            normalization={'zero_mean_std1': True}, tensor_from_file=_slice_tensor('ukb_cardiac_mri/cine_segmented_ao_dist/instance_0', 0))
+TMAPS['lax_4ch_diastole_slice0'] = TensorMap('lax_4ch_diastole_slice0', Interpretation.CONTINUOUS, shape=(256, 256), loss='logcosh',
+                                            normalization={'zero_mean_std1': True}, tensor_from_file=_slice_tensor('ukb_cardiac_mri/cine_segmented_lax_4ch/instance_0', 0))
+TMAPS['lax_3ch_diastole_slice0'] = TensorMap('lax_3ch_diastole_slice0', Interpretation.CONTINUOUS, shape=(256, 256), loss='logcosh',
+                                            normalization={'zero_mean_std1': True}, tensor_from_file=_slice_tensor('ukb_cardiac_mri/cine_segmented_lax_3ch/instance_0', 0))
+TMAPS['cine_segmented_ao_dist_slice0'] = TensorMap('cine_segmented_ao_dist_slice0', Interpretation.CONTINUOUS, shape=(256, 256), loss='logcosh',
+                                            normalization={'zero_mean_std1': True}, tensor_from_file=_slice_tensor('ukb_cardiac_mri/cine_segmented_ao_dist/instance_0', 0))
 
 
-def _name_tensor_from_file(tm, hd5, dependents={}):
-    tensor = np.zeros(tm.shape, dtype=np.float32)
-    tensor = _pad_or_crop_array_to_shape(tensor.shape, np.array(hd5[tm.name], dtype=np.float32))
-    return tensor
+def _pad_crop_tensor(tm, hd5, dependents={}):
+    return _pad_or_crop_array_to_shape(tm.shape, np.array(tm.hd5_first_dataset_in_group(hd5, tm.hd5_key_guess()), dtype=np.float32))
 
 
-TMAPS['cine_lax_3ch_192'] = TensorMap('cine_segmented_lax_3ch', Interpretation.CONTINUOUS, shape=(192, 192, 50), tensor_from_file=_name_tensor_from_file, normalization={'zero_mean_std1': True})
-TMAPS['cine_lax_3ch_160_1'] = TensorMap('cine_segmented_lax_3ch', Interpretation.CONTINUOUS, shape=(160, 160, 50, 1), tensor_from_file=_name_tensor_from_file, normalization={'zero_mean_std1': True})
-TMAPS['cine_lax_3ch_192_1'] = TensorMap('cine_segmented_lax_3ch', Interpretation.CONTINUOUS, shape=(192, 192, 50, 1), tensor_from_file=_name_tensor_from_file, normalization={'zero_mean_std1': True})
-TMAPS['cine_lax_4ch_192'] = TensorMap('cine_segmented_lax_3ch', Interpretation.CONTINUOUS, shape=(192, 192, 50), tensor_from_file=_name_tensor_from_file, normalization={'zero_mean_std1': True})
-TMAPS['cine_lax_4ch_192_1'] = TensorMap('cine_segmented_lax_3ch', Interpretation.CONTINUOUS, shape=(192, 192, 50, 1), tensor_from_file=_name_tensor_from_file, normalization={'zero_mean_std1': True})
-TMAPS['cine_sax_b6_192'] = TensorMap('cine_segmented_sax_b6', Interpretation.CONTINUOUS, shape=(192, 192, 50), tensor_from_file=_name_tensor_from_file, normalization={'zero_mean_std1': True})
-TMAPS['cine_sax_b6_192_1'] = TensorMap('cine_segmented_sax_b6', Interpretation.CONTINUOUS, shape=(192, 192, 50, 1), tensor_from_file=_name_tensor_from_file, normalization={'zero_mean_std1': True})
+TMAPS['cine_lax_3ch_192'] = TensorMap('cine_segmented_lax_3ch', Interpretation.CONTINUOUS, shape=(192, 192, 50), path_prefix='ukb_cardiac_mri',
+                                      tensor_from_file=_pad_crop_tensor, normalization={'zero_mean_std1': True})
+TMAPS['cine_lax_3ch_160_1'] = TensorMap('cine_segmented_lax_3ch', Interpretation.CONTINUOUS, shape=(160, 160, 50, 1), path_prefix='ukb_cardiac_mri',
+                                        tensor_from_file=_pad_crop_tensor, normalization={'zero_mean_std1': True})
+TMAPS['cine_lax_3ch_192_160_1'] = TensorMap('cine_segmented_lax_3ch', Interpretation.CONTINUOUS, shape=(192, 160, 50, 1), path_prefix='ukb_cardiac_mri',
+                                            tensor_from_file=_pad_crop_tensor, normalization={'zero_mean_std1': True})
+TMAPS['cine_ao_dist_4d'] = TensorMap('cine_segmented_ao_dist', Interpretation.CONTINUOUS, shape=(160, 192, 100, 1), path_prefix='ukb_cardiac_mri',
+                                            tensor_from_file=_pad_crop_tensor, normalization={'zero_mean_std1': True})
+TMAPS['cine_lax_4ch_192'] = TensorMap('cine_segmented_lax_3ch', Interpretation.CONTINUOUS, shape=(192, 192, 50), path_prefix='ukb_cardiac_mri',
+                                      tensor_from_file=_pad_crop_tensor, normalization={'zero_mean_std1': True})
+TMAPS['cine_lax_4ch_192_1'] = TensorMap('cine_segmented_lax_3ch', Interpretation.CONTINUOUS, shape=(192, 192, 50, 1), path_prefix='ukb_cardiac_mri',
+                                        tensor_from_file=_pad_crop_tensor, normalization={'zero_mean_std1': True})
+TMAPS['cine_sax_b6_192'] = TensorMap('cine_segmented_sax_b6', Interpretation.CONTINUOUS, shape=(192, 192, 50), path_prefix='ukb_cardiac_mri',
+                                     tensor_from_file=_pad_crop_tensor, normalization={'zero_mean_std1': True})
+TMAPS['cine_sax_b6_192_1'] = TensorMap('cine_segmented_sax_b6', Interpretation.CONTINUOUS, shape=(192, 192, 50, 1),  path_prefix='ukb_cardiac_mri',
+                                       tensor_from_file=_pad_crop_tensor, normalization={'zero_mean_std1': True})
 
 
 def _segmented_dicom_slices(dicom_key_prefix, path_prefix='ukb_cardiac_mri'):
@@ -1511,37 +1532,31 @@ def _segmented_dicom_slices(dicom_key_prefix, path_prefix='ukb_cardiac_mri'):
 
 TMAPS['lax_3ch_segmented'] = TensorMap('lax_3ch_segmented',  Interpretation.CATEGORICAL, shape=(256, 256, 50, 6),
                                        tensor_from_file=_segmented_dicom_slices('cine_segmented_lax_3ch_annotated_'),
-                                       channel_map={'background': 0, 'LV_A_S': 1, 'left_atrium': 2, 'LV_I_P': 3, 'LV_Pap': 4, 'LV_Cavity': 5})
+                                       channel_map=MRI_LAX_3CH_SEGMENTED_CHANNEL_MAP)
 TMAPS['lax_3ch_segmented_192'] = TensorMap('lax_3ch_segmented', Interpretation.CATEGORICAL, shape=(192, 192, 50, 6),
                                        tensor_from_file=_segmented_dicom_slices('cine_segmented_lax_3ch_annotated_'),
-                                       channel_map={'background': 0, 'LV_A_S': 1, 'left_atrium': 2, 'LV_I_P': 3, 'LV_Pap': 4, 'LV_Cavity': 5})
-TMAPS['lax_3ch_segmented_160'] = TensorMap('lax_3ch_segmented', Interpretation.CATEGORICAL, shape=(160, 160, 50, 6),
+                                       channel_map=MRI_LAX_3CH_SEGMENTED_CHANNEL_MAP)
+TMAPS['lax_3ch_segmented_192_160'] = TensorMap('lax_3ch_segmented', Interpretation.CATEGORICAL, shape=(192, 160, 50, 6),
                                        tensor_from_file=_segmented_dicom_slices('cine_segmented_lax_3ch_annotated_'),
-                                       channel_map={'background': 0, 'LV_A_S': 1, 'left_atrium': 2, 'LV_I_P': 3, 'LV_Pap': 4, 'LV_Cavity': 5})
+                                       channel_map=MRI_LAX_3CH_SEGMENTED_CHANNEL_MAP)
 TMAPS['lax_4ch_segmented'] = TensorMap('lax_4ch_segmented', Interpretation.CATEGORICAL, shape=(256, 256, 50, 14),
                                        tensor_from_file=_segmented_dicom_slices('cine_segmented_lax_4ch_annotated_'),
-                                       channel_map={'background': 0, 'RV_free_wall': 1, 'RA_free_wall': 2, 'LA_free_wall': 3, 'LV_anterolateral_wall': 4,
-                                                    'interventricular_septum': 5, 'interatrial_septum': 6, 'crista_terminalis': 7, 'RA_cavity': 8,
-                                                    'RV_cavity': 9, 'LA_cavity': 10, 'LV_cavity': 11, 'descending_aorta': 12, 'thoracic_cavity': 13})
+                                       channel_map=MRI_LAX_4CH_SEGMENTED_CHANNEL_MAP)
 TMAPS['lax_4ch_segmented_192'] = TensorMap('lax_4ch_segmented', Interpretation.CATEGORICAL, shape=(192, 192, 50, 14),
                                        tensor_from_file=_segmented_dicom_slices('cine_segmented_lax_4ch_annotated_'),
-                                       channel_map={'background': 0, 'RV_free_wall': 1, 'RA_free_wall': 2, 'LA_free_wall': 3, 'LV_anterolateral_wall': 4,
-                                                    'interventricular_septum': 5, 'interatrial_septum': 6, 'crista_terminalis': 7, 'RA_cavity': 8,
-                                                    'RV_cavity': 9, 'LA_cavity': 10, 'LV_cavity': 11, 'descending_aorta': 12, 'thoracic_cavity': 13})
+                                       channel_map=MRI_LAX_4CH_SEGMENTED_CHANNEL_MAP)
 TMAPS['lax_4ch_segmented_192_w'] = TensorMap('lax_4ch_segmented', Interpretation.CATEGORICAL, shape=(192, 192, 50, 14),
                                              tensor_from_file=_segmented_dicom_slices('cine_segmented_lax_4ch_annotated_'),
-                                             channel_map={'background': 0, 'RV_free_wall': 1, 'RA_free_wall': 2, 'LA_free_wall': 3, 'LV_anterolateral_wall': 4,
-                                                          'interventricular_septum': 5, 'interatrial_septum': 6, 'crista_terminalis': 7, 'RA_cavity': 8,
-                                                          'RV_cavity': 9, 'LA_cavity': 10, 'LV_cavity': 11, 'descending_aorta': 12, 'thoracic_cavity': 13},
+                                             channel_map=MRI_LAX_4CH_SEGMENTED_CHANNEL_MAP,
                                              loss=weighted_crossentropy([0.01, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 1.0, 1.0, 1.0, 1.0, 5.0, 0.5]))
 TMAPS['sax_segmented_b6'] = TensorMap('sax_segmented_b6', Interpretation.CATEGORICAL, shape=(256, 256, 50, 11),
                                       tensor_from_file=_segmented_dicom_slices('cine_segmented_sax_b6_annotated_'),
-                                      channel_map={'background': 0, 'RV_free_wall': 1, 'interventricular_septum': 2, 'LV_free_wall': 3, 'LV_pap': 4,
-                                                   'LV_cavity': 5, 'RV_cavity': 6, 'thoracic_cavity': 7, 'liver': 8, 'stomach': 9, 'spleen': 10})
+                                      channel_map=MRI_SAX_SEGMENTED_CHANNEL_MAP)
 TMAPS['sax_segmented_b6_192'] = TensorMap('sax_segmented_b6', Interpretation.CATEGORICAL, shape=(192, 192, 50, 11),
                                       tensor_from_file=_segmented_dicom_slices('cine_segmented_sax_b6_annotated_'),
-                                      channel_map={'background': 0, 'RV_free_wall': 1, 'interventricular_septum': 2, 'LV_free_wall': 3, 'LV_pap': 4,
-                                                   'LV_cavity': 5, 'RV_cavity': 6, 'thoracic_cavity': 7, 'liver': 8, 'stomach': 9, 'spleen': 10})
+                                      channel_map=MRI_SAX_SEGMENTED_CHANNEL_MAP)
+TMAPS['cine_segmented_ao_dist'] = TensorMap('cine_segmented_ao_dist', Interpretation.CATEGORICAL, shape=(160, 192, 100, len(MRI_AO_SEGMENTED_CHANNEL_MAP)),
+                                            tensor_from_file=_segmented_dicom_slices('cine_segmented_ao_dist_annotated_'), channel_map=MRI_AO_SEGMENTED_CHANNEL_MAP)
 
 
 def _make_fallback_tensor_from_file(tensor_keys):
@@ -1654,3 +1669,72 @@ TMAPS['sax_all_segmented_weighted'] = TensorMap('sax_all_segmented_weighted', In
 
 TMAPS['sax_all'] = TensorMap('sax_all', shape=(256, 256, 26, 1), tensor_from_file=all_sax_tensor(), dependent_map=TMAPS['sax_all_segmented'])
 TMAPS['sax_all_weighted'] = TensorMap('sax_all_weighted', shape=(256, 256, 26, 1), tensor_from_file=all_sax_tensor(), dependent_map=TMAPS['sax_all_segmented_weighted'])
+
+
+def _segmented_index_slices(key_prefix, shape, path_prefix='ukb_cardiac_mri'):
+    def _segmented_dicom_tensor_from_file(tm, hd5, dependents={}):
+        tensor = np.zeros(shape, dtype=np.float32)
+        for i in range(shape[-1]):
+            categorical_index_slice = _get_tensor_at_first_date(hd5, path_prefix, key_prefix + str(i + 1))
+            tensor[..., i] = _pad_or_crop_array_to_shape(shape[:-1], categorical_index_slice)
+        return tensor
+    return _segmented_dicom_tensor_from_file
+
+
+def _bounding_box_from_categorical(segmented_shape: Tuple[int], segmented_key: str, class_index: int) -> Callable:
+    def bbox_from_file(tm, hd5, dependents={}):
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        index_tensor = _pad_or_crop_array_to_shape(segmented_shape, np.array(hd5[segmented_key], dtype=np.float32))
+        bitmask = np.where(index_tensor == class_index)
+        total_axes = tm.shape[-1] // 2  # Divide by 2 because we need min and max for each axis
+        for i in range(total_axes):
+            tensor[i] = np.min(bitmask[i])
+            tensor[i+total_axes] = np.max(bitmask[i])
+        return tensor
+    return bbox_from_file
+
+
+def _bounding_box_from_callable(class_index: int, tensor_from_file_fxn: Callable) -> Callable:
+    def bbox_from_file(tm, hd5, dependents={}):
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        index_tensor = tensor_from_file_fxn(None, hd5)
+        bitmask = np.where(index_tensor == class_index)
+        total_axes = tm.shape[-1] // 2  # Divide by 2 because we need min and max for each axis
+        for i in range(total_axes):
+            tensor[i] = np.min(bitmask[i])
+            tensor[i+total_axes] = np.max(bitmask[i])
+        return tensor
+    return bbox_from_file
+
+
+def _bounding_box_channel_map(total_axes: int) -> Dict[str, int]:
+    channel_map = {}
+    for i in range(total_axes):
+        channel_map[f'min_axis_{i}'] = i
+        channel_map[f'max_axis_{i}'] = i + total_axes
+    return channel_map
+
+
+TMAPS['lax_3ch_lv_cavity_bbox_slice0'] = TensorMap('lax_3ch_lv_cavity_bbox_slice0', Interpretation.MESH, shape=(4,),
+                                                   tensor_from_file=_bounding_box_from_categorical((160, 160), 'ukb_cardiac_mri/cine_segmented_lax_3ch_annotated_1/instance_0', MRI_LAX_3CH_SEGMENTED_CHANNEL_MAP['LV_Cavity']),
+                                                   channel_map=_bounding_box_channel_map(2))
+TMAPS['lax_3ch_left_atrium_bbox_slice0'] = TensorMap('lax_3ch_left_atrium_bbox_slice0', Interpretation.MESH, shape=(4,),
+                                                     tensor_from_file=_bounding_box_from_categorical((160, 160), 'ukb_cardiac_mri/cine_segmented_lax_3ch_annotated_1/instance_0', MRI_LAX_3CH_SEGMENTED_CHANNEL_MAP['left_atrium']),
+                                                     channel_map=_bounding_box_channel_map(2))
+
+aorta_descending_tff = _bounding_box_from_categorical((192, 224), 'ukb_cardiac_mri/cine_segmented_ao_dist_annotated_1/instance_0', MRI_AO_SEGMENTED_CHANNEL_MAP['descending_aorta'])
+TMAPS['cine_segmented_ao_descending_aorta_bbox_slice0'] = TensorMap('cine_segmented_ao_descending_aorta_bbox_slice0', Interpretation.MESH, shape=(4,),
+                                                                    tensor_from_file=aorta_descending_tff, channel_map=_bounding_box_channel_map(2))
+aorta_ascending_tff = _bounding_box_from_categorical((192, 224), 'ukb_cardiac_mri/cine_segmented_ao_dist_annotated_1/instance_0', MRI_AO_SEGMENTED_CHANNEL_MAP['ascending_aorta'])
+TMAPS['cine_segmented_ao_ascending_aorta_bbox_slice0'] = TensorMap('cine_segmented_ao_ascending_aorta_bbox_slice0', Interpretation.MESH, shape=(4,),
+                                                                   tensor_from_file=aorta_ascending_tff, channel_map=_bounding_box_channel_map(2))
+
+TMAPS['lax_3ch_lv_cavity_bbox'] = TensorMap('lax_3ch_lv_cavity_bbox', Interpretation.MESH, shape=(6,), channel_map=_bounding_box_channel_map(3),
+                                            tensor_from_file=_bounding_box_from_callable(5, _segmented_index_slices('cine_segmented_lax_3ch_annotated_', (192, 160, 50))))
+
+bbfc = _bounding_box_from_callable(MRI_AO_SEGMENTED_CHANNEL_MAP['descending_aorta'], _segmented_index_slices('cine_segmented_ao_dist_annotated_', (192, 224, 100)))
+TMAPS['cine_segmented_ao_descending_aorta_bbox'] = TensorMap('cine_segmented_ao_descending_aorta_bbox', Interpretation.MESH, shape=(6,), tensor_from_file=bbfc,
+                                                             channel_map=_bounding_box_channel_map(3))
+abbfc = _bounding_box_from_callable(MRI_AO_SEGMENTED_CHANNEL_MAP['ascending_aorta'], _segmented_index_slices('cine_segmented_ao_dist_annotated_', (192, 224, 100)))
+TMAPS['cine_segmented_ao_ascending_aorta_bbox'] = TensorMap('cine_segmented_ao_ascending_aorta_bbox', Interpretation.MESH, shape=(6,), tensor_from_file=abbfc,
+                                                            channel_map=_bounding_box_channel_map(3))
