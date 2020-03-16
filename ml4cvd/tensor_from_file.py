@@ -1663,25 +1663,28 @@ def sax_volume(b_series_prefix, prefix_path='ukb_cardiac_mri'):
         shape_3d = (256, 256, 13, 1)
         tensor = np.zeros(tm.shape, dtype=np.float32)
         volume_3d = np.zeros(shape_3d, dtype=np.float32)
-        for b in range(tm.shape[-2]):
+        for b in range(shape_3d[-2]):
             try:
                 tm_shape = (shape_3d[0], shape_3d[1])
-                volume_3d[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{prefix_path}/{b_series_prefix}_frame_b{b}/instance_0'], dtype=np.float32))
-                index_volume = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{prefix_path}/{b_series_prefix}_mask_b{b}/instance_0'], dtype=np.float32))
+                volume_3d[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{prefix_path}/{b_series_prefix}_mask_b{b}/instance_0'], dtype=np.float32))
             except KeyError:
                 missing += 1
                 volume_3d[:, :, b, 0] = 0
         if missing == shape_3d[-2]:
             raise ValueError(f'Could not find any slices in {tm.name} was hoping for {shape_3d[-2]}')
-        width = hd5['_'.join([MRI_PIXEL_WIDTH, MRI_SEGMENTED])]
-        height = hd5['_'.join([MRI_PIXEL_HEIGHT, MRI_SEGMENTED])]
-        tensor[:] = np.sum(volume_3d==MRI_SEGMENTED_CHANNEL_MAP['ventricle'], axis=None)*width*height/1000.0
+        width = np.array(hd5['_'.join([MRI_PIXEL_WIDTH, MRI_SEGMENTED])])
+        height = np.array(hd5['_'.join([MRI_PIXEL_HEIGHT, MRI_SEGMENTED])])
+        tensor[:] = np.sum(np.logical_and(volume_3d<(MRI_SEGMENTED_CHANNEL_MAP['ventricle']+0.5),
+                                          volume_3d>(MRI_SEGMENTED_CHANNEL_MAP['ventricle']-0.5)),
+                           axis=None)*width*height*10.0/1000.0
         return tensor
     return sav_volume_from_file
 
 
-TMAPS['sax_all_diastole_volume'] = TensorMap('sax_all_diastole', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh')
-TMAPS['sax_all_systole_volume'] = TensorMap('sax_all_systole', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh')
+TMAPS['sax_all_diastole_volume'] = TensorMap('sax_all_diastole', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh',
+                                             tensor_from_file=sax_volume('diastole'))
+TMAPS['sax_all_systole_volume'] = TensorMap('sax_all_systole', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh',
+                                            tensor_from_file=sax_volume('systole'))
 
 TMAPS['sax_all_diastole_segmented'] = TensorMap('sax_all_diastole_segmented', Interpretation.CATEGORICAL, shape=(256, 256, 13, 3),
                                                 channel_map=MRI_SEGMENTED_CHANNEL_MAP)

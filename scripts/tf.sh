@@ -108,7 +108,7 @@ Attempting to run Docker with
         -v /home/${USER}/jupyter/root/:/root/
         -v /home/${USER}/:/home/${USER}/
         -v /mnt/:/mnt/
-        ${DOCKER_IMAGE} ${PYTHON_COMMAND} ${PYTHON_ARGS}
+        ${DOCKER_IMAGE} ${PYT\HON_COMMAND} ${PYTHON_ARGS}
 LAUNCH_MESSAGE
 
 
@@ -118,4 +118,4 @@ ${DOCKER_COMMAND} run ${INTERACTIVE} --gpus all \
 -v /home/${USER}/jupyter/root/:/root/ \
 -v /home/${USER}/:/home/${USER}/ \
 -v /mnt/:/mnt/ \
-${DOCKER_IMAGE} /bin/bash -c "pip install /home/${USER}/ml; ${PYTHON_COMMAND} ${PYTHON_ARGS}"
+${DOCKER_IMAGE} /bin/bash -c "pip install -e /home/${USER}/ml; ${PYTHON_COMMAND} ${PYTHON_ARGS}"
