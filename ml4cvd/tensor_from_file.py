@@ -1049,42 +1049,51 @@ TMAPS['mri_patient_position_cine_segmented_sax_b1'] = TensorMap('mri_patient_pos
 TMAPS['mri_patient_position_cine_segmented_sax_inlinevf'] = TensorMap('mri_patient_position_cine_segmented_sax_inlinevf', Interpretation.CONTINUOUS, shape=(3, 750), path_prefix='mri_position',
                                                                       tensor_from_file=_make_mri_series_orientation_and_position_from_file())
 
+def _group_contains_datasets(hd5, hd5_key):
+    for img in hd5[hd5_key]:
+        if not isinstance(hd5[hd5_key][img], h5py.Dataset):
+            return False
+    return True
 
-def _mri_tensor_4d(hd5, name):
+
+def _mri_tensor_4d(hd5, name, instance='instance_0'):
     """
     Returns MRI image tensors from HD5 as 4-D numpy arrays. Useful for raw SAX and LAX images and segmentations.
     """
-    if isinstance(hd5[name], h5py.Group):
+    if not _group_contains_datasets(hd5, name):
         nslices = len(hd5[name]) // MRI_FRAMES
         for img in hd5[name]:
-            img_shape = hd5[name][img].shape
+            img_shape = hd5[name][img][instance].shape
             break
-        shape = (img_shape[0], img_shape[1], nslices, MRI_FRAMES)
+        shape = (img_shape[1], img_shape[0], nslices, MRI_FRAMES)
         arr = np.zeros(shape)
         t = 0
         s = 0
         for k in sorted(hd5[name], key=int):
-            arr[:, :, s, t] = np.array(hd5[name][k]).T
+            arr[:, :, s, t] = np.array(hd5[name][k][instance]).T
             t += 1
             if t == MRI_FRAMES:
                 s += 1
                 t = 0
-    elif isinstance(hd5[name], h5py.Dataset):
+    else:
         nslices = 1
-        shape = (hd5[name].shape[0], hd5[name].shape[1], nslices, MRI_FRAMES)
+        shape = (hd5[name][instance].shape[1], hd5[name][instance].shape[0], nslices, MRI_FRAMES)
         arr = np.zeros(shape)
         for t in range(MRI_FRAMES):
-            arr[:, :, 0, t] = np.array(hd5[name][:, :, t]).T
-    else:
-        raise ValueError(f'{name} is neither a HD5 Group nor a HD5 dataset')
+            arr[:, :, 0, t] = np.array(hd5[name][instance][:, :, t]).T
     return arr
 
 
-def _mri_hd5_to_structured_grids(hd5, name, save_path=None, order='F'):
+def _mri_hd5_to_structured_grids(hd5, name, prefix_path='ukb_cardiac_mri', save_path=None, order='F'):
     """
     Returns MRI tensors as list of VTK structured grids aligned to the reference system of the patient
     """
-    arr = _mri_tensor_4d(hd5, name)
+    # Hack around tensor_writer_ukbb bug
+    if name == MRI_SEGMENTED:
+        arr = _mri_tensor_4d(hd5, f'{prefix_path}/cine_segmented_sax_inlinevf_zoom_segmented')
+    else:
+        print(f'{prefix_path}/{name}')
+        arr = _mri_tensor_4d(hd5, f'{prefix_path}/{name}')
     width = hd5['_'.join([MRI_PIXEL_WIDTH, name])]
     height = hd5['_'.join([MRI_PIXEL_HEIGHT, name])]
     positions = _mri_tensor_2d(hd5, '_'.join([MRI_PATIENT_POSITION, name]))
@@ -1161,12 +1170,12 @@ def _map_points_to_cells(pts, dataset, tol=1e-3):
     return map_to_cells
 
 
-def _make_mri_projected_segmentation_from_file(to_segment_name, segmented_name, save_path=None):
+def _make_mri_projected_segmentation_from_file(to_segment_name, segmented_name, prefix_path='ukb_cardiac_mri', save_path=None):
     def mri_projected_segmentation(tm, hd5):
         if segmented_name not in [MRI_SEGMENTED, MRI_LAX_SEGMENTED]:
             raise ValueError(f'{segmented_name} is recognized neither as SAX nor LAX segmentation')
-        cine_segmented_grids = _mri_hd5_to_structured_grids(hd5, segmented_name)
-        cine_to_segment_grids = _mri_hd5_to_structured_grids(hd5, to_segment_name)
+        cine_segmented_grids = _mri_hd5_to_structured_grids(hd5, segmented_name, save_path='/home/pdiachil/')
+        cine_to_segment_grids = _mri_hd5_to_structured_grids(hd5, to_segment_name, save_path='/home/pdiachil/')
         tensor = np.zeros(tm.shape, dtype=np.float32)
         # Loop through segmentations and datasets
         for ds_i, ds_segmented in enumerate(cine_segmented_grids):
@@ -1205,18 +1214,18 @@ def _make_mri_projected_segmentation_from_file(to_segment_name, segmented_name, 
     return mri_projected_segmentation
 
 
-TMAPS['cine_segmented_lax_2ch_proj_from_sax'] = TensorMap('cine_segmented_lax_2ch_proj_from_sax', (256, 256, 50), loss='logcosh',
-                                                          tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_2ch', MRI_SEGMENTED))
-TMAPS['cine_segmented_lax_3ch_proj_from_sax'] = TensorMap('cine_segmented_lax_3ch_proj_from_sax', (256, 256, 50), loss='logcosh',
+# TMAPS['cine_segmented_lax_2ch_proj_from_sax'] = TensorMap('cine_segmented_lax_2ch_proj_from_sax', (256, 256, 50), loss='logcosh',
+#                                                           tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_2ch', MRI_SEGMENTED))
+TMAPS['cine_segmented_lax_3ch_proj_from_sax'] = TensorMap('cine_segmented_lax_3ch_proj_from_sax', Interpretation.CONTINUOUS, shape=(256, 256, 50), loss='logcosh', 
                                                           tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_3ch', MRI_SEGMENTED))
-TMAPS['cine_segmented_lax_4ch_proj_from_sax'] = TensorMap('cine_segmented_lax_4ch_proj_from_sax', (256, 256, 50), loss='logcosh',
-                                                          tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_4ch', MRI_SEGMENTED))
-TMAPS['cine_segmented_lax_2ch_proj_from_lax'] = TensorMap('cine_segmented_lax_2ch_proj_from_lax', (256, 256, 50), loss='logcosh',
-                                                          tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_2ch', MRI_LAX_SEGMENTED))
-TMAPS['cine_segmented_lax_3ch_proj_from_lax'] = TensorMap('cine_segmented_lax_3ch_proj_from_lax', (256, 256, 50), loss='logcosh',
-                                                          tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_3ch', MRI_LAX_SEGMENTED))
-TMAPS['cine_segmented_lax_4ch_proj_from_lax'] = TensorMap('cine_segmented_lax_4ch_proj_from_lax', (256, 256, 50), loss='logcosh',
-                                                          tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_4ch', MRI_LAX_SEGMENTED))
+# TMAPS['cine_segmented_lax_4ch_proj_from_sax'] = TensorMap('cine_segmented_lax_4ch_proj_from_sax', (256, 256, 50), loss='logcosh',
+#                                                           tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_4ch', MRI_SEGMENTED))
+# TMAPS['cine_segmented_lax_2ch_proj_from_lax'] = TensorMap('cine_segmented_lax_2ch_proj_from_lax', (256, 256, 50), loss='logcosh',
+#                                                           tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_2ch', MRI_LAX_SEGMENTED))
+# TMAPS['cine_segmented_lax_3ch_proj_from_lax'] = TensorMap('cine_segmented_lax_3ch_proj_from_lax', (256, 256, 50), loss='logcosh',
+#                                                           tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_3ch', MRI_LAX_SEGMENTED))
+# TMAPS['cine_segmented_lax_4ch_proj_from_lax'] = TensorMap('cine_segmented_lax_4ch_proj_from_lax', (256, 256, 50), loss='logcosh',
+#                                                           tensor_from_file=_make_mri_projected_segmentation_from_file('cine_segmented_lax_4ch', MRI_LAX_SEGMENTED))
 
 
 def _segmentation_axis(segmented_name, cine_segmented_grids, channel, order='F', save_path=None):
@@ -1628,7 +1637,7 @@ TMAPS['weekly_alcohol_1'] = TensorMap('weekly_alcohol_1', loss='logcosh', path_p
 TMAPS['weekly_alcohol_2'] = TensorMap('weekly_alcohol_2', loss='logcosh', path_prefix='continuous', channel_map={'weekly_alcohol_2': 0}, tensor_from_file=_weekly_alcohol(2))
 
 
-def sax_tensor(b_series_prefix):
+def sax_tensor(b_series_prefix, prefix_path='ukb_cardiac_mri'):
     def sax_tensor_from_file(tm, hd5, dependents={}):
         missing = 0
         tensor = np.zeros(tm.shape, dtype=np.float32)
@@ -1636,8 +1645,8 @@ def sax_tensor(b_series_prefix):
         for b in range(tm.shape[-2]):
             try:
                 tm_shape = (tm.shape[0], tm.shape[1])
-                tensor[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{b_series_prefix}_frame_b{b}'], dtype=np.float32))
-                index_tensor = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{b_series_prefix}_mask_b{b}'], dtype=np.float32))
+                tensor[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{prefix_path}/{b_series_prefix}_frame_b{b}/instance_0'], dtype=np.float32))
+                index_tensor = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{prefix_path}/{b_series_prefix}_mask_b{b}/instance_0'], dtype=np.float32))
                 dependents[tm.dependent_map][:, :, b, :] = to_categorical(index_tensor, tm.dependent_map.shape[-1])
             except KeyError:
                 missing += 1
@@ -1648,6 +1657,31 @@ def sax_tensor(b_series_prefix):
         return tensor
     return sax_tensor_from_file
 
+def sax_volume(b_series_prefix, prefix_path='ukb_cardiac_mri'):
+    def sav_volume_from_file(tm, hd5, dependents={}):
+        missing = 0        
+        shape_3d = (256, 256, 13, 1)
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        volume_3d = np.zeros(shape_3d, dtype=np.float32)
+        for b in range(tm.shape[-2]):
+            try:
+                tm_shape = (shape_3d[0], shape_3d[1])
+                volume_3d[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{prefix_path}/{b_series_prefix}_frame_b{b}/instance_0'], dtype=np.float32))
+                index_volume = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{prefix_path}/{b_series_prefix}_mask_b{b}/instance_0'], dtype=np.float32))
+            except KeyError:
+                missing += 1
+                volume_3d[:, :, b, 0] = 0
+        if missing == shape_3d[-2]:
+            raise ValueError(f'Could not find any slices in {tm.name} was hoping for {shape_3d[-2]}')
+        width = hd5['_'.join([MRI_PIXEL_WIDTH, MRI_SEGMENTED])]
+        height = hd5['_'.join([MRI_PIXEL_HEIGHT, MRI_SEGMENTED])]
+        tensor[:] = np.sum(volume_3d==MRI_SEGMENTED_CHANNEL_MAP['ventricle'], axis=None)*width*height/1000.0
+        return tensor
+    return sav_volume_from_file
+
+
+TMAPS['sax_all_diastole_volume'] = TensorMap('sax_all_diastole', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh')
+TMAPS['sax_all_systole_volume'] = TensorMap('sax_all_systole', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh')
 
 TMAPS['sax_all_diastole_segmented'] = TensorMap('sax_all_diastole_segmented', Interpretation.CATEGORICAL, shape=(256, 256, 13, 3),
                                                 channel_map=MRI_SEGMENTED_CHANNEL_MAP)
