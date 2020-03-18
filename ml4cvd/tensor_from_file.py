@@ -423,9 +423,7 @@ def _make_ecg_rest(population_normalize: float = None, random_roll: bool = False
                         tensor[:, tm.channel_map[k]] = np.roll(data, roll)
                     else:
                         tensor[:, tm.channel_map[k]] = data
-        if population_normalize is None:
-            tm.normalization = {'zero_mean_std1': 1.0}
-        else:
+        if population_normalize:
             tensor /= population_normalize
         if warp:
             tensor = _warp_ecg(tensor)
@@ -446,7 +444,7 @@ TMAPS['ecg_rest_raw_100'] = TensorMap('ecg_rest_raw_100', Interpretation.CONTINU
                                       channel_map=ECG_REST_LEADS)
 
 TMAPS['ecg_rest'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 12), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
-                              channel_map=ECG_REST_LEADS)
+                              channel_map=ECG_REST_LEADS, normalization={'zero_mean_std1': 1.0})
 TMAPS['ecg_rest_2500_ukb'] = TensorMap('ecg_rest_2500', Interpretation.CONTINUOUS, shape=(2500, 12), path_prefix='ukb_ecg_rest', channel_map=ECG_REST_LEADS,
                                        tensor_from_file=_make_ecg_rest(downsample_steps=2))
 
@@ -1657,34 +1655,58 @@ def sax_tensor(b_series_prefix, prefix_path='ukb_cardiac_mri'):
         return tensor
     return sax_tensor_from_file
 
-def sax_volume(b_series_prefix, prefix_path='ukb_cardiac_mri'):
-    def sav_volume_from_file(tm, hd5, dependents={}):
-        missing = 0        
-        shape_3d = (256, 256, 13, 1)
+
+def _volume_from_file(hd5, b_series_prefix, b_series_region, prefix_path):
+    missing = 0
+    shape_3d = (256, 256, 13, 1)
+    volume_3d = np.zeros(shape_3d, dtype=np.float32)
+    for b in range(shape_3d[-2]):
+        try:
+            tm_shape = (shape_3d[0], shape_3d[1])
+            volume_3d[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{prefix_path}/{b_series_prefix}_mask_b{b}/instance_0'], dtype=np.float32))
+        except KeyError:
+            missing += 1
+            volume_3d[:, :, b, 0] = 0
+    if missing == shape_3d[-2]:
+        raise ValueError(f'Could not find any slices in {b_series_prefix} was hoping for {shape_3d[-2]}')
+    width = np.array(hd5['_'.join([MRI_PIXEL_WIDTH, MRI_SEGMENTED])])
+    height = np.array(hd5['_'.join([MRI_PIXEL_HEIGHT, MRI_SEGMENTED])])
+    tensor = np.sum(np.logical_and(volume_3d<(MRI_SEGMENTED_CHANNEL_MAP[b_series_region]+0.5),
+                                   volume_3d>(MRI_SEGMENTED_CHANNEL_MAP[b_series_region]-0.5)),
+                    axis=None)*width*height*10.0/1000.0
+    return tensor
+
+def sax_volume(b_series_prefix, b_series_region='ventricle', prefix_path='ukb_cardiac_mri'):
+    def sax_volume_from_file(tm, hd5, dependents={}):
+        missing = 0
         tensor = np.zeros(tm.shape, dtype=np.float32)
-        volume_3d = np.zeros(shape_3d, dtype=np.float32)
-        for b in range(shape_3d[-2]):
-            try:
-                tm_shape = (shape_3d[0], shape_3d[1])
-                volume_3d[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{prefix_path}/{b_series_prefix}_mask_b{b}/instance_0'], dtype=np.float32))
-            except KeyError:
-                missing += 1
-                volume_3d[:, :, b, 0] = 0
-        if missing == shape_3d[-2]:
-            raise ValueError(f'Could not find any slices in {tm.name} was hoping for {shape_3d[-2]}')
-        width = np.array(hd5['_'.join([MRI_PIXEL_WIDTH, MRI_SEGMENTED])])
-        height = np.array(hd5['_'.join([MRI_PIXEL_HEIGHT, MRI_SEGMENTED])])
-        tensor[:] = np.sum(np.logical_and(volume_3d<(MRI_SEGMENTED_CHANNEL_MAP['ventricle']+0.5),
-                                          volume_3d>(MRI_SEGMENTED_CHANNEL_MAP['ventricle']-0.5)),
-                           axis=None)*width*height*10.0/1000.0
+        tensor[:] = _volume_from_file(hd5, b_series_prefix, b_series_region, prefix_path)
         return tensor
-    return sav_volume_from_file
+    return sax_volume_from_file
+
+def sax_ef(b_series_region='ventricle', prefix_path='ukb_cardiac_mri'):
+    def sax_ef_from_file(tm, hd5, dependents={}):
+        missing = 0
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        tensor_dia = _volume_from_file(hd5, 'diastole', b_series_region, prefix_path)
+        tensor_sys = _volume_from_file(hd5, 'systole', b_series_region, prefix_path)
+        tensor[:] = (tensor_dia-tensor_sys)/tensor_dia
+        return tensor
+    return sax_ef_from_file
 
 
 TMAPS['sax_all_diastole_volume'] = TensorMap('sax_all_diastole', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh',
-                                             tensor_from_file=sax_volume('diastole'))
+                                             tensor_from_file=sax_volume('diastole'), normalization={'mean': 128.808848 , 'std': 43.121279})
 TMAPS['sax_all_systole_volume'] = TensorMap('sax_all_systole', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh',
-                                            tensor_from_file=sax_volume('systole'))
+                                            tensor_from_file=sax_volume('systole'), normalization={'mean': 65.415781, 'std': 37.270783})
+
+TMAPS['sax_all_diastole_mass'] = TensorMap('sax_all_diastole_mass', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh',
+                                           tensor_from_file=sax_volume('diastole', 'myocardium'), normalization={'mean': 128.808848 , 'std': 43.121279})
+TMAPS['sax_all_systole_mass'] = TensorMap('sax_all_systole_mass', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh',
+                                          tensor_from_file=sax_volume('systole', 'myocardium'), normalization={'mean': 65.415781, 'std': 37.270783})
+
+TMAPS['sax_all_ef'] = TensorMap('sax_all_ef', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh',
+                                tensor_from_file=sax_ef())
 
 TMAPS['sax_all_diastole_segmented'] = TensorMap('sax_all_diastole_segmented', Interpretation.CATEGORICAL, shape=(256, 256, 13, 3),
                                                 channel_map=MRI_SEGMENTED_CHANNEL_MAP)
