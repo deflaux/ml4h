@@ -423,9 +423,7 @@ def _make_ecg_rest(population_normalize: float = None, random_roll: bool = False
                         tensor[:, tm.channel_map[k]] = np.roll(data, roll)
                     else:
                         tensor[:, tm.channel_map[k]] = data
-        if population_normalize is None:
-            tm.normalization = {'zero_mean_std1': 1.0}
-        else:
+        if population_normalize:
             tensor /= population_normalize
         if warp:
             tensor = _warp_ecg(tensor)
@@ -446,7 +444,35 @@ TMAPS['ecg_rest_raw_100'] = TensorMap('ecg_rest_raw_100', Interpretation.CONTINU
                                       channel_map=ECG_REST_LEADS)
 
 TMAPS['ecg_rest'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 12), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
-                              channel_map=ECG_REST_LEADS)
+                              channel_map=ECG_REST_LEADS, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_I_aVR'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 2), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                    channel_map={'strip_I': 0, 'strip_aVR': 1}, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_I'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                channel_map={'strip_I': 0}, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_II'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_II': 0}, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_III'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                  channel_map={'strip_III': 0}, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_V1'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_V1': 0}, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_V2'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_V2': 0}, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_V3'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_V3': 0}, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_V4'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_V4': 0}, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_V5'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_V5': 0}, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_V6'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                 channel_map={'strip_V6': 0}, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_aVL'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                  channel_map={'strip_aVL': 0}, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_aVF'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                  channel_map={'strip_aVF': 0}, normalization={'zero_mean_std1': 1.0})
+TMAPS['ecg_rest_aVR'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 1), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
+                                  channel_map={'strip_aVR': 0}, normalization={'zero_mean_std1': 1.0})
+
+
 TMAPS['ecg_rest_2500_ukb'] = TensorMap('ecg_rest_2500', Interpretation.CONTINUOUS, shape=(2500, 12), path_prefix='ukb_ecg_rest', channel_map=ECG_REST_LEADS,
                                        tensor_from_file=_make_ecg_rest(downsample_steps=2))
 
@@ -454,9 +480,6 @@ TMAPS['ecg_rest_stft'] = TensorMap('ecg_rest_stft', Interpretation.CONTINUOUS, s
                                    tensor_from_file=_make_ecg_rest(short_time_nperseg=64, short_time_noverlap=32))
 TMAPS['ecg_rest_stft_512'] = TensorMap('ecg_rest_stft_512', shape=(257, 314, 12), path_prefix='ukb_ecg_rest', channel_map=ECG_REST_LEADS,
                                        tensor_from_file=_make_ecg_rest(short_time_nperseg=512, short_time_noverlap=496))
-
-TMAPS['ecg_rest'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(5000, 12), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
-                              channel_map=ECG_REST_LEADS)
 
 TMAPS['ecg_rest_stack'] = TensorMap('strip', Interpretation.CONTINUOUS, shape=(600, 12, 8), path_prefix='ukb_ecg_rest', tensor_from_file=_make_ecg_rest(),
                                     channel_map=ECG_REST_LEADS)

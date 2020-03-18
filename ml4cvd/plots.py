@@ -4,6 +4,7 @@
 import os
 import math
 import h5py
+import json
 import glob
 import logging
 import hashlib
@@ -78,12 +79,15 @@ def evaluate_predictions(tm: TensorMap, y_predictions: np.ndarray, y_truth: np.n
     :return: Dictionary of performance metrics with string keys for labels and float values
     """
     performance_metrics = {}
+    rocs_save = []
+    scatters_save = []
     if tm.is_categorical() and tm.axes() == 1:
         logging.info(f"For tm:{tm.name} with channel map:{tm.channel_map} examples:{y_predictions.shape[0]}")
         logging.info(f"\nSum Truth:{np.sum(y_truth, axis=0)} \nSum pred :{np.sum(y_predictions, axis=0)}")
         plot_precision_recall_per_class(y_predictions, y_truth, tm.channel_map, title, folder)
         performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
         rocs.append((y_predictions, y_truth, tm.channel_map))
+        rocs_save.append((y_predictions.tolist(), y_truth.tolist(), tm.channel_map))
     elif tm.is_categorical() and tm.axes() == 2:
         melt_shape = (y_predictions.shape[0] * y_predictions.shape[1], y_predictions.shape[2])
         idx = np.random.choice(np.arange(melt_shape[0]), min(melt_shape[0], max_melt), replace=False)
@@ -92,6 +96,7 @@ def evaluate_predictions(tm: TensorMap, y_predictions: np.ndarray, y_truth: np.n
         performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
         performance_metrics.update(plot_precision_recall_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
         rocs.append((y_predictions, y_truth, tm.channel_map))
+        rocs_save.append((y_predictions.tolist(), y_truth.tolist(), tm.channel_map))
     elif tm.is_categorical() and tm.axes() == 3:
         melt_shape = (y_predictions.shape[0] * y_predictions.shape[1] * y_predictions.shape[2], y_predictions.shape[3])
         idx = np.random.choice(np.arange(melt_shape[0]), min(melt_shape[0], max_melt), replace=False)
@@ -100,6 +105,7 @@ def evaluate_predictions(tm: TensorMap, y_predictions: np.ndarray, y_truth: np.n
         performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
         performance_metrics.update(plot_precision_recall_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
         rocs.append((y_predictions, y_truth, tm.channel_map))
+        rocs_save.append((y_predictions.tolist(), y_truth.tolist(), tm.channel_map))
     elif tm.is_categorical() and tm.axes() == 4:
         melt_shape = (y_predictions.shape[0] * y_predictions.shape[1] * y_predictions.shape[2] * y_predictions.shape[3], y_predictions.shape[4])
         idx = np.random.choice(np.arange(melt_shape[0]), min(melt_shape[0], max_melt), replace=False)
@@ -108,6 +114,7 @@ def evaluate_predictions(tm: TensorMap, y_predictions: np.ndarray, y_truth: np.n
         performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
         performance_metrics.update(plot_precision_recall_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
         rocs.append((y_predictions, y_truth, tm.channel_map))
+        rocs_save.append((y_predictions.tolist(), y_truth.tolist(), tm.channel_map))
     elif tm.is_cox_proportional_hazard():
         plot_survival(y_predictions, y_truth, title, prefix=folder)
         plot_survival_curves(y_predictions, y_truth, title, prefix=folder, paths=test_paths)
@@ -122,11 +129,24 @@ def evaluate_predictions(tm: TensorMap, y_predictions: np.ndarray, y_truth: np.n
             y_truth = y_truth[y_truth != tm.sentinel, np.newaxis]
         performance_metrics.update(plot_scatter(tm.rescale(y_predictions), tm.rescale(y_truth), title, prefix=folder, paths=test_paths))
         scatters.append((tm.rescale(y_predictions), tm.rescale(y_truth), title, test_paths))
+        scatters_save.append((tm.rescale(y_predictions).tolist(), tm.rescale(y_truth).tolist(), title, test_paths))
     else:
         logging.warning(f"No evaluation clause for tensor map {tm.name}")
 
     if tm.name == 'median':
         plot_waves(y_predictions, y_truth, 'median_waves_' + title, folder)
+
+    with open(os.path.join(folder, 'performance_metrics.json'), 'w') as json_file:
+        json.dump(performance_metrics, json_file)
+
+    with open(os.path.join(folder, 'test_paths.json'), 'w') as json_file:
+        json.dump(test_paths, json_file)
+
+    with open(os.path.join(folder, 'scatters.json'), 'w') as json_file:
+        json.dump(scatters_save, json_file)
+
+    with open(os.path.join(folder, 'rocs.json'), 'w') as json_file:
+        json.dump(rocs_save, json_file)
 
     return performance_metrics
 
