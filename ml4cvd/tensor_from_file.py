@@ -1838,7 +1838,7 @@ TMAPS['ecg-bike-resting-hr'] = TensorMap('resting_hr', path_prefix='ecg_bike/con
                                          tensor_from_file=normalized_first_date, interpretation=Interpretation.CONTINUOUS)
 TMAPS['ecg-bike-age'] = TensorMap('age', path_prefix='ecg_bike/continuous', loss='logcosh', metrics=['mae'], shape=(1,),
                                   normalization={'mean': 0, 'std': 1},
-                                  tensor_from_file=normalized_first_date, interpretation=Interpretation.CONTINUOUS)
+                                  interpretation=Interpretation.CONTINUOUS)
 TMAPS['ecg-bike-protocol'] = TensorMap('protocol', path_prefix='ecg_bike/continuous', shape=(22,), tensor_from_file=_ecg_protocol,
                                        interpretation=Interpretation.CATEGORICAL,
                                        channel_map={
@@ -1846,7 +1846,7 @@ TMAPS['ecg-bike-protocol'] = TensorMap('protocol', path_prefix='ecg_bike/continu
                                            **{f'F{i[1]}': i[0] + 11 for i in enumerate(range(30, 140, 10))},
                                        })
 TMAPS['ecg-bike-protocol-watts'] = TensorMap('protocol', path_prefix='ecg_bike/continuous', shape=(1,), tensor_from_file=_ecg_protocol_watts,
-                                       interpretation=Interpretation.CONTINUOUS,)
+                                       interpretation=Interpretation.CONTINUOUS, normalization={'mean': 82, 'std': 24},)
 # trend measurements
 TMAPS['ecg-bike-trend-hr'] = TensorMap('trend_heartrate', shape=(120, 1), path_prefix='ecg_bike/float_array',
                                        normalization={'mean': 0, 'std': 1},
@@ -1898,6 +1898,12 @@ TMAPS['ecg-bike-hrr-incomplete_exercise'] = TensorMap(
     tensor_from_file=_make_incomplete_exercise(_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=',')))
 TMAPS['ecg-bike-hrr-ramp'] = TensorMap(
     'hrr', loss='logcosh', metrics=['mae'], shape=(1,),
+    normalization={'mean': 25, 'std': 15},
+    interpretation=Interpretation.CONTINUOUS,
+    validator=make_range_validator(0, 110),
+    tensor_from_file=_make_ramp(_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=',')))
+TMAPS['ecg-bike-hrr-ramp-transfer'] = TensorMap(
+    'hrr_transfer', loss='logcosh', metrics=['mae'], shape=(1,),
     normalization={'mean': 25, 'std': 15},
     interpretation=Interpretation.CONTINUOUS,
     validator=make_range_validator(0, 110),
@@ -1986,14 +1992,18 @@ TMAPS['ecg-bike-hrr-parented'] = TensorMap('hrr', loss='logcosh', metrics=['mae'
 def _make_ecg_rest_downsampled(rate: float):
     def ecg_rest_from_file(tm, hd5, dependents=None):
         length = int(tm.shape[0] * rate)
-        start = np.random.randint(5000 - length)
+        start = 0 if length == 5000 else np.random.randint(5000 - length)
         ecg = np.array(hd5[tm.path_prefix][start: start + length])[:, np.newaxis]
         ecg = _downsample(ecg, rate)
         return ecg
     return ecg_rest_from_file
 
 
-TMAPS['ecg_rest_shifted_8xdownsampled'] = TensorMap('full', Interpretation.CONTINUOUS, shape=(256, 1), path_prefix='ecg_rest/strip_I',
+TMAPS['ecg_rest_shifted_8xdownsampled'] = TensorMap('full_rest', Interpretation.CONTINUOUS, shape=(625, 1), path_prefix='ecg_rest/strip_I',
                                                     tensor_from_file=_make_ecg_rest_downsampled(8),
-                                                    normalization={'mean': 0, 'std': 2000}, cacheable=False,
+                                                    normalization={'mean': 17.5, 'std': 47.8}, cacheable=False,
                                                     augmentations=[_warp_ecg, _rand_add_noise, _rand_roll])
+TMAPS['ecg_rest_shifted_8xdownsampled_transfer'] = TensorMap('full_rest', Interpretation.CONTINUOUS, shape=(625, 1), path_prefix='ukb_ecg_rest/strip_I/instance_0',
+                                                             tensor_from_file=_make_ecg_rest_downsampled(8),
+                                                             normalization={'mean': 17.5, 'std': 47.8}, cacheable=False,
+                                                             augmentations=[_warp_ecg, _rand_add_noise, _rand_roll])
