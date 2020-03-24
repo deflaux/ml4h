@@ -1978,6 +1978,12 @@ TMAPS['ecg-bike-trend-artifact'] = TensorMap('trend_artifact', shape=(120, 1), p
 TMAPS['ecg-bike-afib'] = TensorMap('afib', shape=(2,),
                                    interpretation=Interpretation.CATEGORICAL, channel_map={'no_afib': 1, 'afib': 0},
                                    tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/exercise_afib.csv', delimiter=',', id_column='sample_id'))
+TMAPS['ecg-bike-QT'] = TensorMap('qt', shape=(1,), interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=_build_tensor_from_file('/home/ndiamant/inference_ecg_bike_1st__all_intervals_sentinel_strip_I.tsv', 'qt-interval-sentinel_prediction'))
+TMAPS['ecg-bike-TP'] = TensorMap('tp', shape=(1,), interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=_build_tensor_from_file('/home/ndiamant/tp.tsv', 'tp'))
+TMAPS['ecg-bike-ensemble-TP'] = TensorMap('tp', shape=(1,), interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=_build_tensor_from_file('/home/ndiamant/3_lead_ensemble.tsv', 'tp_ensemble'))
 TMAPS['ecg-bike-cigarettes'] = TensorMap('cigarettes', shape=(2,),
                                          interpretation=Interpretation.CATEGORICAL, channel_map={'no_cig': 0, 'cig': 1},
                                          tensor_from_file=_build_tensor_from_sample_id_file('/home/ndiamant/20116_0_or_1.csv', delimiter=',', id_column='sample_id'))
