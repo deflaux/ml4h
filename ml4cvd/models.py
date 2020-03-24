@@ -503,7 +503,7 @@ def make_variational_multimodal_multitask_model(
             parented_activation = concatenate([latent_inputs] + [output_predictions[p.output_name()] for p in tm.parents])
             parented_activation = _dense_layer(parented_activation, layers, tm.annotation_units, activation, conv_normalize)
             output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(parented_activation)
-        elif tm.is_categorical():
+        elif tm.is_categorical_any():
             output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation='softmax', name=tm.output_name())(latent_inputs)
         else:
             output_predictions[tm.output_name()] = Dense(units=tm.shape[0], activation=tm.activation, name=tm.output_name())(latent_inputs)
@@ -1251,9 +1251,7 @@ def _get_tensor_maps_for_characters(tensor_maps_in: List[TensorMap], base_model:
 
 def get_model_inputs_outputs(model_files: List[str],
                              tensor_maps_in: List[TensorMap],
-                             tensor_maps_out: List[TensorMap],
-                             optimizer: str,
-                             ) -> Dict[str, Dict[str, TensorMap]]:
+                             tensor_maps_out: List[TensorMap]) -> Dict[str, Dict[str, TensorMap]]:
     """Organizes given input and output tensors as nested dictionary.
 
     Returns:
