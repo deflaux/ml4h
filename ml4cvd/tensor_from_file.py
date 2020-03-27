@@ -1694,6 +1694,15 @@ def sax_ef(b_series_region='ventricle', prefix_path='ukb_cardiac_mri'):
         return tensor
     return sax_ef_from_file
 
+TMAPS['sax_all_diastole_volume_raw'] = TensorMap('sax_all_diastole', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh',
+                                                 tensor_from_file=sax_volume('diastole'))
+TMAPS['sax_all_systole_volume_raw'] = TensorMap('sax_all_systole', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh',
+                                                tensor_from_file=sax_volume('systole'))
+
+TMAPS['sax_all_diastole_mass_raw'] = TensorMap('sax_all_diastole_mass', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh',
+                                               tensor_from_file=sax_volume('diastole', 'myocardium'))
+TMAPS['sax_all_systole_mass_raw'] = TensorMap('sax_all_systole_mass', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh',
+                                              tensor_from_file=sax_volume('systole', 'myocardium'))
 
 TMAPS['sax_all_diastole_volume'] = TensorMap('sax_all_diastole', Interpretation.CONTINUOUS, shape=(1,), loss='logcosh',
                                              tensor_from_file=sax_volume('diastole'), normalization={'mean': 128.808848 , 'std': 43.121279})
