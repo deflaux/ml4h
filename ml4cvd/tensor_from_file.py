@@ -2000,6 +2000,20 @@ TMAPS['ecg-bike-hrr-raw-ensemble'] = TensorMap('hrr', loss='logcosh', metrics=['
                                                interpretation=Interpretation.CONTINUOUS,
                                                validator=make_range_validator(0, 110),
                                                tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
+TMAPS['ecg-bike-hrr-10s-ramp'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
+                                           normalization={'mean': 12.6, 'std': 8.4},
+                                           interpretation=Interpretation.CONTINUOUS,
+                                           validator=make_range_validator(0, 42),
+                                           tensor_from_file=_make_ramp(_build_tensor_from_file('/home/ndiamant/filtered_hrr10_phenotype.tsv', 'hrr')))
+TMAPS['ecg-bike-hrr-10s-ramp-less-noise'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
+                                                      normalization={'mean': 12.6, 'std': 8.4},
+                                                      interpretation=Interpretation.CONTINUOUS,
+                                                      validator=make_range_validator(0, 42),
+                                                      tensor_from_file=_make_ramp(_build_tensor_from_file('/home/ndiamant/hrr10s_phenotype.tsv', 'hrr')))
+TMAPS['ecg-bike-hrr-10s-quality'] = TensorMap('hrr_quality', loss='logcosh', metrics=['mae'], shape=(1,),
+                                              interpretation=Interpretation.CONTINUOUS,
+                                              validator=make_range_validator(0, 1),
+                                              tensor_from_file=_build_tensor_from_file('/home/ndiamant/filtered_hrr10_phenotype.tsv', 'good_hrr_prob'))
 TMAPS['ecg-bike-hrr-incomplete_exercise'] = TensorMap(
     'hrr_incomplete', loss='logcosh', metrics=['mae'], shape=(1,),
     normalization={'mean': 25, 'std': 15},
