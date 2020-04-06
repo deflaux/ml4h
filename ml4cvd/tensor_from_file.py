@@ -2005,6 +2005,11 @@ TMAPS['ecg-bike-hrr-10s-ramp'] = TensorMap('hrr', loss='logcosh', metrics=['mae'
                                            interpretation=Interpretation.CONTINUOUS,
                                            validator=make_range_validator(0, 42),
                                            tensor_from_file=_make_ramp(_build_tensor_from_file('/home/ndiamant/filtered_hrr10_phenotype.tsv', 'hrr')))
+TMAPS['ecg-bike-hrr-50s-ramp'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
+                                           normalization={'mean': 27.6, 'std': 10.9},
+                                           interpretation=Interpretation.CONTINUOUS,
+                                           validator=make_range_validator(0, 100),
+                                           tensor_from_file=_make_ramp(_build_tensor_from_file('/home/ndiamant/hrr50_phenotype.tsv', 'hrr50')))
 TMAPS['ecg-bike-hrr-10s-ramp-less-noise'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
                                                       normalization={'mean': 12.6, 'std': 8.4},
                                                       interpretation=Interpretation.CONTINUOUS,
