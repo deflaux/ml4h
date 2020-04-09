@@ -2173,11 +2173,11 @@ TMAPS['ecg-bike-hr-segment'] = TensorMap(
     tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality.csv', 'hr'),
 )
 TMAPS['ecg-bike-quality-segment'] = TensorMap(
-    'quality', shape=(2,), interpretation=Interpretation.CATEGORICAL,
+    'quality', shape=(2,), interpretation=Interpretation.CATEGORICAL, channel_map={'high_quality': 0, 'low_quality': 1},
     tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality.csv', 'bad_measure'),
 )
 TMAPS['ecg-bike-segment'] = TensorMap(
-    'quality', shape=(2500, 3), interpretation=Interpretation.CONTINUOUS,
+    'ecg_segment', shape=(2500, 3), interpretation=Interpretation.CONTINUOUS,
     tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality.csv', 'start_index'),
     augmentations=[_warp_ecg, _rand_offset, _rand_add_noise]
 )
