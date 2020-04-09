@@ -2144,7 +2144,7 @@ def _hr_5_second_segment(file_name: str, col: str, delimiter: str = ','):
     error = None
     try:
         df = pd.read_csv(file_name, delimiter=delimiter, dtype={'sample_id': str})
-        df.set_index('sample_id')
+        df = df.set_index('sample_id')
     except FileNotFoundError as e:
         error = e
     path_prefix, name = 'ecg_bike/float_array', 'full'
@@ -2155,16 +2155,19 @@ def _hr_5_second_segment(file_name: str, col: str, delimiter: str = ','):
         if error:
             raise error
         sample_id = os.path.basename(hd5.filename).replace('.hd5', '')
-        if col == 'bad_measure':
-            return np.array([0, 1]) if df.loc[sample_id][col] else np.array([1, 0])  # label 1 if bad measure
-        elif col == 'hr':
-            return np.array(df.loc[sample_id][col])
-        elif col == 'start_index':
-            index = int(df.loc[sample_id][col])
-            ecg_dataset = first_dataset_at_path(hd5, tensor_path(path_prefix, name))
-            return ecg_dataset[index: 500 * 5 + index]
-        else:
-            raise ValueError(f'Col {col} not in file.')
+        try:
+            if col == 'bad_measure':
+                return np.array([0, 1]) if df.loc[sample_id][col] else np.array([1, 0])  # label 1 if bad measure
+            elif col == 'hr':
+                return np.array(df.loc[sample_id][col])
+            elif col == 'start_index':
+                index = int(df.loc[sample_id][col])
+                ecg_dataset = first_dataset_at_path(hd5, tensor_path(path_prefix, name))
+                return ecg_dataset[index: 500 * 5 + index]
+            else:
+                raise ValueError(f'Col {col} not in file.')
+        except KeyError:
+            raise KeyError('sample id not in data')
     return tensor_from_file
 
 
@@ -2177,7 +2180,7 @@ TMAPS['ecg-bike-quality-segment'] = TensorMap(
     tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality.csv', 'bad_measure'),
 )
 TMAPS['ecg-bike-segment'] = TensorMap(
-    'ecg_segment', shape=(2500, 3), interpretation=Interpretation.CONTINUOUS,
+    'ecg_segment', shape=(2500, 3), interpretation=Interpretation.CONTINUOUS, cacheable=False,
     tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality.csv', 'start_index'),
     augmentations=[_warp_ecg, _rand_offset, _rand_add_noise]
 )
