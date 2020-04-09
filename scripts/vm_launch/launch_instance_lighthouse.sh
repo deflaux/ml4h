@@ -14,7 +14,7 @@ echo "$@"
 gcloud compute instances create ${NAME} \
 --project philippakis-lighthouse-ml \
 --zone us-central1-a \
---image-project philippakis-lighthouse-ml \
+--image-project broad-ml4cvd \
 --image-family ml4cvd-image \
 --boot-disk-type=pd-ssd \
 --boot-disk-size=${DISK_SIZE} \

@@ -16,7 +16,7 @@ echo "$@"
 gcloud compute instances create ${NAME} \
 --project philippakis-lighthouse-ml \
 --zone us-central1-a \
---image-project philippakis-lighthouse-ml \
+--image-project broad-ml4cvd \
 --image-family dl-image \
 --accelerator=type=${ACCEL},count=1 \
 --maintenance-policy=TERMINATE \
