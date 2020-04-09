@@ -9,10 +9,12 @@ import biosppy
 import logging
 import scipy
 import numpy as np
+import pandas as pd
 import vtk.util.numpy_support
 from scipy.stats import linregress
 from tensorflow.keras.utils import to_categorical
 
+from ml4cvd.normalizer import Standardize
 from ml4cvd.metrics import weighted_crossentropy, sqrt_error, mean_quartic_error
 from ml4cvd.tensor_writer_ukbb import tensor_path, first_dataset_at_path
 from ml4cvd.TensorMap import TensorMap, no_nans, str2date, make_range_validator, Interpretation
@@ -2136,6 +2138,52 @@ TMAPS['ecg_rest_shifted_8xdownsampled_transfer'] = TensorMap('full_rest', Interp
                                                              tensor_from_file=_make_ecg_rest_downsampled(8),
                                                              normalization={'mean': 17.5, 'std': 47.8}, cacheable=False,
                                                              augmentations=[_warp_ecg, _rand_add_noise, _rand_roll])
+
+
+def _hr_5_second_segment(file_name: str, col: str, delimiter: str = ','):
+    error = None
+    try:
+        df = pd.read_csv(file_name, delimiter=delimiter, dtype={'sample_id': str})
+        df.set_index('sample_id')
+    except FileNotFoundError as e:
+        error = e
+    path_prefix, name = 'ecg_bike/float_array', 'full'
+
+    def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
+        _check_phase_full_len(hd5, 'pretest')
+        _check_phase_full_len(hd5, 'rest')
+        if error:
+            raise error
+        sample_id = os.path.basename(hd5.filename).replace('.hd5', '')
+        if col == 'bad_measure':
+            return np.array([0, 1]) if df.loc[sample_id][col] else np.array([1, 0])  # label 1 if bad measure
+        elif col == 'hr':
+            return np.array(df.loc[sample_id][col])
+        elif col == 'start_index':
+            index = int(df.loc[sample_id][col])
+            ecg_dataset = first_dataset_at_path(hd5, tensor_path(path_prefix, name))
+            return ecg_dataset[index: 500 * 5 + index]
+        else:
+            raise ValueError(f'Col {col} not in file.')
+    return tensor_from_file
+
+
+TMAPS['ecg-bike-hr-segment'] = TensorMap(
+    'hr', loss='logcosh', metrics=['mae'], shape=(1,), normalization=Standardize(99, 20), interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality.csv', 'hr'),
+)
+TMAPS['ecg-bike-quality-segment'] = TensorMap(
+    'quality', shape=(2,), interpretation=Interpretation.CATEGORICAL,
+    tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality.csv', 'bad_measure'),
+)
+TMAPS['ecg-bike-segment'] = TensorMap(
+    'quality', shape=(2500, 3), interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality.csv', 'start_index'),
+    augmentations=[_warp_ecg, _rand_offset, _rand_add_noise]
+)
+
+
+### End HRR ###
 
 
 def _segmented_index_slices(key_prefix: str, shape: Tuple[int], path_prefix: str='ukb_cardiac_mri') -> Callable:
