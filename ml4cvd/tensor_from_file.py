@@ -737,6 +737,8 @@ TMAPS['t1_slice_1'] = TensorMap('t1_slice_1', shape=(256, 256, 1), path_prefix='
                                 tensor_from_file=_random_slice_tensor('t1_p2_1mm_fov256_sag_ti_880_1'))
 TMAPS['t1_slice_2'] = TensorMap('t1_slice_2', shape=(256, 256, 1), path_prefix='ukb_brain_mri',  normalization={'zero_mean_std1': True},
                                 tensor_from_file=_random_slice_tensor('t1_p2_1mm_fov256_sag_ti_880_2'))
+TMAPS['t1_4_slices_1'] = TensorMap('t1_4_slices_1', shape=(256, 256, 4), path_prefix='ukb_brain_mri', normalization={'zero_mean_std1': True},
+                                   tensor_from_file=_slice_subset_tensor('t1_p2_1mm_fov256_sag_ti_880_1', 94, 114))
 TMAPS['t1_20_slices_1'] = TensorMap('t1_20_slices_1', shape=(256, 256, 20), path_prefix='ukb_brain_mri', normalization={'zero_mean_std1': True},
                                     tensor_from_file=_slice_subset_tensor('t1_p2_1mm_fov256_sag_ti_880_1', 94, 114))
 TMAPS['t1_20_slices_2'] = TensorMap('t1_20_slices_2', shape=(256, 256, 20), path_prefix='ukb_brain_mri', normalization={'zero_mean_std1': True},
