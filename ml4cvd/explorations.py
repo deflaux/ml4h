@@ -53,7 +53,7 @@ def sort_csv(tensors, tensor_maps_in):
                             stats[f'Total_{tm.name}_{tensor[0]}'] += 1
             except (IndexError, KeyError, ValueError, OSError, RuntimeError) as e:
                 pass
-                #logging.info(f'Got error at {name} error:\n {e} {traceback.format_exc()}')
+                logging.info(f'Got error at {name} error:\n {e} {traceback.format_exc()}')
 
         logging.info(f'In folder {folder} with {len(os.listdir(os.path.join(tensors, folder)))} ECGs')
         if len(os.listdir(os.path.join(tensors, folder))) > 0:
