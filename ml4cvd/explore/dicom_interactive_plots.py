@@ -22,20 +22,10 @@ from IPython.display import display
 from IPython.display import HTML
 import ipywidgets as widgets
 import matplotlib.pyplot as plt
+from ml4cvd.runtime_data_defines import get_mri_folders
 import numpy as np
 import pydicom
 import tensorflow as tf
-
-DEFAULT_MRI_FOLDERS = {
-    'fake': [
-        'gs://ml4cvd/projects/fake_mris/',
-        'gs://ml4cvd/projects/fake_brain_mris/',
-        ],
-    'ukb': [
-        'gs://bulkml4cvd/brainmri/t1_structural_07_26_2019/zipped_t1_dicoms/',
-        'gs://ml4cvd/data/mris/cardiac/'
-        ]
-}
 
 MIN_IMAGE_WIDTH = 8
 DEFAULT_IMAGE_WIDTH = 12
@@ -45,57 +35,51 @@ MIN_COLOR_RANGE = 0
 MAX_COLOR_RANGE = 6000
 
 
-def choose_mri(sample_id, gcs_folder=None):
+def choose_mri(sample_id, folder=None):
   """Render widget to choose the MRI to plot.
 
   Args:
     sample_id: The id of the sample to retrieve.
-    gcs_folder: The local or Cloud Storage folder under which the files reside.
+    folder: The local or Cloud Storage folder under which the files reside.
 
   Returns:
     ipywidget or HTML upon error.
   """
-  if gcs_folder is None:
-    if 'fake' in str(sample_id):
-      gcs_folders = DEFAULT_MRI_FOLDERS['fake']
-    else:
-      gcs_folders = DEFAULT_MRI_FOLDERS['ukb']
+  if folder is None:
+    folders = get_mri_folders(sample_id)
   else:
-    gcs_folders = [gcs_folder]
+    folders = [folder]
 
   sample_mris = []
   sample_mri_glob = str(sample_id) + '_*.zip'
   try:
-    for folder in gcs_folders:
-      sample_mris.extend(
-          tf.io.gfile.glob(pattern=os.path.join(folder, sample_mri_glob)))
+    for folder in folders:
+      sample_mris.extend(tf.io.gfile.glob(pattern=os.path.join(folder, sample_mri_glob)))
   except (tf.errors.NotFoundError, tf.errors.PermissionDeniedError) as e:
-    return HTML('''
+    return HTML(f'''
     <div class="alert alert-block alert-danger">
-    <b>Warning:</b> MRI not available for sample {}:
-    <hr><p><pre>{}</pre></p>
-    </div>
-    '''.format(sample_id, e.message))
+    <b>Warning:</b> MRI not available for sample {sample_id}:
+    <hr><p><pre>{e.message}</pre></p>
+    </div>''')
 
   if not sample_mris:
-    return HTML('''
+    return HTML(f'''
     <div class="alert alert-block alert-danger">
-    <b>Warning:</b> MRI not available for sample {}
-    </div>
-    '''.format(sample_id))
+    <b>Warning:</b> MRI not available for sample {sample_id}
+    </div>''')
 
   mri_chooser = widgets.Dropdown(
       options=sample_mris,
       value=sample_mris[0],
-      description='Choose an MRI to visualize for sample {}:'.format(sample_id),
+      description=f'Choose an MRI to visualize for sample {sample_id}:',
       style={'description_width': 'initial'},
-      layout=widgets.Layout(width='800px')
+      layout=widgets.Layout(width='800px'),
   )
   file_controls_ui = widgets.VBox(
       [widgets.HTML('<h3>File controls</h3>'), mri_chooser],
-      layout=widgets.Layout(width='auto', border='solid 1px grey'))
-  file_controls_output = widgets.interactive_output(
-      choose_mri_series, {'sample_mri': mri_chooser})
+      layout=widgets.Layout(width='auto', border='solid 1px grey'),
+  )
+  file_controls_output = widgets.interactive_output(choose_mri_series, {'sample_mri': mri_chooser})
   display(file_controls_ui, file_controls_output)
 
 
@@ -115,12 +99,11 @@ def choose_mri_series(sample_mri):
       with zipfile.ZipFile(local_path, 'r') as zip_ref:
         zip_ref.extractall(tmpdirname)
     except (tf.errors.NotFoundError, tf.errors.PermissionDeniedError) as e:
-      return HTML('''
+      return HTML(f'''
       <div class="alert alert-block alert-danger">
-      <b>Warning:</b> Cardiac MRI not available for sample {}:
-      <hr><p><pre>{}</pre></p>
-      </div>
-      '''.format(os.path.basename(sample_mri), e.message))
+      <b>Warning:</b> Cardiac MRI not available for sample {os.path.basename(sample_mri)}:
+      <hr><p><pre>{e.message}</pre></p>
+      </div>''')
 
     unordered_dicoms = collections.defaultdict(dict)
     for dcm_file in os.listdir(tmpdirname):
@@ -131,15 +114,11 @@ def choose_mri_series(sample_mri):
       key2 = int(dcm.InstanceNumber) - 1
       if key2 in unordered_dicoms[key1]:
         # Notice invalid input, but don't throw an error.
-        print('WARNING: Duplicate instances: ' + dcm.SeriesDescription
-              + ' ' + dcm.SeriesNumber
-              + ' ' + dcm.InstanceNumber)
+        print(f'WARNING: Duplicate instances: {dcm.SeriesDescription} {dcm.SeriesNumber} {dcm.InstanceNumber}.')
       unordered_dicoms[key1][key2] = dcm
 
   if not unordered_dicoms:
-    print('\n\nNo series available in MRI for sample ',
-          os.path.basename(sample_mri),
-          '\n\nTry a different MRI.')
+    print(f'\n\nNo series available in MRI for sample {os.path.basename(sample_mri)}\n\nTry a different MRI.')
     return None
 
   # Convert from dict of dicts to dict of ordered lists.
@@ -151,17 +130,15 @@ def choose_mri_series(sample_mri):
 
   default_series_value = sorted(list(dicoms.keys()))[0]
   # Display the middle instance by default.
-  default_instance_value, max_instance_value = compute_instance_range(
-      dicoms, default_series_value)
-  default_vmin_value, default_vmax_value = compute_color_range(
-      dicoms, default_series_value)
+  default_instance_value, max_instance_value = compute_instance_range(dicoms, default_series_value)
+  default_vmin_value, default_vmax_value = compute_color_range(dicoms, default_series_value)
 
   series_name_chooser = widgets.Dropdown(
       options=[(str(k), k) for k in sorted(dicoms.keys())],
       value=default_series_value,
       description='Choose the MRI series to visualize:',
       style={'description_width': 'initial'},
-      layout=widgets.Layout(width='800px')
+      layout=widgets.Layout(width='800px'),
   )
   # Slide through dicom image instances using a slide bar.
   instance_chooser = widgets.IntSlider(
@@ -172,7 +149,8 @@ def choose_mri_series(sample_mri):
       description='Image instance to display '
       + '(click on slider, then use left/right arrows):',
       style={'description_width': 'initial'},
-      layout=series_name_chooser.layout)
+      layout=series_name_chooser.layout,
+  )
   vmin_chooser = widgets.IntSlider(
       continuous_update=True,
       value=default_vmin_value,
@@ -180,7 +158,8 @@ def choose_mri_series(sample_mri):
       max=MAX_COLOR_RANGE,
       description='Color range minimum:',
       style={'description_width': 'initial'},
-      layout=widgets.Layout(width='300px'))
+      layout=widgets.Layout(width='300px'),
+  )
   vmax_chooser = widgets.IntSlider(
       continuous_update=True,
       value=default_vmax_value,
@@ -188,11 +167,13 @@ def choose_mri_series(sample_mri):
       max=MAX_COLOR_RANGE,
       description='Color range maximum:',
       style={'description_width': 'initial'},
-      layout=vmin_chooser.layout)
+      layout=vmin_chooser.layout,
+  )
   transpose_chooser = widgets.Checkbox(
       description='Whether to transpose the image.',
       style={'description_width': 'initial'},
-      layout=vmin_chooser.layout)
+      layout=vmin_chooser.layout,
+  )
   fig_width_chooser = widgets.IntSlider(
       continuous_update=False,
       value=DEFAULT_IMAGE_WIDTH,
@@ -200,31 +181,36 @@ def choose_mri_series(sample_mri):
       max=MAX_IMAGE_WIDTH,
       description='Width of figure (height will be computed using input data):',
       style={'description_width': 'initial'},
-      layout=vmin_chooser.layout)
+      layout=vmin_chooser.layout,
+  )
 
   viz_controls_ui = widgets.VBox(
-      [widgets.HTML('<h3>Visualization controls</h3>'),
-       series_name_chooser, instance_chooser,
-       widgets.HBox([vmin_chooser, vmax_chooser]),
-       widgets.HBox([transpose_chooser, fig_width_chooser])],
-      layout=widgets.Layout(width='auto', border='solid 1px grey'))
+      [
+          widgets.HTML('<h3>Visualization controls</h3>'),
+          series_name_chooser, instance_chooser,
+          widgets.HBox([vmin_chooser, vmax_chooser]),
+          widgets.HBox([transpose_chooser, fig_width_chooser]),
+      ],
+      layout=widgets.Layout(width='auto', border='solid 1px grey'),
+  )
   viz_controls_output = widgets.interactive_output(
       dicom_animation,
-      {'dicoms': widgets.fixed(dicoms),
-       'series_name': series_name_chooser,
-       'instance': instance_chooser,
-       'vmin': vmin_chooser,
-       'vmax': vmax_chooser,
-       'transpose': transpose_chooser,
-       'fig_width': fig_width_chooser,
-       'title_prefix': widgets.fixed(os.path.basename(sample_mri))})
+      {
+          'dicoms': widgets.fixed(dicoms),
+          'series_name': series_name_chooser,
+          'instance': instance_chooser,
+          'vmin': vmin_chooser,
+          'vmax': vmax_chooser,
+          'transpose': transpose_chooser,
+          'fig_width': fig_width_chooser,
+          'title_prefix': widgets.fixed(os.path.basename(sample_mri)),
+      },
+  )
 
   def on_value_change(change):
     """Inner function to capture state being observed."""
-    vmin_chooser.value, vmax_chooser.value = compute_color_range(
-        dicoms, change['new'])
-    instance_chooser.value, instance_chooser.max = compute_instance_range(
-        dicoms, change['new'])
+    vmin_chooser.value, vmax_chooser.value = compute_color_range(dicoms, change['new'])
+    instance_chooser.value, instance_chooser.max = compute_instance_range(dicoms, change['new'])
 
   # When the series changes, update the widgets to the proper ranges
   # for the series.
@@ -246,8 +232,10 @@ def compute_instance_range(dicoms, series_name):
   return(middle_instance, max_instance)
 
 
-def dicom_animation(dicoms, series_name, instance, vmin, vmax, transpose,
-                    fig_width, title_prefix=''):
+def dicom_animation(
+    dicoms, series_name, instance, vmin, vmax, transpose,
+    fig_width, title_prefix='',
+):
   """Render one frame of a dicom animation.
 
   Args:
@@ -263,14 +251,12 @@ def dicom_animation(dicoms, series_name, instance, vmin, vmax, transpose,
   """
   if len(dicoms[series_name]) < instance:
     dcm = dicoms[series_name][-1]
-    print('Instance {} not available for {}, using final instance'
-          ' instead.'.format(str(instance), series_name))
+    print(f'Instance {str(instance)} not available for {series_name}, using final instance instead.')
   else:
     dcm = dicoms[series_name][instance - 1]
     if instance != dcm.InstanceNumber:
       # Notice invalid input, but don't throw an error.
-      print('WARNING: Instance parameter {} and dicom instance number {} do not'
-            ' match'.format(str(instance), str(dcm.InstanceNumber)))
+      print(f'WARNING: Instance parameter {str(instance)} and dicom instance number {str(dcm.InstanceNumber)} do not match.')
 
   if transpose:
     height = dcm.pixel_array.T.shape[0]
@@ -282,17 +268,16 @@ def dicom_animation(dicoms, series_name, instance, vmin, vmax, transpose,
   fig_height = int(np.ceil(fig_width * (height/width)))
 
   _, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor='beige')
-  ax.imshow(dcm.pixel_array.T if transpose else dcm.pixel_array,
-            cmap='gray',
-            vmin=vmin,
-            vmax=vmax)
-  ax.set_title(title_prefix
-               + ', Series: ' + dcm.SeriesDescription
-               + ', SeriesNumber: ' + str(dcm.SeriesNumber)
-               + ', Instance: ' + str(dcm.InstanceNumber)
-               + '\nColor range: ' + str(vmin) + '-' + str(vmax)
-               + ', Transpose: ' + str(transpose)
-               + ', Figure size:' + str(fig_width) + 'x' + str(fig_height),
-               fontsize=fig_width)
+  ax.imshow(dcm.pixel_array.T if transpose else dcm.pixel_array, cmap='gray', vmin=vmin, vmax=vmax)
+  ax.set_title(
+      title_prefix
+      + ', Series: ' + dcm.SeriesDescription
+      + ', Series Number: ' + str(dcm.SeriesNumber)
+      + ', Instance: ' + str(dcm.InstanceNumber)
+      + '\nColor range: ' + str(vmin) + '-' + str(vmax)
+      + ', Transpose: ' + str(transpose)
+      + ', Figure size:' + str(fig_width) + 'x' + str(fig_height),
+      fontsize=fig_width,
+  )
   ax.set_yticklabels([])
   ax.set_xticklabels([])

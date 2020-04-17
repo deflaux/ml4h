@@ -2,37 +2,40 @@
 import logging
 import numpy as np
 import tensorflow as tf
-import keras.backend as K
+import tensorflow.keras.backend as K
 
 from sklearn.metrics import roc_curve, auc, average_precision_score
 
-from keras.losses import binary_crossentropy, categorical_crossentropy, logcosh, cosine_proximity, mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
 
-STRING_METRICS = ['categorical_crossentropy','binary_crossentropy','mean_absolute_error','mae',
-                  'mean_squared_error', 'mse', 'cosine_proximity', 'logcosh']
+from tensorflow.keras.losses import binary_crossentropy, categorical_crossentropy, logcosh, cosine_similarity, mean_squared_error, mean_absolute_error, mean_absolute_percentage_error
+
+STRING_METRICS = [
+    'categorical_crossentropy','binary_crossentropy','mean_absolute_error','mae',
+    'mean_squared_error', 'mse', 'cosine_similarity', 'logcosh',
+]
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # ~~~~~~~~ Metrics ~~~~~~~~~~~~~~~~
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 def weighted_crossentropy(weights, name='anonymous'):
-    """A weighted version of keras.objectives.categorical_crossentropy
-    
+    """A weighted version of tensorflow.keras.objectives.categorical_crossentropy
+
     Arguments:
         weights = np.array([0.5,2,10]) # Class one at 0.5, class 2 twice the normal weights, class 3 10x.
-        name: string identifying the loss to differentiate when models have multiple losses 
-    
+        name: string identifying the loss to differentiate when models have multiple losses
+
     Returns:
         keras loss function named name+'_weighted_loss'
-    
+
     """
     string_globe = 'global ' + name + '_weights\n'
     string_globe += 'global ' + name + '_kweights\n'
-    string_globe += name + '_weights = weights\n'
+    string_globe += name + '_weights = np.array(weights)\n'
     string_globe += name + '_kweights = K.variable('+name+'_weights)\n'
     exec(string_globe, globals(), locals())
     fxn_postfix = '_weighted_loss'
-    string_fxn = 'def '+ name + fxn_postfix + '(y_true, y_pred):\n'
+    string_fxn = 'def ' + name + fxn_postfix + '(y_true, y_pred):\n'
     string_fxn += '\ty_pred /= K.sum(y_pred, axis=-1, keepdims=True)\n'
     string_fxn += '\ty_pred = K.clip(y_pred, K.epsilon(), 1 - K.epsilon())\n'
     string_fxn += '\tloss = y_true * K.log(y_pred) * ' + name + '_kweights\n'
@@ -150,6 +153,53 @@ def pearson(y_true, y_pred):
     return pearson_correlation
 
 
+def _make_riskset(follow_up_times):
+    # sort in descending order
+    follow_up_times_np = tf.make_ndarray(tf.make_tensor_proto(follow_up_times))
+    o = np.argsort(-follow_up_times_np)
+    n_samples = follow_up_times_np.shape[0]
+    risk_set = np.zeros((n_samples, n_samples))
+
+    for i_start, i_sort in enumerate(o):
+        time_i_start = follow_up_times_np[i_sort]
+        k = i_start
+        while k < n_samples and time_i_start <= follow_up_times_np[o[k]]:
+            k += 1
+        risk_set[i_sort, o[:k]] = True
+    risk_set_tf = tf.convert_to_tensor(risk_set)
+    return risk_set_tf
+
+
+def _softmax_masked(risk_scores, mask, axis=0, keepdims=None):
+    """Compute logsumexp across `axis` for entries where `mask` is true."""
+    mask_f = K.cast(mask, risk_scores.dtype)
+    risk_scores_masked = risk_scores * mask_f
+    # for numerical stability, subtract the maximum value before taking the exponential
+    amax = K.max(risk_scores_masked, axis=axis, keepdims=True)
+    risk_scores_shift = risk_scores_masked - amax
+
+    exp_masked = K.exp(risk_scores_shift) * mask_f
+    exp_sum = K.sum(exp_masked, axis=axis, keepdims=True)
+    output = amax + K.log(exp_sum)
+    if not keepdims:
+        output = K.squeeze(output, axis=axis)
+    return output
+
+
+@tf.function
+def cox_hazard_loss(y_true, y_pred):
+    # move batch dimension to the end so predictions get broadcast row-wise when multiplying by riskset
+    pred_t = K.transpose(y_pred[:, 0])
+    events = y_true[:, 0]
+    follow_up_times = y_true[:, 1]
+    # compute log of sum over risk set for each row
+    rr = _softmax_masked(pred_t, _make_riskset(follow_up_times), axis=1, keepdims=True)
+
+    losses = events * (rr - y_pred[:, 0])
+    loss = K.mean(losses)
+    return loss
+
+
 def survival_likelihood_loss(n_intervals):
     """Create custom Keras loss function for neural network survival model.
 
@@ -176,9 +226,10 @@ def survival_likelihood_loss(n_intervals):
         Returns
             Vector of losses for this minibatch.
         """
-        all_individuals = 1. + y_true[:, 0:n_intervals] * (y_pred[:, 0:n_intervals] - 1.)  # component for all individuals
-        uncensored = 1. - y_true[:, n_intervals:2 * n_intervals] * y_pred[:, 0:n_intervals]  # component for only individuals who failed
-        return K.sum(-K.log(K.clip(K.concatenate((all_individuals, uncensored)), K.epsilon(), None)), axis=-1)  # return -log likelihood
+        failure_likelihood = 1. - (y_true[:, n_intervals:] * y_pred[:, 0:n_intervals])  # Loss only for individuals who failed
+        survival_likelihood = y_true[:, 0:n_intervals] * y_pred[:, 0:n_intervals]  # Loss for intervals that were survived
+        survival_likelihood += 1. - y_true[:, 0:n_intervals]  # No survival loss if interval was censored or failed
+        return K.sum(-K.log(K.clip(K.concatenate((survival_likelihood, failure_likelihood)), K.epsilon(), None)), axis=-1)  # return -log likelihood
 
     return loss
 
@@ -196,17 +247,17 @@ def per_class_recall(labels):
         string_fxn += '\ttrue_positives = K.sum(K.round(K.clip(y_true*y_pred, 0, 1)), axis=0)\n'
         string_fxn += '\tpossible_positives = K.sum(K.round(K.clip(y_true, 0, 1)), axis=0)\n'
         string_fxn += '\treturn true_positives['+str(label_idx)+'] / (possible_positives['+str(label_idx)+'] + K.epsilon())\n'
-          
+
         exec(string_fxn)
         recall_fxn = eval(fxn_name + '_recall')
         recall_fxns.append(recall_fxn)
-    
+
     return recall_fxns
 
 
 def per_class_precision(labels):
     precision_fxns = []
-    
+
     for label_key in labels:
         label_idx = labels[label_key]
         fxn_name = label_key.replace('-', '_').replace(' ', '_')
@@ -214,17 +265,17 @@ def per_class_precision(labels):
         string_fxn += '\ttrue_positives = K.sum(K.round(K.clip(y_true*y_pred, 0, 1)), axis=0)\n'
         string_fxn += '\tpredicted_positives = K.sum(K.round(K.clip(y_pred, 0, 1)), axis=0)\n'
         string_fxn += '\treturn true_positives['+str(label_idx)+'] / (predicted_positives['+str(label_idx)+'] + K.epsilon())\n'
-        
+
         exec(string_fxn)
         precision_fxn = eval(fxn_name + '_precision')
         precision_fxns.append(precision_fxn)
-    
+
     return precision_fxns
 
 
 def per_class_recall_3d(labels):
     recall_fxns = []
-    
+
     for label_key in labels:
         label_idx = labels[label_key]
         fxn_prefix = label_key.replace('-', '_').replace(' ', '_')
@@ -232,17 +283,17 @@ def per_class_recall_3d(labels):
         string_fxn += '\ttrue_positives = K.sum(K.sum(K.round(K.clip(y_true*y_pred, 0, 1)), axis=0), axis=0)\n'
         string_fxn += '\tpossible_positives = K.sum(K.sum(K.round(K.clip(y_true, 0, 1)), axis=0), axis=0)\n'
         string_fxn += '\treturn true_positives['+str(label_idx)+'] / (possible_positives['+str(label_idx)+'] + K.epsilon())\n'
-        
+
         exec(string_fxn)
         recall_fxn = eval(fxn_prefix + '_recall')
         recall_fxns.append(recall_fxn)
-    
+
     return recall_fxns
 
 
 def per_class_precision_3d(labels):
     precision_fxns = []
-    
+
     for label_key in labels:
         label_idx = labels[label_key]
         fxn_prefix = label_key.replace('-', '_').replace(' ', '_')
@@ -250,17 +301,17 @@ def per_class_precision_3d(labels):
         string_fxn += '\ttrue_positives = K.sum(K.sum(K.round(K.clip(y_true*y_pred, 0, 1)), axis=0), axis=0)\n'
         string_fxn += '\tpredicted_positives = K.sum(K.sum(K.round(K.clip(y_pred, 0, 1)), axis=0), axis=0)\n'
         string_fxn += '\treturn true_positives['+str(label_idx)+'] / (predicted_positives['+str(label_idx)+'] + K.epsilon())\n'
-        
+
         exec(string_fxn)
         precision_fxn = eval(fxn_prefix + '_precision')
         precision_fxns.append(precision_fxn)
-    
+
     return precision_fxns
 
 
 def per_class_recall_4d(labels):
     recall_fxns = []
-    
+
     for label_key in labels:
         label_idx = labels[label_key]
         fxn_prefix = label_key.replace('-', '_').replace(' ', '_')
@@ -268,17 +319,17 @@ def per_class_recall_4d(labels):
         string_fxn += '\ttrue_positives = K.sum(K.sum(K.sum(K.round(K.clip(y_true*y_pred, 0, 1)), axis=0), axis=0), axis=0)\n'
         string_fxn += '\tpossible_positives = K.sum(K.sum(K.sum(K.round(K.clip(y_true, 0, 1)), axis=0), axis=0), axis=0)\n'
         string_fxn += '\treturn true_positives['+str(label_idx)+'] / (possible_positives['+str(label_idx)+'] + K.epsilon())\n'
-        
+
         exec(string_fxn)
         recall_fxn = eval(fxn_prefix + '_recall')
         recall_fxns.append(recall_fxn)
-    
+
     return recall_fxns
 
 
 def per_class_precision_4d(labels):
     precision_fxns = []
-    
+
     for label_key in labels:
         label_idx = labels[label_key]
         fxn_prefix = label_key.replace('-', '_').replace(' ', '_')
@@ -286,17 +337,17 @@ def per_class_precision_4d(labels):
         string_fxn += '\ttrue_positives = K.sum(K.sum(K.sum(K.round(K.clip(y_true*y_pred, 0, 1)), axis=0), axis=0), axis=0)\n'
         string_fxn += '\tpredicted_positives = K.sum(K.sum(K.sum(K.round(K.clip(y_pred, 0, 1)), axis=0), axis=0), axis=0)\n'
         string_fxn += '\treturn true_positives['+str(label_idx)+'] / (predicted_positives['+str(label_idx)+'] + K.epsilon())\n'
-        
+
         exec(string_fxn)
         precision_fxn = eval(fxn_prefix + '_precision')
         precision_fxns.append(precision_fxn)
-    
+
     return precision_fxns
 
 
 def per_class_recall_5d(labels):
     recall_fxns = []
-    
+
     for label_key in labels:
         label_idx = labels[label_key]
         fxn_prefix = label_key.replace('-', '_').replace(' ', '_')
@@ -304,17 +355,17 @@ def per_class_recall_5d(labels):
         string_fxn += '\ttrue_positives = K.sum(K.sum(K.sum(K.sum(K.round(K.clip(y_true*y_pred, 0, 1)), axis=0), axis=0), axis=0), axis=0)\n'
         string_fxn += '\tpossible_positives = K.sum(K.sum(K.sum(K.sum(K.round(K.clip(y_true, 0, 1)), axis=0), axis=0), axis=0), axis=0)\n'
         string_fxn += '\treturn true_positives['+str(label_idx)+'] / (possible_positives['+str(label_idx)+'] + K.epsilon())\n'
-        
+
         exec(string_fxn)
         recall_fxn = eval(fxn_prefix + '_recall')
         recall_fxns.append(recall_fxn)
-    
+
     return recall_fxns
 
 
 def per_class_precision_5d(labels):
     precision_fxns = []
-    
+
     for label_key in labels:
         label_idx = labels[label_key]
         fxn_prefix = label_key.replace('-', '_').replace(' ', '_')
@@ -322,11 +373,11 @@ def per_class_precision_5d(labels):
         string_fxn += '\ttrue_positives = K.sum(K.sum(K.sum(K.sum(K.round(K.clip(y_true*y_pred, 0, 1)), axis=0), axis=0), axis=0), axis=0)\n'
         string_fxn += '\tpredicted_positives = K.sum(K.sum(K.sum(K.sum(K.round(K.clip(y_pred, 0, 1)), axis=0), axis=0), axis=0), axis=0)\n'
         string_fxn += '\treturn true_positives['+str(label_idx)+'] / (predicted_positives['+str(label_idx)+'] + K.epsilon())\n'
-        
+
         exec(string_fxn)
         precision_fxn = eval(fxn_prefix + '_precision')
         precision_fxns.append(precision_fxn)
-    
+
     return precision_fxns
 
 
@@ -341,6 +392,7 @@ def get_metric_dict(output_tensor_maps):
                 metrics[m] = m
             else:
                 metrics[m.__name__] = m
+
         if tm.loss == 'categorical_crossentropy':
             losses.append(categorical_crossentropy)
         elif tm.loss == 'binary_crossentropy':
@@ -349,8 +401,8 @@ def get_metric_dict(output_tensor_maps):
             losses.append(mean_absolute_error)
         elif tm.loss == 'mean_squared_error' or tm.loss == 'mse':
             losses.append(mean_squared_error)
-        elif tm.loss == 'cosine_proximity':
-            losses.append(cosine_proximity)
+        elif tm.loss == 'cosine_similarity':
+            losses.append(cosine_similarity)
         elif tm.loss == 'logcosh':
             losses.append(logcosh)
         elif tm.loss == 'mape':
