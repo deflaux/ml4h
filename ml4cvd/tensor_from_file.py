@@ -14,8 +14,8 @@ import vtk.util.numpy_support
 from scipy.stats import linregress
 from tensorflow.keras.utils import to_categorical
 
-from ml4cvd.normalizer import Standardize
-from ml4cvd.metrics import weighted_crossentropy, sqrt_error, mean_quartic_error
+from ml4cvd.normalizer import Standardize, ZeroMeanStd1
+from ml4cvd.metrics import weighted_crossentropy, sqrt_error, mean_quartic_error, pearson
 from ml4cvd.tensor_writer_ukbb import tensor_path, first_dataset_at_path
 from ml4cvd.TensorMap import TensorMap, no_nans, str2date, make_range_validator, Interpretation
 from ml4cvd.defines import ECG_REST_LEADS, ECG_REST_MEDIAN_LEADS, ECG_REST_AMP_LEADS, ECG_SEGMENTED_CHANNEL_MAP
@@ -656,10 +656,10 @@ TMAPS['t2star'] = TensorMap('T2star', shape=(256, 288, 48), path_prefix='ukb_bra
 TMAPS['brain_mask_normed'] = TensorMap('brain_mask_normed', shape=(256, 288, 48), path_prefix='ukb_brain_mri/float_array/', normalization={'zero_mean_std1': True}, tensor_from_file=normalized_first_date)
 
 TMAPS['filtered_phase'] = TensorMap('filtered_phase', shape=(256, 288, 48), path_prefix='ukb_brain_mri/float_array/', normalization={'zero_mean_std1': True}, tensor_from_file=normalized_first_date)
-TMAPS['swi_to_t1_40_slices'] = TensorMap('swi_to_t1_40_slices', shape=(173, 231, 40), path_prefix='ukb_brain_mri/float_array/', 
+TMAPS['swi_to_t1_40_slices'] = TensorMap('swi_to_t1_40_slices', shape=(173, 231, 40), path_prefix='ukb_brain_mri/float_array/',
                                          normalization={'zero_mean_std1': True},
                                          tensor_from_file=_slice_subset_tensor('SWI_TOTAL_MAG_to_T1', 60, 140, 2))
-TMAPS['t2star_to_t1_40_slices'] = TensorMap('t2star_to_t1_40_slices', shape=(173, 231, 40), path_prefix='ukb_brain_mri/float_array/', 
+TMAPS['t2star_to_t1_40_slices'] = TensorMap('t2star_to_t1_40_slices', shape=(173, 231, 40), path_prefix='ukb_brain_mri/float_array/',
                                             normalization={'zero_mean_std1': True},
                                             tensor_from_file=_slice_subset_tensor('T2star_to_T1', 60, 140, 2))
 
@@ -708,19 +708,19 @@ def _mask_subset_tensor(tensor_key, start, stop, step=1, pad_shape=None):
     return mask_subset_from_file
 
 
-TMAPS['swi_brain_mask'] = TensorMap('SWI_brain_mask', Interpretation.CATEGORICAL, shape=(256, 288, 48, 2), path_prefix='ukb_brain_mri/float_array/', 
+TMAPS['swi_brain_mask'] = TensorMap('SWI_brain_mask', Interpretation.CATEGORICAL, shape=(256, 288, 48, 2), path_prefix='ukb_brain_mri/float_array/',
                                     tensor_from_file=_mask_from_file, channel_map={'not_brain': 0, 'brain': 1})
-TMAPS['t1_brain_mask'] = TensorMap('T1_brain_mask', Interpretation.CATEGORICAL, shape=(192, 256, 256, 2), path_prefix='ukb_brain_mri/float_array/', 
+TMAPS['t1_brain_mask'] = TensorMap('T1_brain_mask', Interpretation.CATEGORICAL, shape=(192, 256, 256, 2), path_prefix='ukb_brain_mri/float_array/',
                                    tensor_from_file=_mask_from_file, channel_map={'not_brain': 0, 'brain': 1})
-TMAPS['t1_seg'] = TensorMap('T1_fast_T1_brain_seg', Interpretation.CATEGORICAL, shape=(192, 256, 256, 4), path_prefix='ukb_brain_mri/float_array/', 
+TMAPS['t1_seg'] = TensorMap('T1_fast_T1_brain_seg', Interpretation.CATEGORICAL, shape=(192, 256, 256, 4), path_prefix='ukb_brain_mri/float_array/',
                             tensor_from_file=_mask_from_file, channel_map={'not_brain_tissue': 0, 'csf': 1, 'grey': 2, 'white': 3})
-TMAPS['t1_seg_30_slices'] = TensorMap('T1_fast_T1_brain_seg_30_slices', Interpretation.CATEGORICAL, shape=(192, 256, 30, 4), path_prefix='ukb_brain_mri/float_array/', 
+TMAPS['t1_seg_30_slices'] = TensorMap('T1_fast_T1_brain_seg_30_slices', Interpretation.CATEGORICAL, shape=(192, 256, 30, 4), path_prefix='ukb_brain_mri/float_array/',
                                       tensor_from_file=_mask_subset_tensor('T1_fast_T1_brain_seg', 90, 150, 2, pad_shape=(192, 256, 256, 1)),
                                       channel_map={'not_brain_tissue': 0, 'csf': 1, 'grey': 2, 'white': 3})
-TMAPS['t1_brain_mask_30_slices'] = TensorMap('T1_brain_mask_30_slices', Interpretation.CATEGORICAL, shape=(192, 256, 30, 2), path_prefix='ukb_brain_mri/float_array/', 
+TMAPS['t1_brain_mask_30_slices'] = TensorMap('T1_brain_mask_30_slices', Interpretation.CATEGORICAL, shape=(192, 256, 30, 2), path_prefix='ukb_brain_mri/float_array/',
                                              tensor_from_file=_mask_subset_tensor('T1_brain_mask', 90, 150, 2, pad_shape=(192, 256, 256, 1)),
                                              channel_map={'not_brain': 0, 'brain': 1})
-TMAPS['lesions'] = TensorMap('lesions_final_mask', Interpretation.CATEGORICAL, shape=(192, 256, 256, 2), path_prefix='ukb_brain_mri/float_array/', 
+TMAPS['lesions'] = TensorMap('lesions_final_mask', Interpretation.CATEGORICAL, shape=(192, 256, 256, 2), path_prefix='ukb_brain_mri/float_array/',
                              tensor_from_file=_mask_from_file, channel_map={'not_lesion': 0, 'lesion': 1}, loss=weighted_crossentropy([0.01, 10.0], 'lesion'))
 
 
@@ -1522,6 +1522,20 @@ def _build_peak_exercise(augmentations: [Callable], leads: Union[List[int], slic
     return tff
 
 
+def _build_recovery_downsampled(leads: Union[List[int], slice], downsample_rate=8):
+
+    def tff(tm: TensorMap, hd5: h5py.File, dependents=None):
+        _check_phase_full_len(hd5, 'rest')
+        pretest_dur = _get_tensor_at_first_date(hd5, 'ecg_bike/continuous', 'exercise_duration')
+        exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike/continuous', 'exercise_duration')
+        shift = 50 - 100 * np.random.rand()
+        exercise_end = int(500 * (pretest_dur + exercise_dur - 7) + shift)  # 5 seconds before recovery begins
+        ecg = _get_bike_ecg(hd5, tm, exercise_end, stop=exercise_end + (5 + 50) * 500, leads=leads)
+        return _downsample(ecg, downsample_rate)
+
+    return tff
+
+
 def _build_end_recovery(augmentations: [Callable], leads: Union[List[int], slice]):
 
     def tff(tm: TensorMap, hd5: h5py.File, dependents=None):
@@ -1542,6 +1556,13 @@ def _build_end_recovery(augmentations: [Callable], leads: Union[List[int], slice
 TMAPS['ecg-bike-pretest-leadI'] = TensorMap('full', shape=(2048, 1), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
                                             validator=no_nans, normalization={'mean': 7, 'std': 31}, metrics=['mse'],
                                             tensor_from_file=_build_bike_ecg_tensor_from_file(0, [0]),)
+
+
+TMAPS['ecg-bike-recovery-downsampled8x'] = TensorMap(
+    'recovery_ecg', shape=(3437, 3), path_prefix='ecg_bike/float_array', interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization={'mean': 7, 'std': 31}, metrics=['mse'],
+    tensor_from_file=_build_recovery_downsampled([0, 1, 2])
+)
 
 
 def _build_augmented_bike_ecg_tmaps():
@@ -2007,6 +2028,54 @@ TMAPS['ecg-bike-hrr-10s-ramp'] = TensorMap('hrr', loss='logcosh', metrics=['mae'
                                            interpretation=Interpretation.CONTINUOUS,
                                            validator=make_range_validator(0, 42),
                                            tensor_from_file=_make_ramp(_build_tensor_from_file('/home/ndiamant/filtered_hrr10_phenotype.tsv', 'hrr')))
+TMAPS['ecg-bike-peak-hr-ramp'] = TensorMap('peak_hr', loss='logcosh', metrics=['mae'], shape=(1,),
+                                           normalization={'mean': 113, 'std': 15},
+                                           interpretation=Interpretation.CONTINUOUS,
+                                           validator=make_range_validator(40, 220),
+                                           tensor_from_file=_make_ramp(_build_tensor_from_file('/home/ndiamant/filtered_hrr10_phenotype.tsv', 'peak_hr')))
+TMAPS['ecg-bike-peak-hr'] = TensorMap('peak_hr', loss='logcosh', metrics=['mae'], shape=(1,),
+                                           normalization={'mean': 113, 'std': 15},
+                                           interpretation=Interpretation.CONTINUOUS,
+                                           validator=make_range_validator(40, 220),
+                                           tensor_from_file=_build_tensor_from_file('/home/ndiamant/filtered_hrr10_phenotype.tsv', 'peak_hr'))
+def _hr_achieved(tm: TensorMap, hd5: h5py.File, dependents=None):
+    peak_hr_tmap = TMAPS['ecg-bike-peak-hr']
+    peak_hr = peak_hr_tmap.tensor_from_file(peak_hr_tmap, hd5)
+    age_tmap = TMAPS['ecg-bike-age']
+    age = age_tmap.tensor_from_file(age_tmap, hd5)
+    return peak_hr / (220 - age)
+
+TMAPS['ecg-bike-hr-achieved-ramp'] = TensorMap(
+    'hr_achieved', loss='logcosh', metrics=['mae'], shape=(1,),
+    interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=_make_ramp(_hr_achieved),
+)
+TMAPS['ecg-bike-hr-achieved'] = TensorMap(
+    'hr_achieved', loss='logcosh', metrics=['mae'], shape=(1,),
+    interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=_hr_achieved,
+)
+
+
+def constant_tff(constant: float):
+    def tff(*args, **kwargs):
+        return np.array([constant])
+    return tff
+
+
+TMAPS['ecg-bike-hr-achieved-75'] = TensorMap(
+    'hr_achieved', loss='logcosh', metrics=['mae'], shape=(1,),
+    interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=constant_tff(.75),
+)
+TMAPS['ecg-bike-hr-achieved-85'] = TensorMap(
+    'hr_achieved', loss='logcosh', metrics=['mae'], shape=(1,),
+    interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=constant_tff(.85),
+)
+
+
+
 TMAPS['ecg-bike-hrr-50s-ramp'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
                                            normalization={'mean': 27.6, 'std': 10.9},
                                            interpretation=Interpretation.CONTINUOUS,
@@ -2038,7 +2107,7 @@ TMAPS['ecg-bike-hrr-ramp-transfer'] = TensorMap(
     normalization={'mean': 25, 'std': 15},
     interpretation=Interpretation.CONTINUOUS,
     validator=make_range_validator(0, 110),
-    tensor_from_file=_make_ramp(_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=',')))
+    tensor_from_file=_build_tensor_from_file('/home/ndiamant/ensemble_hrr.csv', 'hrr', delimiter=','))
 TMAPS['ecg-bike-hrr-raw-ensemble-noised'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
                                                       normalization={'mean': 25, 'std': 15}, cacheable=False,
                                                       interpretation=Interpretation.CONTINUOUS,
@@ -2086,6 +2155,10 @@ TMAPS['ecg-bike-hrr-raw-file-4th-order'] = TensorMap('hrr', loss=mean_quartic_er
                                            validator=make_range_validator(0, 110),
                                            tensor_from_file=_build_tensor_from_file('/home/ndiamant/raw_hrr.csv', 'hrr', delimiter=','))
 TMAPS['ecg-bike-hrr'] = TensorMap('hrr', loss='logcosh', metrics=['mae'], shape=(1,),
+                                  normalization={'mean': 25, 'std': 15},
+                                  interpretation=Interpretation.CONTINUOUS,
+                                  tensor_from_file=_hrr_qc)
+TMAPS['ecg-bike-hrr-trend'] = TensorMap('hrr_trend', loss='logcosh', metrics=['mae'], shape=(1,),
                                   normalization={'mean': 25, 'std': 15},
                                   interpretation=Interpretation.CONTINUOUS,
                                   tensor_from_file=_hrr_qc)
@@ -2138,6 +2211,77 @@ TMAPS['ecg_rest_shifted_8xdownsampled_transfer'] = TensorMap('full_rest', Interp
                                                              tensor_from_file=_make_ecg_rest_downsampled(8),
                                                              normalization={'mean': 17.5, 'std': 47.8}, cacheable=False,
                                                              augmentations=[_warp_ecg, _rand_add_noise, _rand_roll])
+TMAPS['ecg_rest_age_transfer'] = TensorMap('21003_Age-when-attended-assessment-centre_2_0', Interpretation.CONTINUOUS, path_prefix='continuous', loss='logcosh', validator=make_range_validator(1, 120),
+                           normalization=None, channel_map={'21003_Age-when-attended-assessment-centre_2_0': 0, })
+
+
+def _hr_achieved_transfer(tm: TensorMap, hd5: h5py.File, dependents=None):
+    peak_hr_tmap = TMAPS['ecg-bike-peak-hr']
+    peak_hr = peak_hr_tmap.tensor_from_file(peak_hr_tmap, hd5)
+    age_tmap = TMAPS['ecg_rest_age_transfer']
+    age = age_tmap.tensor_from_file(age_tmap, hd5)
+    return peak_hr / (220 - age)
+
+
+TMAPS['ecg-bike-hr-achieved-transfer'] = TensorMap(
+    'hr_achieved', loss='logcosh', metrics=['mae'], shape=(1,),
+    interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=_hr_achieved_transfer,
+)
+
+
+BIOSPPY_SENTINEL = -1000
+BIOSPPY_DIFF_CUTOFF = 5
+def _hr_biosppy(file_name: str, time: int, hrr=False):
+    error = None
+    try:
+        df = pd.read_csv(file_name, dtype={'sample_id': str})
+        df = df.set_index('sample_id')
+    except FileNotFoundError as e:
+        error = e
+    def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
+        if error:
+            raise error
+        sample_id = os.path.basename(hd5.filename).replace('.hd5', '')
+        try:
+            row = df.loc[sample_id]
+            hr, diff = row[f'{time}_hr'], row[f'{time}_diff']
+            if diff > BIOSPPY_DIFF_CUTOFF:
+                out = BIOSPPY_SENTINEL
+            if hrr:
+                peak, peak_diff = row[f'0_hr'], row[f'0_diff']
+                if peak_diff > BIOSPPY_DIFF_CUTOFF:
+                    out = BIOSPPY_SENTINEL
+                out = peak - hr
+            else:
+                out = hr
+            if np.isnan(out):
+                out = BIOSPPY_SENTINEL
+            return np.array([out])
+        except KeyError:
+            raise KeyError('sample id not in data')
+    return tensor_from_file
+
+
+def _make_hr_biosppy_tmaps():
+    for time in 0, 10, 20, 30, 40, 50:
+        TMAPS[f'ecg-bike-{time}_hr'] = TensorMap(
+            f'{time}_hr', metrics=['mae', pearson], shape=(1,),
+            interpretation=Interpretation.CONTINUOUS,
+            sentinel=BIOSPPY_SENTINEL,
+            tensor_from_file=_hr_biosppy('/home/ndiamant/biosppy_hr_recovery_measurements.csv', time),
+        )
+    for time in 0, 10, 20, 30, 40, 50:
+        TMAPS[f'ecg-bike-{time}_hrr'] = TensorMap(
+            f'{time}_hrr', metrics=['mae', pearson], shape=(1,),
+            interpretation=Interpretation.CONTINUOUS,
+            sentinel=BIOSPPY_SENTINEL,
+            tensor_from_file=_hr_biosppy('/home/ndiamant/biosppy_hr_recovery_measurements.csv', time, hrr=True),
+            parents=[TMAPS[f'ecg-bike-{time}_hr'], TMAPS['ecg-bike-0_hr']],
+        )
+
+
+_make_hr_biosppy_tmaps()
 
 
 def _hr_5_second_segment(file_name: str, col: str, delimiter: str = ','):
@@ -2156,14 +2300,21 @@ def _hr_5_second_segment(file_name: str, col: str, delimiter: str = ','):
             raise error
         sample_id = os.path.basename(hd5.filename).replace('.hd5', '')
         try:
+            row = df.loc[sample_id].sample(1)
             if col == 'bad_measure':
-                return np.array([0, 1]) if df.loc[sample_id][col] else np.array([1, 0])  # label 1 if bad measure
-            elif col == 'hr':
-                return np.array(df.loc[sample_id][col])
+                return np.array([0, 1]) if row[col] else np.array([1, 0])  # label 1 if bad measure
+            elif col in {'hr', 'bpm'}:
+                return np.array(row[col])
             elif col == 'start_index':
-                index = int(df.loc[sample_id][col])
+                index = int(row[col])
                 ecg_dataset = first_dataset_at_path(hd5, tensor_path(path_prefix, name))
-                return ecg_dataset[index: 500 * 5 + index]
+                offset = np.random.randint(-10, 10)
+                ecg_dataset = ecg_dataset[index + offset: 500 * 5 + index + offset]
+                if len(ecg_dataset) < 2500:
+                    raise ValueError('ECG segment too short.')
+                if tm.shape[0] != len(ecg_dataset):
+                    ecg_dataset = _downsample(ecg_dataset, len(ecg_dataset) // tm.shape[0])
+                return ecg_dataset
             else:
                 raise ValueError(f'Col {col} not in file.')
         except KeyError:
@@ -2173,16 +2324,30 @@ def _hr_5_second_segment(file_name: str, col: str, delimiter: str = ','):
 
 TMAPS['ecg-bike-hr-segment'] = TensorMap(
     'hr', loss='logcosh', metrics=['mae'], shape=(1,), normalization=Standardize(99, 20), interpretation=Interpretation.CONTINUOUS,
-    tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality.csv', 'hr'),
+    tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality_4.csv', 'hr'),
 )
 TMAPS['ecg-bike-quality-segment'] = TensorMap(
     'quality', shape=(2,), interpretation=Interpretation.CATEGORICAL, channel_map={'high_quality': 0, 'low_quality': 1},
-    tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality.csv', 'bad_measure'),
+    tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality_4.csv', 'bad_measure'),
 )
 TMAPS['ecg-bike-segment'] = TensorMap(
     'ecg_segment', shape=(2500, 3), interpretation=Interpretation.CONTINUOUS, cacheable=False,
-    tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality.csv', 'start_index'),
-    augmentations=[_warp_ecg, _rand_offset, _rand_add_noise]
+    tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_quality_4.csv', 'start_index'), normalization=ZeroMeanStd1(),
+    augmentations=[_rand_offset, _rand_add_noise]
+)
+TMAPS['ecg-bike-bpm-segment'] = TensorMap(
+    'bpm', loss='logcosh', metrics=['mae'], shape=(1,), normalization=Standardize(94, 17), interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_training_data.csv', 'bpm'), cacheable=False,
+)
+TMAPS['ecg-bike-segment-for-bpm'] = TensorMap(
+    'ecg_segment', shape=(2500, 3), interpretation=Interpretation.CONTINUOUS, cacheable=False,
+    tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_training_data.csv', 'start_index'), normalization=ZeroMeanStd1(),
+    augmentations=[_rand_offset, _rand_add_noise]
+)
+TMAPS['ecg-bike-segment-for-bpm-down4x'] = TensorMap(
+    'ecg_segment', shape=(625, 3), interpretation=Interpretation.CONTINUOUS, cacheable=False,
+    tensor_from_file=_hr_5_second_segment('/home/ndiamant/hr_training_data.csv', 'start_index'), normalization=ZeroMeanStd1(),
+    augmentations=[_rand_offset, _rand_add_noise]
 )
 
 
