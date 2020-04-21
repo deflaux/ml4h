@@ -13,6 +13,7 @@ DOCKER_IMAGE=${DOCKER_IMAGE_GPU}
 DOCKER_COMMAND="docker" #"nvidia-docker"
 PORT="8888"
 SCRIPT_NAME=$( echo $0 | sed 's#.*/##g' )
+USER=$(whoami)
 
 ################### HELP TEXT ############################################
 
@@ -34,12 +35,14 @@ usage()
         -p                  Port to use, by default '${PORT}'
 
         -i      <image>     Run Docker with the specified custom <image>. The default image is '${DOCKER_IMAGE}'.
+        -u	<user>      Run docker as user <user>.
+        -m                  Directories to mount at the same path in the docker image
 USAGE_MESSAGE
 }
 
 ################### OPTION PARSING #######################################
 
-while getopts ":ip:ch" opt ; do
+while getopts ":i:p:u:m:ch" opt ; do
     case ${opt} in
         h)
             usage
@@ -48,12 +51,18 @@ while getopts ":ip:ch" opt ; do
         i)
             DOCKER_IMAGE=$OPTARG
             ;;
+        u)
+            USER=$OPTARG
+            ;;
         p)
             PORT=$OPTARG
             ;;
         c)
             DOCKER_IMAGE=${DOCKER_IMAGE_NO_GPU}
             DOCKER_COMMAND=docker
+            ;;
+	m)
+            MOUNTS="-v ${OPTARG}:${OPTARG}"
             ;;
         :)
             echo "ERROR: Option -${OPTARG} requires an argument." 1>&2
@@ -80,9 +89,6 @@ shift $((OPTIND - 1))
 # Get your external IP directly from a DNS provider
 WANIP=$(dig +short myip.opendns.com @resolver1.opendns.com)
 
-# Let anyone run this script
-USER=$(whoami)
-
 echo 'Launching docker.'
 echo 'Locally, you should now run:'
 echo $(tput setaf 1)$(tput setab 7)"gcloud compute ssh ${USER}@$(hostname) -- -NnT -L ${PORT}:localhost:${PORT}"$(tput sgr 0)
@@ -100,6 +106,7 @@ ${DOCKER_COMMAND} run -it \
 --ipc=host \
 -v /home/${USER}/:/home/${USER}/ \
 -v /mnt/:/mnt/ \
+${MOUNTS} \
 -p 0.0.0.0:${PORT}:${PORT} \
 ${DOCKER_IMAGE} /bin/bash -c "pip install -e /home/${USER}/ml; jupyter notebook --no-browser --ip=0.0.0.0 --port=${PORT} --NotebookApp.token= --allow-root --notebook-dir=/home/${USER}"
 
