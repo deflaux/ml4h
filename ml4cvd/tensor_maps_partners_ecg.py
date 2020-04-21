@@ -1,6 +1,8 @@
 import os
+import json
 import logging
 import datetime
+import pandas as pd
 from collections import defaultdict
 from typing import Dict, List, Callable
 
@@ -13,6 +15,7 @@ from ml4cvd.metrics import weighted_crossentropy
 from ml4cvd.tensor_maps_by_hand import TMAPS
 from ml4cvd.defines import ECG_REST_AMP_LEADS
 from ml4cvd.TensorMap import TensorMap, str2date, make_range_validator, Interpretation
+from ml4cvd.normalizer import Standardize, ZeroMeanStd1
 
 
 INCIDENCE_CSV = '/media/erisone_snf13/lc_outcomes.csv'
@@ -65,6 +68,12 @@ def _resample_voltage(voltage, desired_samples):
         raise ValueError(f'Voltage length {len(voltage)} is not desired {desired_samples} and re-sampling method is unknown.')
 
 
+def _resample_voltage_interpolate(voltage, desired_samples):
+    x = np.linspace(0, 1, len(voltage))
+    x_interp = np.linspace(0, 1, desired_samples)
+    return np.interp(x_interp, x, voltage)
+
+
 def _resample_voltage_with_rate(voltage, desired_samples, rate, desired_rate):
     if len(voltage) == desired_samples and rate == desired_rate:
         return voltage
@@ -89,10 +98,6 @@ def make_voltage(population_normalize: float = None):
             voltage = _decompress_data(data_compressed=hd5[cm][()], dtype=hd5[cm].attrs['dtype'])
             voltage = _resample_voltage(voltage, tm.shape[0])
             tensor[:, tm.channel_map[cm]] = voltage
-        if population_normalize is None:
-            tm.normalization = {'zero_mean_std1': True}
-        else:
-            tensor /= population_normalize
         return tensor
     return get_voltage_from_file
 
@@ -105,8 +110,8 @@ TMAPS['partners_ecg_voltage'] = TensorMap(
     channel_map=ECG_REST_AMP_LEADS,
 )
 
-TMAPS['partners_ecg_2500'] = TensorMap('ecg_rest_2500', shape=(2500, 12), tensor_from_file=make_voltage(), channel_map=ECG_REST_AMP_LEADS)
-TMAPS['partners_ecg_5000'] = TensorMap('ecg_rest_5000', shape=(5000, 12), tensor_from_file=make_voltage(), channel_map=ECG_REST_AMP_LEADS)
+TMAPS['partners_ecg_2500'] = TensorMap('ecg_rest_2500', shape=(2500, 12), tensor_from_file=make_voltage(), channel_map=ECG_REST_AMP_LEADS, normalization=ZeroMeanStd1())
+TMAPS['partners_ecg_5000'] = TensorMap('ecg_rest_5000', shape=(5000, 12), tensor_from_file=make_voltage(), channel_map=ECG_REST_AMP_LEADS, normalization=ZeroMeanStd1())
 TMAPS['partners_ecg_2500_raw'] = TensorMap('ecg_rest_2500_raw', shape=(2500, 12), tensor_from_file=make_voltage(population_normalize=2000.0), channel_map=ECG_REST_AMP_LEADS)
 TMAPS['partners_ecg_5000_raw'] = TensorMap('ecg_rest_5000_raw', shape=(5000, 12), tensor_from_file=make_voltage(population_normalize=2000.0), channel_map=ECG_REST_AMP_LEADS)
 
@@ -659,3 +664,36 @@ def build_partners_tensor_maps(needed_tensor_maps: List[str]) -> Dict[str, Tenso
             tff = _survival_from_file(3650, INCIDENCE_CSV, diagnosis_column=diagnosis2column[diagnosis], incidence_only=True)
             name2tensormap[name] = TensorMap(name, Interpretation.COX_PROPORTIONAL_HAZARDS, shape=(50,), tensor_from_file=tff)
     return name2tensormap
+
+
+def _build_pressure_tff(key: str):
+    error = None
+    try:
+        pressures = pd.read_csv('/data/apollo/DI_ecg_pressures_labs_processed.csv')
+        pressures = pressures.groupby('Index').first()
+        pressures = pressures[pressures['ECG_waveform_within_window'].str.contains('.hd5', na=False)]
+        pressures = pressures.drop_duplicates('ECG_waveform_within_window')
+        def convert_row_to_val(row):
+            if type(row) == str:
+                d = json.loads(row.replace("'", '"'))
+                if 'Rest' in d:
+                    return float(d['Rest'][0])
+            return np.nan
+        vals = list(map(convert_row_to_val, pressures[key]))
+        pressures['val'] = vals
+        pressures = pressures[['ECG_waveform_within_window', 'val']]
+        pressures = pressures.set_index('ECG_waveform_within_window').dropna()
+    except FileNotFoundError as e:
+        error = e
+    def tff(tm, hd5, dependents=None):
+        if error:
+            raise FileNotFoundError(error)
+        sample = hd5.filename
+        if sample not in pressures.index:
+            raise KeyError(f'Sample does not have {key}')
+        return np.array([pressures.loc[sample]])
+    return tff
+
+
+TMAPS['pressure_hr'] = TensorMap('hr', shape=(1,), tensor_from_file=_build_pressure_tff('HR'), interpretation=Interpretation.CONTINUOUS, loss='logcosh')
+TMAPS['pressure_RA_mean_pressure'] = TensorMap('RA_mean_pressure', shape=(1,), tensor_from_file=_build_pressure_tff('RA_mean_pressure'), interpretation=Interpretation.CONTINUOUS, loss='logcosh')
