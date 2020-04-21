@@ -91,7 +91,7 @@ def _resample_voltage_with_rate(voltage, desired_samples, rate, desired_rate):
         raise ValueError(f'Voltage length {len(voltage)} is not desired {desired_samples} with desired rate {desired_rate} and rate {rate}.')
 
 
-def make_voltage(population_normalize: float = None):
+def make_voltage():
     def get_voltage_from_file(tm, hd5, dependents={}):
         tensor = np.zeros(tm.shape, dtype=np.float32)
         for cm in tm.channel_map:
@@ -106,14 +106,15 @@ TMAPS['partners_ecg_voltage'] = TensorMap(
     'partners_ecg_voltage',
     shape=(2500, 12),
     interpretation=Interpretation.CONTINUOUS,
-    tensor_from_file=make_voltage(population_normalize=2000.0),
+    tensor_from_file=make_voltage(),
     channel_map=ECG_REST_AMP_LEADS,
+    normalization=Standardize(0, 2000),
 )
 
 TMAPS['partners_ecg_2500'] = TensorMap('ecg_rest_2500', shape=(2500, 12), tensor_from_file=make_voltage(), channel_map=ECG_REST_AMP_LEADS, normalization=ZeroMeanStd1())
 TMAPS['partners_ecg_5000'] = TensorMap('ecg_rest_5000', shape=(5000, 12), tensor_from_file=make_voltage(), channel_map=ECG_REST_AMP_LEADS, normalization=ZeroMeanStd1())
-TMAPS['partners_ecg_2500_raw'] = TensorMap('ecg_rest_2500_raw', shape=(2500, 12), tensor_from_file=make_voltage(population_normalize=2000.0), channel_map=ECG_REST_AMP_LEADS)
-TMAPS['partners_ecg_5000_raw'] = TensorMap('ecg_rest_5000_raw', shape=(5000, 12), tensor_from_file=make_voltage(population_normalize=2000.0), channel_map=ECG_REST_AMP_LEADS)
+TMAPS['partners_ecg_2500_raw'] = TensorMap('ecg_rest_2500_raw', shape=(2500, 12), tensor_from_file=make_voltage(), channel_map=ECG_REST_AMP_LEADS, normalization=Standardize(0, 2000))
+TMAPS['partners_ecg_5000_raw'] = TensorMap('ecg_rest_5000_raw', shape=(5000, 12), tensor_from_file=make_voltage(), channel_map=ECG_REST_AMP_LEADS, normalization=Standardize(0, 2000))
 
 
 def make_voltage_attr(volt_attr: str = ""):
