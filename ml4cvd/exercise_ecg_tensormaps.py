@@ -26,7 +26,8 @@ HR_SEGMENT_DUR = 10  # HR measurements in recovery coalesced across a segment of
 TREND_TRACE_DUR_DIFF = 2  # Sum of phase durations from UKBB is 2s longer than the raw traces
 
 TENSOR_FOLDER = '/mnt/disks/ecg-bike-tensors/2019-10-10/'
-OUTPUT_FOLDER = os.path.join(str(pathlib.Path.home()), 'ml/hrr_results')
+USER = 'ndiamant'
+OUTPUT_FOLDER = f'/home/{USER}/ml/hrr_results'
 BIOSPPY_MEASUREMENTS_PATH = os.path.join(OUTPUT_FOLDER, 'biosppy_hr_recovery_measurements.csv')
 FIGURE_FOLDER = os.path.join(OUTPUT_FOLDER, 'figures')
 
@@ -76,7 +77,7 @@ def _get_trace_recovery_start(hd5: h5py.File) -> int:
     return int(SAMPLING_RATE * (pretest_dur + exercise_dur - HR_SEGMENT_DUR / 2 - TREND_TRACE_DUR_DIFF))
 
 
-def _make_recovery_ecg_tff(downsample_rate: int, leads: Union[List[int], slice], random_start=True):
+def _make_recovery_ecg_tff(downsample_rate: int, leads: Union[List[int], slice], random_start=False):
     def tff(tm: TensorMap, hd5: h5py.File, dependents=None):
         shift = np.random.randint(-100, 0) if random_start else 0  # .2 second random shift as augmentation
         recovery_start = _get_trace_recovery_start(hd5) + shift
@@ -148,10 +149,10 @@ def _get_biosppy_hr(segment: np.ndarray) -> float:
 
 def _get_segments_for_biosppy(hd5: h5py.File):
     recovery_start_idx = _get_trace_recovery_start(hd5)
-    length = (HR_MEASUREMENT_TIMES[-1] - HR_MEASUREMENT_TIMES[0] + HR_SEGMENT_DUR) * SAMPLING_RATE
+    length = (HR_MEASUREMENT_TIMES[-1] - HR_MEASUREMENT_TIMES[0] + HR_SEGMENT_DUR) * SAMPLING_RATE // BIOSPPY_DOWNSAMPLE_RATE
     ecg = _get_downsampled_bike_ecg(length, hd5, recovery_start_idx, BIOSPPY_DOWNSAMPLE_RATE, [0, 1, 2])
     for mid_time in HR_MEASUREMENT_TIMES:
-        yield _get_segment_for_biosppy(ecg, mid_time + recovery_start_idx // SAMPLING_RATE)
+        yield _get_segment_for_biosppy(ecg, mid_time + HR_SEGMENT_DUR // 2)
 
 
 def _hr_and_diffs_from_segment(segment: np.ndarray) -> Tuple[float, float]:
@@ -202,10 +203,11 @@ def build_hr_biosppy_measurements_csv():
     paths = [os.path.join(TENSOR_FOLDER, p) for p in os.listdir(TENSOR_FOLDER)]
     pool = Pool()
     now = time.time()
-    measures = pool.map(_recovery_hrs_biosppy, paths)
+    measures = pool.map(_recovery_hrs_from_path, paths)
     df = pd.DataFrame(measures)
     delta_t = time.time() - now
     logging.info(f'Getting hr measurements from biosppy took {delta_t // 60} minutes at {delta_t / len(paths):.2f}s per path.')
+    print(f'Getting hr measurements from biosppy took {delta_t // 60} minutes at {delta_t / len(paths):.2f}s per path.')
     df.to_csv(BIOSPPY_MEASUREMENTS_PATH, index=False)
 
 
