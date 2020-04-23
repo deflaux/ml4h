@@ -18,14 +18,22 @@ import operator
 import datetime
 import numpy as np
 import multiprocessing
-from typing import List
+from typing import Set, Dict, List, Optional
+from collections import defaultdict
 
 from ml4cvd.logger import load_config
 from ml4cvd.TensorMap import TensorMap
+from ml4cvd.models import parent_sort, BottleneckType
 from ml4cvd.tensor_maps_by_hand import TMAPS
 from ml4cvd.defines import IMPUTATION_RANDOM, IMPUTATION_MEAN
 from ml4cvd.tensor_maps_partners_ecg import build_partners_tensor_maps
 from ml4cvd.tensor_map_maker import generate_continuous_tensor_map_from_file
+
+
+BOTTLENECK_STR_TO_ENUM = {
+    'flatten_restructure': BottleneckType.FlattenRestructure,
+    'global_average_pool': BottleneckType.GlobalAveragePoolStructured,
+}
 
 
 def parse_args():
@@ -123,7 +131,7 @@ def parse_args():
     parser.add_argument('--zoom_height', default=96, type=int, help='zoom_height tensor resolution')
     parser.add_argument('--z', default=48, type=int, help='z tensor resolution')
     parser.add_argument('--t', default=48, type=int, help='Number of time slices')
-    parser.add_argument('--mlp_concat', default=False, action='store_true', help='Concatenate input with every multiplayer perceptron layer.')
+    parser.add_argument('--mlp_concat', default=False, action='store_true', help='Concatenate input with every multiplayer perceptron layer.')  # TODO: should be the same style as u_connect
     parser.add_argument('--dense_layers', nargs='*', default=[16, 64], type=int, help='List of number of hidden units in neural nets dense layers.')
     parser.add_argument('--dropout', default=0.0, type=float, help='Dropout rate of dense layers must be in [0.0, 1.0].')
     parser.add_argument('--activation', default='relu',  help='Activation function for hidden units in neural nets dense layers.')
@@ -131,7 +139,6 @@ def parse_args():
     parser.add_argument('--conv_x', default=3, type=int, help='X dimension of convolutional kernel.')
     parser.add_argument('--conv_y', default=3, type=int, help='Y dimension of convolutional kernel.')
     parser.add_argument('--conv_z', default=2, type=int, help='Z dimension of convolutional kernel.')
-    parser.add_argument('--conv_width', default=71, type=int, help='Width of convolutional kernel for 1D CNNs.')
     parser.add_argument('--conv_dilate', default=False, action='store_true', help='Dilate the convolutional layers.')
     parser.add_argument('--conv_dropout', default=0.0, type=float, help='Dropout rate of convolutional kernels must be in [0.0, 1.0].')
     parser.add_argument('--conv_type', default='conv', choices=['conv', 'separable', 'depth'], help='Type of convolutional layer')
@@ -146,15 +153,17 @@ def parse_args():
     parser.add_argument('--padding', default='same', help='Valid or same border padding on the convolutional layers.')
     parser.add_argument('--dense_blocks', nargs='*', default=[32, 24, 16], type=int, help='List of number of kernels in convolutional layers.')
     parser.add_argument('--block_size', default=3, type=int, help='Number of convolutional layers within a block.')
-    parser.add_argument('--u_connect', default=False, action='store_true', help='Connect early convolutional layers to later ones of the same size, as in U-Net.')
+    parser.add_argument(
+        '--u_connect', nargs=2, action='append',
+        help='U-Net connect first TensorMap to second TensorMap. They must be the same shape except for number of channels. Can be provided multiple times.',
+    )
     parser.add_argument('--aligned_dimension', default=16, type=int, help='Dimensionality of aligned embedded space for multi-modal alignment models.')
     parser.add_argument(
         '--max_parameters', default=9000000, type=int,
         help='Maximum number of trainable parameters in a model during hyperparameter optimization.',
     )
+    parser.add_argument('--bottleneck_type', type=str, default=list(BOTTLENECK_STR_TO_ENUM)[0], choices=list(BOTTLENECK_STR_TO_ENUM))
     parser.add_argument('--hidden_layer', default='embed', help='Name of a hidden layer for inspections.')
-    parser.add_argument('--language_layer', default='ecg_rest_text', help='Name of TensorMap for learning language models (eg train_char_model).')
-    parser.add_argument('--language_prefix', default='ukb_ecg_rest', help='Path prefix for a TensorMap to learn language models (eg train_char_model)')
     parser.add_argument('--variational', default=False, action='store_true', help='Make the embed layer variational. No U-connections.')
 
     # Training and Hyper-Parameter Optimization Parameters
@@ -184,7 +193,7 @@ def parse_args():
         help='Maximum number of models for the hyper-parameter optimizer to evaluate before returning.',
     )
     parser.add_argument('--balance_csvs', default=[], nargs='*', help='Balances batches with representation from sample IDs in this list of CSVs')
-    parser.add_argument('--optimizer', default='adam', type=str, help='Optimizer for model training')
+    parser.add_argument('--optimizer', default='radam', type=str, help='Optimizer for model training')
     parser.add_argument('--learning_rate_schedule', default=None, type=str, choices=['triangular', 'triangular2'], help='Adjusts learning rate during training.')
     parser.add_argument('--anneal_rate', default=0., type=float, help='Annealing rate in epochs of loss terms during training')
     parser.add_argument('--anneal_shift', default=0., type=float, help='Annealing offset in epochs of loss terms during training')
@@ -195,7 +204,6 @@ def parse_args():
     parser.add_argument('--random_seed', default=12878, type=int, help='Random seed to use throughout run.  Always use np.random.')
     parser.add_argument('--write_pngs', default=False, action='store_true', help='Write pngs of slices.')
     parser.add_argument('--debug', default=False, action='store_true', help='Run in debug mode.')
-    parser.add_argument('--eager', default=False, action='store_true', help='Run tensorflow functions in eager execution mode (helpful for debugging).')
     parser.add_argument('--inspect_model', default=False, action='store_true', help='Plot model architecture, measure inference and training speeds.')
     parser.add_argument('--inspect_show_labels', default=True, action='store_true', help='Plot model architecture with labels for each layer.')
     parser.add_argument('--alpha', default=0.5, type=float, help='Alpha transparency for t-SNE plots must in [0.0-1.0].')
@@ -241,6 +249,20 @@ def _get_tmap(name: str, needed_tensor_maps: List[str]) -> TensorMap:
     return TMAPS[name]
 
 
+def _process_u_connect_args(u_connect: Optional[List[List]]) -> Dict[TensorMap, Set[TensorMap]]:
+    u_connect = u_connect or []
+    new_u_connect = defaultdict(set)
+    for connect_pair in u_connect:
+        tmap_key_in, tmap_key_out = connect_pair[0], connect_pair[1]
+        tmap_in, tmap_out = _get_tmap(tmap_key_in, []), _get_tmap(tmap_key_out, [])
+        if tmap_in.shape[:-1] != tmap_out.shape[:-1]:
+            raise TypeError(f'u_connect of {tmap_in} {tmap_out} requires matching shapes besides channel dimension.')
+        if tmap_in.axes() < 2 or tmap_out.axes() < 2:
+            raise TypeError(f'Cannot u_connect 1d TensorMaps ({tmap_in} {tmap_out}).')
+        new_u_connect[tmap_in].add(tmap_out)
+    return new_u_connect
+
+
 def _process_args(args):
     now_string = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
     args_file = os.path.join(args.output_folder, args.id, 'arguments_' + now_string + '.txt')
@@ -252,7 +274,8 @@ def _process_args(args):
         for k, v in sorted(args.__dict__.items(), key=operator.itemgetter(0)):
             f.write(k + ' = ' + str(v) + '\n')
     load_config(args.logging_level, os.path.join(args.output_folder, args.id), 'log_' + now_string, args.min_sample_id)
-    needed_tensor_maps = args.input_tensors + args.output_tensors + [args.sample_weight] if args.sample_weight else args.input_tensors + args.output_tensors
+    args.u_connect = _process_u_connect_args(args.u_connect)
+    needed_tensor_maps = args.input_tensors + args.output_tensors + [args.sample_weight] if args.sample_weight else []
     args.tensor_maps_in = [_get_tmap(it, needed_tensor_maps) for it in args.input_tensors]
     args.sample_weight = _get_tmap(args.sample_weight, needed_tensor_maps) if args.sample_weight else None
     if args.sample_weight:
@@ -271,6 +294,9 @@ def _process_args(args):
             ),
         )
     args.tensor_maps_out.extend([_get_tmap(ot, needed_tensor_maps) for ot in args.output_tensors])
+    args.tensor_maps_out = parent_sort(args.tensor_maps_out)
+
+    args.bottleneck_type = BOTTLENECK_STR_TO_ENUM[args.bottleneck_type]
 
     if args.learning_rate_schedule is not None and args.patience < args.epochs:
         raise ValueError(f'learning_rate_schedule is not compatible with ReduceLROnPlateau. Set patience > epochs.')
@@ -279,7 +305,3 @@ def _process_args(args):
 
     logging.info(f"Command Line was: {command_line}")
     logging.info(f"Total TensorMaps: {len(TMAPS)} Arguments are {args}")
-
-    if args.eager:
-        import tensorflow as tf
-        tf.config.experimental_run_functions_eagerly(True)
