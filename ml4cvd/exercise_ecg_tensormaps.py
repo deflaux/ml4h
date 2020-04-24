@@ -25,6 +25,7 @@ SAMPLING_RATE = 500
 HR_MEASUREMENT_TIMES = 0, 10, 20, 30, 40, 50  # relative to recovery start
 HR_SEGMENT_DUR = 10  # HR measurements in recovery coalesced across a segment of this length
 TREND_TRACE_DUR_DIFF = 2  # Sum of phase durations from UKBB is 2s longer than the raw traces
+LEAD_NAMES = 'lead_I', 'lead_2', 'lead_3'
 
 TENSOR_FOLDER = '/mnt/disks/ecg-bike-tensors/2019-10-10/'
 USER = 'ndiamant'
@@ -164,7 +165,11 @@ def _hr_and_diffs_from_segment(segment: np.ndarray) -> Tuple[float, float]:
 
 def _plot_segment(segment: np.ndarray):
     hr, max_diff = _hr_and_diffs_from_segment(segment)
-    plt.plot(segment)
+    t = np.linspace(0, HR_SEGMENT_DUR, len(segment))
+    for i, lead_name in enumerate(LEAD_NAMES):
+        plt.plot(t, segment[:, i], label=lead_name)
+    plt.xlabel('Time (s)')
+    plt.legend()
     plt.title(f'hr: {hr:.2f}, max hr difference between leads: {max_diff:.2f}')
 
 
@@ -183,9 +188,11 @@ def _plot_recovery_hrs(path: str):
         with h5py.File(path, 'r') as hd5:
             for i, segment in enumerate(_get_segments_for_biosppy(hd5)):
                 plt.subplot(num_plots, 1, i + 1)
+                _plot_segment(segment)
+            plt.tight_layout()
             plt.savefig(os.path.join(FIGURE_FOLDER, f'biosppy_hr_recovery_measurements_{_sample_id_from_hd5(hd5)}.png'))
-    except (ValueError, KeyError, OSError):
-        return
+    except (ValueError, KeyError, OSError) as e:
+        logging.debug('Plotting failed for {path} with error {e}.')
 
 
 DF_HR_COLS = [f'{t}_hr' for t in HR_MEASUREMENT_TIMES]
@@ -194,7 +201,7 @@ DF_DIFF_COLS = [f'{t}_diff' for t in HR_MEASUREMENT_TIMES]
 
 def _recovery_hrs_from_path(path: str):
     sample_id = os.path.basename(path).replace(TENSOR_EXT, '')
-    if int(sample_id) % 1000 == 0:
+    if sample_id.endswith('000'):
         logging.info(f'Processing sample_id {sample_id}.')
     hr_diff = np.full((len(HR_MEASUREMENT_TIMES), 2), np.nan)
     error = None
