@@ -12,9 +12,10 @@ from multiprocessing import Pool
 import matplotlib.pyplot as plt
 
 from ml4cvd.metrics import pearson
-from ml4cvd.defines import TENSOR_EXT
-from ml4cvd.TensorMap import TensorMap, Interpretation
+from ml4cvd.defines import TENSOR_EXT, MODEL_EXT
+from ml4cvd.TensorMap import TensorMap, Interpretation, no_nans
 from ml4cvd.tensor_writer_ukbb import tensor_path, first_dataset_at_path
+from ml4cvd.normalizer import ZeroMeanStd1, Standardize
 from ml4cvd.tensor_from_file import _get_tensor_at_first_date
 
 
@@ -32,6 +33,8 @@ USER = 'ndiamant'
 OUTPUT_FOLDER = f'/home/{USER}/ml/hrr_results'
 BIOSPPY_MEASUREMENTS_PATH = os.path.join(OUTPUT_FOLDER, 'biosppy_hr_recovery_measurements.csv')
 FIGURE_FOLDER = os.path.join(OUTPUT_FOLDER, 'figures')
+RECOVERY_MODEL_ID = 'recovery_hr_model'
+RECOVERY_MODEL_PATH = os.path.join(OUTPUT_FOLDER, RECOVERY_MODEL_ID, RECOVERY_MODEL_ID + MODEL_EXT)
 
 
 # Tensor from file helpers
@@ -79,7 +82,7 @@ def _get_trace_recovery_start(hd5: h5py.File) -> int:
     return int(SAMPLING_RATE * (pretest_dur + exercise_dur - HR_SEGMENT_DUR / 2 - TREND_TRACE_DUR_DIFF))
 
 
-def _make_recovery_ecg_tff(downsample_rate: int, leads: Union[List[int], slice], random_start=False):
+def _make_recovery_ecg_tff(downsample_rate: int, leads: Union[List[int], slice], random_start=True):
     def tff(tm: TensorMap, hd5: h5py.File, dependents=None):
         shift = np.random.randint(-100, 0) if random_start else 0  # .2 second random shift as augmentation
         recovery_start = _get_trace_recovery_start(hd5) + shift
@@ -127,8 +130,13 @@ def _rand_roll_ecg(ecg):
 
 
 def _rand_offset_ecg(ecg):
-    shift_frac = np.random.rand() * .1  # max of 10% noise
+    shift_frac = np.random.rand() * .01  # max % noise
     return ecg + shift_frac * ecg.mean(axis=0)
+
+
+def _rand_scale_ecg(ecg):
+    scale = 1 + np.random.randn() * .03
+    return ecg * scale
 
 
 # HR measurements from biosppy
@@ -265,13 +273,12 @@ def build_hr_biosppy_measurements_csv():
     df.to_csv(BIOSPPY_MEASUREMENTS_PATH, index=False)
 
 
-# ECG TensorMaps
-TMAPS = {}
+# Biosppy TensorMaps
 BIOSPPY_SENTINEL = -1000
 BIOSPPY_DIFF_CUTOFF = 5
 
 
-def _hr_biosppy_file(file_name: str, time: int, hrr=False):
+def _hr_biosppy_file(file_name: str, t: int, hrr=False):
     error = None
     try:
         df = pd.read_csv(file_name, dtype={'sample_id': str})
@@ -285,7 +292,7 @@ def _hr_biosppy_file(file_name: str, time: int, hrr=False):
         sample_id = _sample_id_from_hd5(hd5)
         try:
             row = df.loc[sample_id]
-            hr, diff = row[f'{time}_hr'], row[f'{time}_diff']
+            hr, diff = row[f'{t}_hr'], row[f'{t}_diff']
             if diff > BIOSPPY_DIFF_CUTOFF:
                 return np.array([BIOSPPY_SENTINEL])
             if hrr:
@@ -304,18 +311,32 @@ def _hr_biosppy_file(file_name: str, time: int, hrr=False):
 
 
 def _make_hr_biosppy_tmaps():
-    for time in HR_MEASUREMENT_TIMES:
-        TMAPS[f'ecg-bike-{time}_hr'] = TensorMap(
-            f'{time}_hr', metrics=['mae', pearson], shape=(1,),
+    biosppy_hr_tmaps = {}
+    for t in HR_MEASUREMENT_TIMES:
+        biosppy_hr_tmaps[t] = TensorMap(
+            f'{t}_hr', metrics=['mae', pearson], shape=(1,),
             interpretation=Interpretation.CONTINUOUS,
             sentinel=BIOSPPY_SENTINEL,
-            tensor_from_file=_hr_biosppy_file(BIOSPPY_MEASUREMENTS_PATH, time),
+            tensor_from_file=_hr_biosppy_file(BIOSPPY_MEASUREMENTS_PATH, t),
+            normalization=Standardize(100, 15),
         )
-    for time in HR_MEASUREMENT_TIMES:
-        TMAPS[f'ecg-bike-{time}_hrr'] = TensorMap(
-            f'{time}_hrr', metrics=['mae', pearson], shape=(1,),
+    biosppy_hrr_tmaps = {}
+    for t in HR_MEASUREMENT_TIMES:
+        biosppy_hrr_tmaps[time] = TensorMap(
+            f'{t}_hrr', metrics=['mae', pearson], shape=(1,),
             interpretation=Interpretation.CONTINUOUS,
             sentinel=BIOSPPY_SENTINEL,
-            tensor_from_file=_hr_biosppy_file(BIOSPPY_MEASUREMENTS_PATH, time, hrr=True),
-            parents=[TMAPS[f'ecg-bike-{time}_hr'], TMAPS['ecg-bike-0_hr']],
+            tensor_from_file=_hr_biosppy_file(BIOSPPY_MEASUREMENTS_PATH, t, hrr=True),
+            parents=[biosppy_hr_tmaps[t], biosppy_hr_tmaps[HR_MEASUREMENT_TIMES[0]]],
+            normalization=Standardize(20, 10),
         )
+    return biosppy_hr_tmaps, biosppy_hrr_tmaps
+
+
+# ECG TensorMaps
+ecg_bike_recovery_downsampled8x = TensorMap(
+    'recovery_ecg', shape=(3437, 3), interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization=Standardize(0, 100),
+    tensor_from_file=_make_recovery_ecg_tff(8, [0, 1, 2]),
+    cacheable=False, augmentations=[_rand_scale_ecg, _rand_add_noise, _rand_offset_ecg],
+)
