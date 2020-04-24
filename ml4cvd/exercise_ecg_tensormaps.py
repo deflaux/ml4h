@@ -2,7 +2,7 @@ import os
 import time
 import h5py
 import biosppy
-import pathlib
+import seaborn as sns
 import logging
 import numpy as np
 import pandas as pd
@@ -12,6 +12,7 @@ from multiprocessing import Pool
 import matplotlib.pyplot as plt
 
 from ml4cvd.metrics import pearson
+from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.TensorMap import TensorMap, Interpretation
 from ml4cvd.tensor_writer_ukbb import tensor_path, first_dataset_at_path
 from ml4cvd.tensor_from_file import _get_tensor_at_first_date
@@ -172,19 +173,29 @@ def _recovery_hrs_biosppy(hd5: h5py.File) -> List[Tuple[float, float]]:
 
 
 def _sample_id_from_hd5(hd5: h5py.File):
-    return os.path.basename(hd5.filename).replace('.hd5', '')
+    return os.path.basename(hd5.filename).replace(TENSOR_EXT, '')
 
 
-def _plot_recovery_hrs(hd5: h5py.File):
+def _plot_recovery_hrs(path: str):
     num_plots = len(HR_MEASUREMENT_TIMES)
     plt.figure(figsize=(10, 3 * num_plots))
-    for i, segment in enumerate(_get_segments_for_biosppy(hd5)):
-        plt.subplot(num_plots, 1, i + 1)
-    plt.savefig(os.path.join(FIGURE_FOLDER, f'biosppy_hr_recovery_measurements_{_sample_id_from_hd5(hd5)}.png'))
+    try:
+        with h5py.File(path, 'r') as hd5:
+            for i, segment in enumerate(_get_segments_for_biosppy(hd5)):
+                plt.subplot(num_plots, 1, i + 1)
+            plt.savefig(os.path.join(FIGURE_FOLDER, f'biosppy_hr_recovery_measurements_{_sample_id_from_hd5(hd5)}.png'))
+    except (ValueError, KeyError, OSError):
+        return
+
+
+DF_HR_COLS = [f'{t}_hr' for t in HR_MEASUREMENT_TIMES]
+DF_DIFF_COLS = [f'{t}_diff' for t in HR_MEASUREMENT_TIMES]
 
 
 def _recovery_hrs_from_path(path: str):
-    sample_id = os.path.basename(path).replace('.hd5', '')
+    sample_id = os.path.basename(path).replace(TENSOR_EXT, '')
+    if int(sample_id) % 1000 == 0:
+        logging.info(f'Processing sample_id {sample_id}.')
     hr_diff = np.full((len(HR_MEASUREMENT_TIMES), 2), np.nan)
     error = None
     try:
@@ -193,21 +204,57 @@ def _recovery_hrs_from_path(path: str):
     except (ValueError, KeyError, OSError) as e:
         error = e
     measures = {'sample_id': sample_id, 'error': error}
-    for i, t in enumerate(HR_MEASUREMENT_TIMES):
-        measures[f'{t}_hr'] = hr_diff[i, 0]
-        measures[f'{t}_diff'] = hr_diff[i, 1]
+    for i, (hr_col, diff_col) in enumerate(zip(DF_HR_COLS, DF_DIFF_COLS)):
+        measures[hr_col] = hr_diff[i, 0]
+        measures[diff_col] = hr_diff[i, 1]
     return measures
 
 
+def plot_hr_from_biosppy_summary_stats():
+    df = pd.read_csv(BIOSPPY_MEASUREMENTS_PATH)
+
+    # HR summary stats
+    plt.figure(figsize=(15, 7))
+    for col, t in zip(DF_HR_COLS, HR_MEASUREMENT_TIMES):
+        x = df[col].dropna()
+        sns.distplot(x, label=f' Time = {t}\n mean = {x.mean():.2f}\n std = {x.std():.2f}\n top 5% = {np.quantile(x, .95):.2f}')
+    plt.legend()
+    plt.savefig(os.path.join(FIGURE_FOLDER, 'biosppy_hr_recovery_measurements_summary_stats.png'))
+
+    # HR lead diff summary stats
+    plt.figure(figsize=(15, 7))
+    for col, t in zip(DF_DIFF_COLS, HR_MEASUREMENT_TIMES):
+        x = df[col].dropna().copy()
+        sns.distplot(x[x < 5], label=f' Time = {t}\n mean = {x.mean():.2f}\n std = {x.std():.2f}\n top 5% = {np.quantile(x, .95):.2f}')
+    plt.legend()
+    plt.savefig(os.path.join(FIGURE_FOLDER, 'biosppy_hr_diff_recovery_measurements_summary_stats.png'))
+
+    # Random sample of hr trends
+    plt.figure(figsize=(15, 7))
+    trend_samples = df[DF_HR_COLS].sample(1000).values
+    plt.plot(HR_MEASUREMENT_TIMES, (trend_samples - trend_samples[:, :1]).T, alpha=.2, linewidth=1, c='k')
+    plt.axhline(0, c='k', linestyle='--')
+    plt.savefig(os.path.join(FIGURE_FOLDER, 'biosppy_hr_trend_samples.png'))
+
+    # correlation heat map
+    plt.figure(figsize=(7, 7))
+    sns.heatmap(df[DF_HR_COLS + DF_DIFF_COLS].corr(), annot=True, cbar=False)
+    plt.savefig(os.path.join(FIGURE_FOLDER, 'biosppy_correlations.png'))
+    plt.close()
+
+
 def build_hr_biosppy_measurements_csv():
-    paths = [os.path.join(TENSOR_FOLDER, p) for p in os.listdir(TENSOR_FOLDER)]
+    paths = [os.path.join(TENSOR_FOLDER, p) for p in sorted(os.listdir(TENSOR_FOLDER)) if p.endswith(TENSOR_EXT)]
+    logging.info('Plotting 10 random hr measurements from biosppy.')
+    for path in np.random.choice(paths, 10):
+        _plot_recovery_hrs(path)
     pool = Pool()
+    logging.info('Beginning to get hr measurements from biosppy.')
     now = time.time()
     measures = pool.map(_recovery_hrs_from_path, paths)
     df = pd.DataFrame(measures)
     delta_t = time.time() - now
     logging.info(f'Getting hr measurements from biosppy took {delta_t // 60} minutes at {delta_t / len(paths):.2f}s per path.')
-    print(f'Getting hr measurements from biosppy took {delta_t // 60} minutes at {delta_t / len(paths):.2f}s per path.')
     df.to_csv(BIOSPPY_MEASUREMENTS_PATH, index=False)
 
 
