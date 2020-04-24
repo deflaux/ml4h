@@ -322,7 +322,7 @@ def _make_hr_biosppy_tmaps():
         )
     biosppy_hrr_tmaps = {}
     for t in HR_MEASUREMENT_TIMES:
-        biosppy_hrr_tmaps[time] = TensorMap(
+        biosppy_hrr_tmaps[t] = TensorMap(
             f'{t}_hrr', metrics=['mae', pearson], shape=(1,),
             interpretation=Interpretation.CONTINUOUS,
             sentinel=BIOSPPY_SENTINEL,

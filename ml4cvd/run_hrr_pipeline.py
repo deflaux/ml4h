@@ -3,6 +3,7 @@ import pandas as pd
 import datetime
 import numpy as np
 from multiprocessing import cpu_count
+import logging
 
 from ml4cvd.recipes import _predict_scalars_and_evaluate_from_generator
 from ml4cvd.logger import load_config
@@ -25,7 +26,7 @@ def train_recovery_model():
     valid_ratio = .1
     test_ratio = .1
     data = pd.read_csv(BIOSPPY_MEASUREMENTS_PATH)
-    data_set_size = len(data) - len(data['error'].dropna())  # approximation
+    data_set_size = (len(data) - len(data['error'].dropna())) // batch_size  # approximation
     training_steps = int(data_set_size * (1 - valid_ratio - test_ratio))
     validation_steps = int(data_set_size * valid_ratio / 2)
     test_steps = int(data_set_size * test_ratio)
@@ -48,6 +49,8 @@ def train_recovery_model():
         conv_x=16,
         conv_dilate=True,
         pool_x=4,
+        pool_type='max',
+        conv_type='conv',
     )
     workers = cpu_count() * 2
     generate_train, generate_valid, generate_test = test_train_valid_tensor_generators(
@@ -77,7 +80,9 @@ if __name__ == '__main__':
     now_string = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
     load_config('INFO', OUTPUT_FOLDER, 'log_' + now_string, USER)
     if REMAKE_LABELS:
+        logging.info('Remaking biosppy labels.')
         build_hr_biosppy_measurements_csv()
         plot_hr_from_biosppy_summary_stats()
     if RETRAIN_RECOVERY_MODEL:
+        logging.info('Retraining recovery model.')
         train_recovery_model()
