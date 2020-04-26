@@ -6,12 +6,11 @@ import seaborn as sns
 import logging
 import numpy as np
 import pandas as pd
-from typing import List, Union, Tuple
+from typing import List, Union, Tuple, Dict
 from itertools import combinations
 from multiprocessing import Pool
 import matplotlib.pyplot as plt
 
-from ml4cvd.metrics import pearson
 from ml4cvd.defines import TENSOR_EXT, MODEL_EXT
 from ml4cvd.TensorMap import TensorMap, Interpretation, no_nans
 from ml4cvd.tensor_writer_ukbb import tensor_path, first_dataset_at_path
@@ -31,10 +30,13 @@ LEAD_NAMES = 'lead_I', 'lead_2', 'lead_3'
 TENSOR_FOLDER = '/mnt/disks/ecg-bike-tensors/2019-10-10/'
 USER = 'ndiamant'
 OUTPUT_FOLDER = f'/home/{USER}/ml/hrr_results'
+TEST_CSV = os.path.join(OUTPUT_FOLDER, 'test_ids.csv')
+TEST_SET_LEN = 10000
 BIOSPPY_MEASUREMENTS_PATH = os.path.join(OUTPUT_FOLDER, 'biosppy_hr_recovery_measurements.csv')
 FIGURE_FOLDER = os.path.join(OUTPUT_FOLDER, 'figures')
 RECOVERY_MODEL_ID = 'recovery_hr_model'
 RECOVERY_MODEL_PATH = os.path.join(OUTPUT_FOLDER, RECOVERY_MODEL_ID, RECOVERY_MODEL_ID + MODEL_EXT)
+RECOVERY_INFERENCE_FILE = os.PATH.JOIN(OUTPUT_FOLDER, f'{RECOVERY_MODEL_ID}_inference.csv')
 
 
 # Tensor from file helpers
@@ -203,8 +205,20 @@ def _plot_recovery_hrs(path: str):
         logging.debug('Plotting failed for {path} with error {e}.')
 
 
-DF_HR_COLS = [f'{t}_hr' for t in HR_MEASUREMENT_TIMES]
-DF_DIFF_COLS = [f'{t}_diff' for t in HR_MEASUREMENT_TIMES]
+def df_hr_col(t):
+    return f'{t}_hr'
+
+
+def df_hrr_col(t):
+    return f'{t}_hrr'
+
+
+def df_diff_col(t):
+    return f'{t}_diff'
+
+
+DF_HR_COLS = [df_hr_col(t) for t in HR_MEASUREMENT_TIMES]
+DF_DIFF_COLS = [df_diff_col(t) for t in HR_MEASUREMENT_TIMES]
 
 
 def _recovery_hrs_from_path(path: str):
@@ -293,7 +307,7 @@ def _hr_biosppy_file(file_name: str, t: int, hrr=False):
         try:
             row = df.loc[sample_id]
             hr, diff = row[f'{t}_hr'], row[f'{t}_diff']
-            if diff > BIOSPPY_DIFF_CUTOFF:
+            if diff > BIOSPPY_DIFF_CUTOFF:  # TODO: make diff analysis a validator
                 return np.array([BIOSPPY_SENTINEL])
             if hrr:
                 peak, peak_diff = row[f'0_hr'], row[f'0_diff']
@@ -310,11 +324,11 @@ def _hr_biosppy_file(file_name: str, t: int, hrr=False):
     return tensor_from_file
 
 
-def _make_hr_biosppy_tmaps():
+def _make_hr_biosppy_tmaps() -> Tuple[Dict[int, TensorMap], Dict[int, TensorMap]]:
     biosppy_hr_tmaps = {}
     for t in HR_MEASUREMENT_TIMES:
         biosppy_hr_tmaps[t] = TensorMap(
-            f'{t}_hr', metrics=['mae', pearson], shape=(1,),
+            df_hr_col(t), shape=(1,),
             interpretation=Interpretation.CONTINUOUS,
             sentinel=BIOSPPY_SENTINEL,
             tensor_from_file=_hr_biosppy_file(BIOSPPY_MEASUREMENTS_PATH, t),
@@ -323,7 +337,7 @@ def _make_hr_biosppy_tmaps():
     biosppy_hrr_tmaps = {}
     for t in HR_MEASUREMENT_TIMES:
         biosppy_hrr_tmaps[t] = TensorMap(
-            f'{t}_hrr', metrics=['mae', pearson], shape=(1,),
+            df_hrr_col(t), shape=(1,),
             interpretation=Interpretation.CONTINUOUS,
             sentinel=BIOSPPY_SENTINEL,
             tensor_from_file=_hr_biosppy_file(BIOSPPY_MEASUREMENTS_PATH, t, hrr=True),
