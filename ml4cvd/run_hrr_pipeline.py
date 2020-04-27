@@ -3,6 +3,7 @@ import pandas as pd
 import datetime
 import numpy as np
 from multiprocessing import cpu_count
+import seaborn as sns
 import logging
 from collections import Counter
 import csv
@@ -168,6 +169,14 @@ def _scatter_plot(ax, truth, prediction, title):
     ax.legend(loc="lower right")
 
 
+def _dist_plot(ax, truth, prediction, title):
+    ax.set_title(title)
+    ax.legend(loc="lower right")
+    sns.distplot(prediction, label='Predicted', color='r', ax=ax)
+    sns.distplot(truth, label='Truth', color='b', ax=ax)
+    ax.legend(loc="upper left")
+
+
 def _evaluate_recovery_model():
     logging.info('Plotting recovery model results.')
     inference_results = pd.read_csv(RECOVERY_INFERENCE_FILE, sep='\t')
@@ -193,6 +202,26 @@ def _evaluate_recovery_model():
         _scatter_plot(axes[1, i], actual[not_na], pred[not_na], f'HRR at recovery time {t}')
     plt.tight_layout()
     plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_measurements_model.png'))
+
+    # distributions of predicted and actual measurements
+    ax_size = 5
+    fig, axes = plt.subplots(2, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), 2 * ax_size))
+    for i, t in enumerate(HR_MEASUREMENT_TIMES):
+        name = df_hr_col(t)
+        pred = test_results[name+'_prediction']
+        actual = test_results[name+'_actual']
+        not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
+        _dist_plot(axes[0, i], actual[not_na], pred[not_na], f'HR at recovery time {t}')
+    for i, t in enumerate(HR_MEASUREMENT_TIMES):
+        if t == 0:
+            continue
+        name = df_hrr_col(t)
+        pred = test_results[name+'_prediction']
+        actual = test_results[name+'_actual']
+        not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
+        _dist_plot(axes[1, i], actual[not_na], pred[not_na], f'HRR at recovery time {t}')
+    plt.tight_layout()
+    plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_model_distributions.png'))
 
     # correlation of diffs vs. absolute error
     label_df = pd.read_csv(BIOSPPY_MEASUREMENTS_PATH).merge(test_results, on='sample_id')
