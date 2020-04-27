@@ -94,10 +94,14 @@ def _train_recovery_model():
         balance_csvs=[],
         test_csv=TEST_CSV,
     )
-    train_model_from_generators(
-        model, generate_train, generate_valid, training_steps, validation_steps, batch_size,
-        epochs, patience, OUTPUT_FOLDER, RECOVERY_MODEL_ID, True, True,
-    )
+    try:
+        train_model_from_generators(
+            model, generate_train, generate_valid, training_steps, validation_steps, batch_size,
+            epochs, patience, OUTPUT_FOLDER, RECOVERY_MODEL_ID, True, True,
+        )
+    finally:
+        generate_train.kill_workers()
+        generate_valid.kill_workers()
 
 
 def _infer_recovery_model():
