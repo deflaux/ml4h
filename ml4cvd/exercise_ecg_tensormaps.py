@@ -37,7 +37,11 @@ FIGURE_FOLDER = os.path.join(OUTPUT_FOLDER, 'figures')
 RECOVERY_MODEL_ID = 'recovery_hr_model'
 RECOVERY_MODEL_PATH = os.path.join(OUTPUT_FOLDER, RECOVERY_MODEL_ID, RECOVERY_MODEL_ID + MODEL_EXT)
 RECOVERY_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, f'{RECOVERY_MODEL_ID}_inference.csv')
-PRETEST_TRAINING_DATA = os.path.jion(OUTPUT_FOLDER, f'hr_pretest_training_data.csv')
+PRETEST_LABELS = os.path.join(OUTPUT_FOLDER, f'hr_pretest_training_data.csv')
+PRETEST_TRAINING_DUR = 10
+PRETEST_MODEL_ID = 'pretest_hr_model'
+PRETEST_MODEL_PATH = os.path.join(OUTPUT_FOLDER, PRETEST_MODEL_ID, PRETEST_MODEL_ID + MODEL_EXT)
+PRETEST_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, f'{PRETEST_MODEL_ID}_inference.csv')
 
 
 # Tensor from file helpers
@@ -295,7 +299,7 @@ def plot_hr_from_biosppy_summary_stats():
 
 
 def plot_pretest_label_summary_stats():
-    df = pd.read_csv(PRETEST_TRAINING_DATA)
+    df = pd.read_csv(PRETEST_LABELS)
 
     # HR summary stats
     plt.figure(figsize=(15, 7))
@@ -347,7 +351,7 @@ def build_pretest_training_labels():
         temp_name = 'temp_hrr'
         df[temp_name] = df[df_hr_col(HR_MEASUREMENT_TIMES[0])] - df[hr_name]
         new_df[hrr_name] = np.nanmean(df[[temp_name, hrr_name + '_predicted']], axis=1)  # Ensemble
-    new_df.to_csv(PRETEST_TRAINING_DATA, index=False)
+    new_df.to_csv(PRETEST_LABELS, index=False)
 
 
 # Biosppy TensorMaps
@@ -357,11 +361,14 @@ HR_NORMALIZE = Standardize(100, 15)
 HRR_NORMALIZE = Standardize(20, 10)
 
 
-def _hr_biosppy_file(file_name: str, t: int, hrr=False):
+def _hr_file(file_name: str, t: int, hrr=False):
     error = None
     try:
         df = pd.read_csv(file_name, dtype={'sample_id': str})
         df = df.set_index('sample_id')
+        if df_diff_col(HR_MEASUREMENT_TIMES[0]) not in df.columns:  # Hacky way to handle no diff case
+            for t in HR_MEASUREMENT_TIMES:
+                df[df_diff_col(t)] = BIOSPPY_DIFF_CUTOFF - 1
     except FileNotFoundError as e:
         error = e
 
@@ -389,14 +396,14 @@ def _hr_biosppy_file(file_name: str, t: int, hrr=False):
     return tensor_from_file
 
 
-def _make_hr_biosppy_tmaps() -> Tuple[Dict[int, TensorMap], Dict[int, TensorMap]]:
+def _make_hr_tmaps(file_name: str) -> Tuple[Dict[int, TensorMap], Dict[int, TensorMap]]:
     biosppy_hr_tmaps = {}
     for t in HR_MEASUREMENT_TIMES:
         biosppy_hr_tmaps[t] = TensorMap(
             df_hr_col(t), shape=(1,),
             interpretation=Interpretation.CONTINUOUS,
             sentinel=HR_NORMALIZE.normalize(BIOSPPY_SENTINEL),
-            tensor_from_file=_hr_biosppy_file(BIOSPPY_MEASUREMENTS_PATH, t),
+            tensor_from_file=_hr_file(file_name, t),
             normalization=HR_NORMALIZE,
         )
     biosppy_hrr_tmaps = {}
@@ -405,7 +412,7 @@ def _make_hr_biosppy_tmaps() -> Tuple[Dict[int, TensorMap], Dict[int, TensorMap]
             df_hrr_col(t), shape=(1,),
             interpretation=Interpretation.CONTINUOUS,
             sentinel=HRR_NORMALIZE.normalize(BIOSPPY_SENTINEL),
-            tensor_from_file=_hr_biosppy_file(BIOSPPY_MEASUREMENTS_PATH, t, hrr=True),
+            tensor_from_file=_hr_file(file_name, t, hrr=True),
             parents=[biosppy_hr_tmaps[t], biosppy_hr_tmaps[HR_MEASUREMENT_TIMES[0]]],
             normalization=HRR_NORMALIZE,
         )
@@ -419,3 +426,14 @@ ecg_bike_recovery_downsampled8x = TensorMap(
     tensor_from_file=_make_recovery_ecg_tff(8, [0, 1, 2]),
     cacheable=False, augmentations=[_rand_scale_ecg, _rand_add_noise, _rand_offset_ecg],
 )
+
+
+def make_pretest_tmap(downsample_rate: int, leads) -> TensorMap:
+    assert PRETEST_TRAINING_DUR * SAMPLING_RATE % downsample_rate == 0
+    return TensorMap(
+        'pretest_ecg', shape=(PRETEST_TRAINING_DUR * SAMPLING_RATE // downsample_rate, len(leads)),
+        interpretation=Interpretation.CONTINUOUS,
+        validator=no_nans, normalization=Standardize(0, 100),
+        tensor_from_file=_make_pretest_ecg_tff(downsample_rate, [0, 1, 2]),
+        cacheable=False, augmentations=[_rand_scale_ecg, _rand_add_noise, _rand_offset_ecg],
+    )

@@ -17,8 +17,9 @@ from ml4cvd.exercise_ecg_tensormaps import OUTPUT_FOLDER, USER, FIGURE_FOLDER, B
 from ml4cvd.exercise_ecg_tensormaps import RECOVERY_MODEL_PATH, TENSOR_FOLDER, RECOVERY_MODEL_ID, TEST_CSV, TEST_SET_LEN
 from ml4cvd.exercise_ecg_tensormaps import RECOVERY_INFERENCE_FILE, HR_MEASUREMENT_TIMES, df_hr_col, df_hrr_col, df_diff_col
 from ml4cvd.exercise_ecg_tensormaps import build_hr_biosppy_measurements_csv, plot_hr_from_biosppy_summary_stats, BIOSPPY_SENTINEL
-from ml4cvd.exercise_ecg_tensormaps import ecg_bike_recovery_downsampled8x, _make_hr_biosppy_tmaps, plot_pretest_label_summary_stats
-from ml4cvd.exercise_ecg_tensormaps import plot_segment_prediction, build_pretest_training_labels, PRETEST_TRAINING_DATA
+from ml4cvd.exercise_ecg_tensormaps import ecg_bike_recovery_downsampled8x, _make_hr_tmaps, plot_pretest_label_summary_stats
+from ml4cvd.exercise_ecg_tensormaps import plot_segment_prediction, build_pretest_training_labels, PRETEST_LABELS
+from ml4cvd.exercise_ecg_tensormaps import make_pretest_tmap, PRETEST_MODEL_ID, PRETEST_MODEL_PATH, PRETEST_INFERENCE_FILE
 from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.recipes import _make_tmap_nan_on_fail
 
@@ -27,11 +28,16 @@ SEED = 217
 MAKE_LABELS = False or not os.path.exists(BIOSPPY_MEASUREMENTS_PATH)
 TRAIN_RECOVERY_MODEL = False or not os.path.exists(RECOVERY_MODEL_PATH)
 INFER_RECOVERY_MODEL = False or not os.path.exists(RECOVERY_INFERENCE_FILE)
-MAKE_PRETEST_LABELS = False or not os.path.exists(PRETEST_TRAINING_DATA)
+MAKE_PRETEST_LABELS = False or not os.path.exists(PRETEST_LABELS)
+TRAIN_PRETEST_MODEL = False or not os.path.exists(PRETEST_MODEL_PATH)
+INFER_PRETEST_MODEL = False or not os.path.exists(PRETEST_INFERENCE_FILE)
 
 RECOVERY_INPUT_TMAPS = [ecg_bike_recovery_downsampled8x]
-RECOVERY_OUTPUT_TMAPS = sum(map(lambda x: list(x.values()), _make_hr_biosppy_tmaps()), [])
+RECOVERY_OUTPUT_TMAPS = sum(map(lambda x: list(x.values()), _make_hr_tmaps(BIOSPPY_MEASUREMENTS_PATH)), [])
 VALIDATION_RATIO = .1
+
+PRETEST_INPUT_TMAPS = [make_pretest_tmap(8, [0])]  # TODO: later will come from hyperopt config and include age, sex, bmi
+PRETEST_OUTPUT_TMAPS = sum(map(lambda x: list(x.values()), _make_hr_tmaps(PRETEST_LABELS)), [])
 
 
 def _get_results_from_bucket():
@@ -49,7 +55,7 @@ def _put_results_in_bucket():
 
 
 def _get_recovery_model(use_model_file):
-    """trains model to get biosppy measurements from recovery"""
+    """builds model to get biosppy measurements from recovery"""
     model = make_multimodal_multitask_model(
         tensor_maps_in=RECOVERY_INPUT_TMAPS,
         tensor_maps_out=RECOVERY_OUTPUT_TMAPS,
@@ -72,42 +78,7 @@ def _get_recovery_model(use_model_file):
     return model
 
 
-def _train_recovery_model():
-    model = _get_recovery_model(False)
-    batch_size = 128
-    workers = cpu_count() * 2
-    patience = 16
-    epochs = 100
-    data = pd.read_csv(BIOSPPY_MEASUREMENTS_PATH)
-    error_ratio = len(data['error'].dropna()) / len(data)
-    data_set_len = (len(data) - TEST_SET_LEN) * (1 - error_ratio) // batch_size  # approximation
-    training_steps = int(data_set_len * (1 - VALIDATION_RATIO))
-    validation_steps = int(data_set_len * VALIDATION_RATIO)
-
-    generate_train, generate_valid, _ = test_train_valid_tensor_generators(
-        tensor_maps_in=RECOVERY_INPUT_TMAPS,
-        tensor_maps_out=RECOVERY_OUTPUT_TMAPS,
-        tensors=TENSOR_FOLDER,
-        batch_size=batch_size,
-        valid_ratio=VALIDATION_RATIO,
-        test_ratio=.1,  # ignored, test comes from test_csv
-        test_modulo=0,
-        num_workers=workers,
-        cache_size=3.5e9 / workers,
-        balance_csvs=[],
-        test_csv=TEST_CSV,
-    )
-    try:
-        train_model_from_generators(
-            model, generate_train, generate_valid, training_steps, validation_steps, batch_size,
-            epochs, patience, OUTPUT_FOLDER, RECOVERY_MODEL_ID, True, True,
-        )
-    finally:
-        generate_train.kill_workers()
-        generate_valid.kill_workers()
-
-
-def _infer_recovery_model():
+def _infer_recovery_model():  # TODO: generalize to use with pretest model
     """
     makes a csv of inference results
     """
@@ -266,6 +237,73 @@ def _evaluate_recovery_model():
     plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_model_large_diff_segements.png'))
 
 
+def _get_pretest_config():
+    """Gets config of best hyperoptimized model"""
+    pass  # TODO
+
+
+def _get_pretest_model(use_model_file: bool):
+    """builds model to get biosppy measurements from pretest + covariates"""
+    config = _get_pretest_config()  # TODO: use config
+    model = make_multimodal_multitask_model(
+        tensor_maps_in=PRETEST_INPUT_TMAPS,
+        tensor_maps_out=PRETEST_OUTPUT_TMAPS,
+        activation='swish',
+        learning_rate=1e-3,
+        bottleneck_type=BottleneckType.FlattenRestructure,
+        optimizer='radam',
+        dense_layers=[64, 64],
+        conv_layers=[32, 32, 32, 32, 32],  # lots of residual blocks with dilation
+        dense_blocks=[32, 32, 32],
+        block_size=3,
+        conv_normalize='batch_norm',
+        conv_x=16,
+        conv_dilate=True,
+        pool_x=4,
+        pool_type='max',
+        conv_type='conv',
+        model_file=PRETEST_MODEL_PATH if use_model_file else None,
+    )
+    return model
+
+
+def _train_model(model, tmaps_in, tmaps_out, model_id):
+    """
+    Eventually params should come from config generated by hyperoptimization
+    """
+    batch_size = 128
+    workers = cpu_count() * 2
+    patience = 16
+    epochs = 100
+    data = pd.read_csv(PRETEST_LABELS)
+    error_ratio = len(data['error'].dropna()) / len(data)
+    data_set_len = (len(data) - TEST_SET_LEN) * (1 - error_ratio) // batch_size  # approximation
+    training_steps = int(data_set_len * (1 - VALIDATION_RATIO))
+    validation_steps = int(data_set_len * VALIDATION_RATIO)
+
+    generate_train, generate_valid, _ = test_train_valid_tensor_generators(
+        tensor_maps_in=tmaps_in,
+        tensor_maps_out=tmaps_out,
+        tensors=TENSOR_FOLDER,
+        batch_size=batch_size,
+        valid_ratio=VALIDATION_RATIO,
+        test_ratio=.1,  # ignored, test comes from test_csv
+        test_modulo=0,
+        num_workers=workers,
+        cache_size=3.5e9 / workers,
+        balance_csvs=[],
+        test_csv=TEST_CSV,
+    )
+    try:
+        train_model_from_generators(
+            model, generate_train, generate_valid, training_steps, validation_steps, batch_size,
+            epochs, patience, OUTPUT_FOLDER, model_id, True, True,
+        )
+    finally:
+        generate_train.kill_workers()
+        generate_valid.kill_workers()
+
+
 if __name__ == '__main__':
     """Always remakes figures"""
     np.random.seed(SEED)
@@ -279,7 +317,9 @@ if __name__ == '__main__':
     plot_hr_from_biosppy_summary_stats()
     if TRAIN_RECOVERY_MODEL:
         logging.info('Training recovery model.')
-        _train_recovery_model()
+        _train_model(
+            model=_get_recovery_model(False), tmaps_in=RECOVERY_INPUT_TMAPS, tmaps_out=RECOVERY_OUTPUT_TMAPS, model_id=RECOVERY_MODEL_ID,
+        )
     if INFER_RECOVERY_MODEL:
         logging.info('Running inference on recovery model.')
         _infer_recovery_model()
@@ -287,4 +327,9 @@ if __name__ == '__main__':
     if MAKE_PRETEST_LABELS:
         build_pretest_training_labels()
     plot_pretest_label_summary_stats()
+    if TRAIN_PRETEST_MODEL:
+        logging.info('Training pretest model.')
+        _train_model(
+            model=_get_pretest_model(False), tmaps_in=PRETEST_INPUT_TMAPS, tmaps_out=PRETEST_OUTPUT_TMAPS, model_id=PRETEST_MODEL_ID,
+        )
     logging.info('Done.')
