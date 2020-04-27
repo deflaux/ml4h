@@ -17,8 +17,8 @@ from ml4cvd.exercise_ecg_tensormaps import OUTPUT_FOLDER, USER, FIGURE_FOLDER, B
 from ml4cvd.exercise_ecg_tensormaps import RECOVERY_MODEL_PATH, TENSOR_FOLDER, RECOVERY_MODEL_ID, TEST_CSV, TEST_SET_LEN
 from ml4cvd.exercise_ecg_tensormaps import RECOVERY_INFERENCE_FILE, HR_MEASUREMENT_TIMES, df_hr_col, df_hrr_col, df_diff_col
 from ml4cvd.exercise_ecg_tensormaps import build_hr_biosppy_measurements_csv, plot_hr_from_biosppy_summary_stats, BIOSPPY_SENTINEL
-from ml4cvd.exercise_ecg_tensormaps import ecg_bike_recovery_downsampled8x, _make_hr_biosppy_tmaps
-from ml4cvd.exercise_ecg_tensormaps import plot_segment_prediction, DF_HR_COLS
+from ml4cvd.exercise_ecg_tensormaps import ecg_bike_recovery_downsampled8x, _make_hr_biosppy_tmaps, plot_pretest_label_summary_stats
+from ml4cvd.exercise_ecg_tensormaps import plot_segment_prediction, build_pretest_training_labels, PRETEST_TRAINING_DATA
 from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.recipes import _make_tmap_nan_on_fail
 
@@ -27,6 +27,7 @@ SEED = 217
 MAKE_LABELS = False or not os.path.exists(BIOSPPY_MEASUREMENTS_PATH)
 TRAIN_RECOVERY_MODEL = False or not os.path.exists(RECOVERY_MODEL_PATH)
 INFER_RECOVERY_MODEL = False or not os.path.exists(RECOVERY_INFERENCE_FILE)
+MAKE_PRETEST_LABELS = False or not os.path.exists(PRETEST_TRAINING_DATA)
 
 RECOVERY_INPUT_TMAPS = [ecg_bike_recovery_downsampled8x]
 RECOVERY_OUTPUT_TMAPS = sum(map(lambda x: list(x.values()), _make_hr_biosppy_tmaps()), [])
@@ -283,4 +284,7 @@ if __name__ == '__main__':
         logging.info('Running inference on recovery model.')
         _infer_recovery_model()
     _evaluate_recovery_model()
+    if MAKE_PRETEST_LABELS:
+        build_pretest_training_labels()
+    plot_pretest_label_summary_stats()
     logging.info('Done.')

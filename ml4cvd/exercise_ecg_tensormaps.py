@@ -37,6 +37,7 @@ FIGURE_FOLDER = os.path.join(OUTPUT_FOLDER, 'figures')
 RECOVERY_MODEL_ID = 'recovery_hr_model'
 RECOVERY_MODEL_PATH = os.path.join(OUTPUT_FOLDER, RECOVERY_MODEL_ID, RECOVERY_MODEL_ID + MODEL_EXT)
 RECOVERY_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, f'{RECOVERY_MODEL_ID}_inference.csv')
+PRETEST_TRAINING_DATA = os.path.jion(OUTPUT_FOLDER, f'hr_pretest_training_data.csv')
 
 
 # Tensor from file helpers
@@ -293,6 +294,31 @@ def plot_hr_from_biosppy_summary_stats():
     plt.close()
 
 
+def plot_pretest_label_summary_stats():
+    df = pd.read_csv(PRETEST_TRAINING_DATA)
+
+    # HR summary stats
+    plt.figure(figsize=(15, 7))
+    for col, t in zip(DF_HR_COLS, HR_MEASUREMENT_TIMES):
+        x = df[col].dropna()
+        sns.distplot(x, label=f' Time = {t}\n mean = {x.mean():.2f}\n std = {x.std():.2f}\n top 5% = {np.quantile(x, .95):.2f}')
+    plt.legend()
+    plt.savefig(os.path.join(FIGURE_FOLDER, 'pretest_training_labels_summary_stats.png'))
+
+    # Random sample of hr trends
+    plt.figure(figsize=(15, 7))
+    trend_samples = df[DF_HR_COLS].sample(1000).values
+    plt.plot(HR_MEASUREMENT_TIMES, (trend_samples - trend_samples[:, :1]).T, alpha=.2, linewidth=1, c='k')
+    plt.axhline(0, c='k', linestyle='--')
+    plt.savefig(os.path.join(FIGURE_FOLDER, 'pretest_training_labels_hr_trend_samples.png'))
+
+    # correlation heat map
+    plt.figure(figsize=(7, 7))
+    sns.heatmap(df[DF_HR_COLS + DF_DIFF_COLS].corr(), annot=True, cbar=False)
+    plt.savefig(os.path.join(FIGURE_FOLDER, 'biosppy_correlations.png'))
+    plt.close()
+
+
 def build_hr_biosppy_measurements_csv():
     paths = [os.path.join(TENSOR_FOLDER, p) for p in sorted(os.listdir(TENSOR_FOLDER)) if p.endswith(TENSOR_EXT)]
     logging.info('Plotting 10 random hr measurements from biosppy.')
@@ -308,11 +334,28 @@ def build_hr_biosppy_measurements_csv():
     df.to_csv(BIOSPPY_MEASUREMENTS_PATH, index=False)
 
 
+def build_pretest_training_labels():
+    biosppy_labels = pd.read_csv(BIOSPPY_MEASUREMENTS_PATH, dtype={'sample_id': str})
+    inferred_labels = pd.read_csv(RECOVERY_INFERENCE_FILE, dtype={'sample_id': str}, sep='\t')
+    df = biosppy_labels.merge(inferred_labels, on='sample_id')
+    new_df = pd.DataFrame()
+    new_df['sample_id'] = df['sample_id']
+    for t in HR_MEASUREMENT_TIMES:
+        hr_name = df_hr_col(t)
+        new_df[hr_name] = np.nanmean(df[[hr_name, hr_name + '_predicted']], axis=1)  # Ensemble
+        hrr_name = df_hrr_col(t)
+        temp_name = 'temp_hrr'
+        df[temp_name] = df[df_hr_col(HR_MEASUREMENT_TIMES[0])] - df[hr_name]
+        new_df[hrr_name] = np.nanmean(df[[temp_name, hrr_name + '_predicted']], axis=1)  # Ensemble
+    new_df.to_csv(PRETEST_TRAINING_DATA, index=False)
+
+
 # Biosppy TensorMaps
 BIOSPPY_SENTINEL = -1000
 BIOSPPY_DIFF_CUTOFF = 5
 HR_NORMALIZE = Standardize(100, 15)
 HRR_NORMALIZE = Standardize(20, 10)
+
 
 def _hr_biosppy_file(file_name: str, t: int, hrr=False):
     error = None
