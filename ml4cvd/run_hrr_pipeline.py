@@ -180,15 +180,16 @@ def _dist_plot(ax, truth, prediction, title):
 
 def _evaluate_recovery_model():
     logging.info('Plotting recovery model results.')
-    inference_results = pd.read_csv(RECOVERY_INFERENCE_FILE, sep='\t')
-    test_ids = pd.read_csv(TEST_CSV, names=['sample_id'])
+    inference_results = pd.read_csv(RECOVERY_INFERENCE_FILE, sep='\t', dtype={'sample_id': str})
+    test_ids = pd.read_csv(TEST_CSV, names=['sample_id'], dtype={'sample_id': str})
     test_results = inference_results.merge(test_ids, on='sample_id')
 
     # negative HRR measurements
-    for t in HR_MEASUREMENT_TIMES:
-        name = df_hrr_col(t)
+    for t in HR_MEASUREMENT_TIMES[1:]:
+        name = df_hrr_col(t) + '_prediction'
         col = test_results[name].dropna()
         logging.info(f'HRR_{t} had {(col < 0).mean() * 100:.2f}% negative predictions in hold out data.')
+        logging.info(f'HRR_{t} had {(col < -5).mean() * 100:.2f}% predictions < -5 in hold out data.')
 
     # correlations with actual measurements
     ax_size = 5
@@ -231,7 +232,7 @@ def _evaluate_recovery_model():
     plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_model_distributions.png'))
 
     # correlation of diffs vs. absolute error
-    label_df = pd.read_csv(BIOSPPY_MEASUREMENTS_PATH).merge(test_results, on='sample_id')
+    label_df = pd.read_csv(BIOSPPY_MEASUREMENTS_PATH, dtype={'sample_id': str}).merge(test_results, on='sample_id')
     fig, axes = plt.subplots(1, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), ax_size))
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
         name = df_hr_col(t)
@@ -247,18 +248,18 @@ def _evaluate_recovery_model():
 
     # some really wrong predictions
     plots_per_time = 2
-    num_plots = plots_per_time * len(HR_MEASUREMENT_TIMES)
-    plt.figure(figsize=(ax_size * 2, len(HR_MEASUREMENT_TIMES)))
+    plt.figure(figsize=(ax_size * 4, len(HR_MEASUREMENT_TIMES) * ax_size))
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
         name = df_hr_col(t)
         mae = label_df[name + '_mae']
-        select = mae > np.quantile(mae, .95)
+        select = (mae > np.quantile(mae.dropna(), .99)) & ~np.isnan(mae)
         rows = label_df[select].sample(2)
-        for row in rows.itertuples():
-            plt.subplot(num_plots, 1, i + 1)
+        for j, row in enumerate(rows.iterrows()):
+            row = row[1]
+            plt.subplot(len(HR_MEASUREMENT_TIMES), 2, 2 * i + 1 + j)
             plot_segment_prediction(
                 row['sample_id'], t=t, pred=row[name+'_prediction'], actual=row[name+'_actual'],
-                diff=row[df_diff_col(t) + '_actual'],
+                diff=row[df_diff_col(t)],
             )
     plt.tight_layout()
     plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_model_large_diff_segements.png'))
