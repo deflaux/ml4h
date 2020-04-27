@@ -183,11 +183,32 @@ def _plot_segment(segment: np.ndarray):
     plt.title(f'hr: {hr:.2f}, max hr difference between leads: {max_diff:.2f}')
 
 
+def plot_segment_prediction(sample_id: str, t: int, pred: float, actual: float, diff: float):
+    t_idx = HR_MEASUREMENT_TIMES.index(t)
+    with h5py.File(_path_from_sample_id(sample_id), 'r') as hd5:
+        segment = list(_get_segments_for_biosppy(hd5))[t_idx]
+        x = np.linspace(0, HR_SEGMENT_DUR, len(segment))
+        for i, lead_name in enumerate(LEAD_NAMES):
+            plt.title(
+                '\n'.join([
+                    f'{sample_id} at time {t} after recovery',
+                    f'biosppy hr {actual:.2f}',
+                    f'recovery model hr {pred:.2f}',
+                    f'biosppy lead difference {diff:.2f}',
+                ]),
+            )
+            plt.plot(x, segment[:, i], label=lead_name)
+
+
 def _recovery_hrs_biosppy(hd5: h5py.File) -> List[Tuple[float, float]]:
     return list(map(_hr_and_diffs_from_segment, _get_segments_for_biosppy(hd5)))
 
 
-def _sample_id_from_hd5(hd5: h5py.File):
+def _path_from_sample_id(sample_id: str) -> str:
+    return os.path.join(TENSOR_FOLDER, sample_id + TENSOR_EXT)
+
+
+def _sample_id_from_hd5(hd5: h5py.File) -> str:
     return os.path.basename(hd5.filename).replace(TENSOR_EXT, '')
 
 

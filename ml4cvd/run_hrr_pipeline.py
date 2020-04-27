@@ -18,6 +18,7 @@ from ml4cvd.exercise_ecg_tensormaps import RECOVERY_MODEL_PATH, TENSOR_FOLDER, R
 from ml4cvd.exercise_ecg_tensormaps import RECOVERY_INFERENCE_FILE, HR_MEASUREMENT_TIMES, df_hr_col, df_hrr_col, df_diff_col
 from ml4cvd.exercise_ecg_tensormaps import build_hr_biosppy_measurements_csv, plot_hr_from_biosppy_summary_stats, BIOSPPY_SENTINEL
 from ml4cvd.exercise_ecg_tensormaps import ecg_bike_recovery_downsampled8x, _make_hr_biosppy_tmaps
+from ml4cvd.exercise_ecg_tensormaps import plot_segment_prediction, DF_HR_COLS
 from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.recipes import _make_tmap_nan_on_fail
 
@@ -183,6 +184,12 @@ def _evaluate_recovery_model():
     test_ids = pd.read_csv(TEST_CSV, names=['sample_id'])
     test_results = inference_results.merge(test_ids, on='sample_id')
 
+    # negative HRR measurements
+    for t in HR_MEASUREMENT_TIMES:
+        name = df_hrr_col(t)
+        col = test_results[name].dropna()
+        logging.info(f'HRR_{t} had {(col < 0).mean() * 100:.2f}% negative predictions in hold out data.')
+
     # correlations with actual measurements
     ax_size = 5
     fig, axes = plt.subplots(2, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), 2 * ax_size))
@@ -233,9 +240,28 @@ def _evaluate_recovery_model():
         actual = label_df[name+'_actual']
         diff = label_df[diff_name]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL) & ~np.isnan(diff)
-        mae = np.abs(pred[not_na] - actual[not_na])
-        _scatter_plot(axes[i], mae, diff[not_na], f'HR vs. diff at recovery time {t}')
+        mae = np.abs(pred - actual)
+        label_df[name + '_mae'] = mae
+        _scatter_plot(axes[i], mae[not_na], diff[not_na], f'HR vs. diff at recovery time {t}')
     plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_model_error_vs_diffs.png'))
+
+    # some really wrong predictions
+    plots_per_time = 2
+    num_plots = plots_per_time * len(HR_MEASUREMENT_TIMES)
+    plt.figure(figsize=(ax_size * 2, len(HR_MEASUREMENT_TIMES)))
+    for i, t in enumerate(HR_MEASUREMENT_TIMES):
+        name = df_hr_col(t)
+        mae = label_df[name + '_mae']
+        select = mae > np.quantile(mae, .95)
+        rows = label_df[select].sample(2)
+        for row in rows.itertuples():
+            plt.subplot(num_plots, 1, i + 1)
+            plot_segment_prediction(
+                row['sample_id'], t=t, pred=row[name+'_prediction'], actual=row[name+'_actual'],
+                diff=row[df_diff_col(t) + '_actual'],
+            )
+    plt.tight_layout()
+    plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_model_large_diff_segements.png'))
 
 
 if __name__ == '__main__':
