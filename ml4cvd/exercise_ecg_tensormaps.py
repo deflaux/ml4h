@@ -36,7 +36,7 @@ BIOSPPY_MEASUREMENTS_PATH = os.path.join(OUTPUT_FOLDER, 'biosppy_hr_recovery_mea
 FIGURE_FOLDER = os.path.join(OUTPUT_FOLDER, 'figures')
 RECOVERY_MODEL_ID = 'recovery_hr_model'
 RECOVERY_MODEL_PATH = os.path.join(OUTPUT_FOLDER, RECOVERY_MODEL_ID, RECOVERY_MODEL_ID + MODEL_EXT)
-RECOVERY_INFERENCE_FILE = os.PATH.JOIN(OUTPUT_FOLDER, f'{RECOVERY_MODEL_ID}_inference.csv')
+RECOVERY_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, f'{RECOVERY_MODEL_ID}_inference.csv')
 
 
 # Tensor from file helpers
@@ -290,7 +290,8 @@ def build_hr_biosppy_measurements_csv():
 # Biosppy TensorMaps
 BIOSPPY_SENTINEL = -1000
 BIOSPPY_DIFF_CUTOFF = 5
-
+HR_NORMALIZE = Standardize(100, 15)
+HRR_NORMALIZE = Standardize(20, 10)
 
 def _hr_biosppy_file(file_name: str, t: int, hrr=False):
     error = None
@@ -330,19 +331,19 @@ def _make_hr_biosppy_tmaps() -> Tuple[Dict[int, TensorMap], Dict[int, TensorMap]
         biosppy_hr_tmaps[t] = TensorMap(
             df_hr_col(t), shape=(1,),
             interpretation=Interpretation.CONTINUOUS,
-            sentinel=BIOSPPY_SENTINEL,
+            sentinel=HR_NORMALIZE.normalize(BIOSPPY_SENTINEL),
             tensor_from_file=_hr_biosppy_file(BIOSPPY_MEASUREMENTS_PATH, t),
-            normalization=Standardize(100, 15),
+            normalization=HR_NORMALIZE,
         )
     biosppy_hrr_tmaps = {}
     for t in HR_MEASUREMENT_TIMES:
         biosppy_hrr_tmaps[t] = TensorMap(
             df_hrr_col(t), shape=(1,),
             interpretation=Interpretation.CONTINUOUS,
-            sentinel=BIOSPPY_SENTINEL,
+            sentinel=HRR_NORMALIZE.normalize(BIOSPPY_SENTINEL),
             tensor_from_file=_hr_biosppy_file(BIOSPPY_MEASUREMENTS_PATH, t, hrr=True),
             parents=[biosppy_hr_tmaps[t], biosppy_hr_tmaps[HR_MEASUREMENT_TIMES[0]]],
-            normalization=Standardize(20, 10),
+            normalization=HRR_NORMALIZE,
         )
     return biosppy_hr_tmaps, biosppy_hrr_tmaps
 
