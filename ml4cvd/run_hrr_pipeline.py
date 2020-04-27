@@ -15,7 +15,7 @@ from ml4cvd.models import make_multimodal_multitask_model, BottleneckType, train
 from ml4cvd.exercise_ecg_tensormaps import OUTPUT_FOLDER, USER, FIGURE_FOLDER, BIOSPPY_MEASUREMENTS_PATH
 from ml4cvd.exercise_ecg_tensormaps import RECOVERY_MODEL_PATH, TENSOR_FOLDER, RECOVERY_MODEL_ID, TEST_CSV, TEST_SET_LEN
 from ml4cvd.exercise_ecg_tensormaps import RECOVERY_INFERENCE_FILE, HR_MEASUREMENT_TIMES, df_hr_col, df_hrr_col
-from ml4cvd.exercise_ecg_tensormaps import build_hr_biosppy_measurements_csv, plot_hr_from_biosppy_summary_stats
+from ml4cvd.exercise_ecg_tensormaps import build_hr_biosppy_measurements_csv, plot_hr_from_biosppy_summary_stats, BIOSPPY_SENTINEL
 from ml4cvd.exercise_ecg_tensormaps import ecg_bike_recovery_downsampled8x, _make_hr_biosppy_tmaps
 from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.recipes import _make_tmap_nan_on_fail
@@ -27,7 +27,7 @@ TRAIN_RECOVERY_MODEL = False or not os.path.exists(RECOVERY_MODEL_PATH)
 INFER_RECOVERY_MODEL = False or not os.path.exists(RECOVERY_INFERENCE_FILE)
 
 RECOVERY_INPUT_TMAPS = [ecg_bike_recovery_downsampled8x]
-RECOVERY_OUTPUT_TMAPS = sum(map(lambda x: list(x.values()), _make_hr_biosppy_tmaps()))
+RECOVERY_OUTPUT_TMAPS = sum(map(lambda x: list(x.values()), _make_hr_biosppy_tmaps()), [])
 VALIDATION_RATIO = .1
 
 
@@ -64,7 +64,7 @@ def _get_recovery_model(use_model_file):
         pool_x=4,
         pool_type='max',
         conv_type='conv',
-        model_file=RECOVERY_MODEL_PATH if not use_model_file else None,
+        model_file=RECOVERY_MODEL_PATH if use_model_file else None,
     )
     return model
 
@@ -87,7 +87,7 @@ def _train_recovery_model():
         tensors=TENSOR_FOLDER,
         batch_size=batch_size,
         valid_ratio=VALIDATION_RATIO,
-        test_ratio=0,  # test comes from test_csv
+        test_ratio=.1,  # ignored, test comes from test_csv
         test_modulo=0,
         num_workers=workers,
         cache_size=3.5e9 / workers,
@@ -112,7 +112,7 @@ def _infer_recovery_model():
     tensor_paths_inferred = set()
     inference_tsv = RECOVERY_INFERENCE_FILE
     tensor_paths = [os.path.join(TENSOR_FOLDER, tp) for tp in sorted(os.listdir(TENSOR_FOLDER)) if os.path.splitext(tp)[-1].lower() == TENSOR_EXT]
-    model = _get_recovery_model(use_model_file=False)
+    model = _get_recovery_model(use_model_file=True)
     no_fail_tmaps_out = [_make_tmap_nan_on_fail(tmap) for tmap in RECOVERY_OUTPUT_TMAPS]
     # hard code batch size to 1 so we can iterate over file names and generated tensors together in the tensor_paths for loop
     generate_test = TensorGenerator(
@@ -158,10 +158,10 @@ def _infer_recovery_model():
 def _scatter_plot(ax, truth, prediction, title):
     ax.plot([np.min(truth), np.max(truth)], [np.min(truth), np.max(truth)], linewidth=2)
     ax.plot([np.min(prediction), np.max(prediction)], [np.min(prediction), np.max(prediction)], linewidth=4)
-    pearson = np.corrcoef(prediction.flatten(), truth.flatten())[1, 0]  # corrcoef returns full covariance matrix
+    pearson = np.corrcoef(prediction, truth)[1, 0]  # corrcoef returns full covariance matrix
     big_r_squared = coefficient_of_determination(truth, prediction)
-    logging.info(f'Pearson:{pearson:0.3f} r^2:{pearson*pearson:0.3f} R^2:{big_r_squared:0.3f}')
-    ax.scatter(prediction, truth, label=f'Pearson:{pearson:0.3f} r^2:{pearson * pearson:0.3f} R^2:{big_r_squared:0.3f}', marker='.', alpha=alpha)
+    logging.info(f'{title} - pearson:{pearson:0.3f} r^2:{pearson*pearson:0.3f} R^2:{big_r_squared:0.3f}')
+    ax.scatter(prediction, truth, label=f'Pearson:{pearson:0.3f} r^2:{pearson * pearson:0.3f} R^2:{big_r_squared:0.3f}', marker='.', s=1)
     ax.set_xlabel('Predictions')
     ax.set_ylabel('Actual')
     ax.set_title(title + '\n')
@@ -169,16 +169,17 @@ def _scatter_plot(ax, truth, prediction, title):
 
 
 def _evaluate_recovery_model():
+    logging.info('Plotting recovery model results.')
     inference_results = pd.read_csv(RECOVERY_INFERENCE_FILE, sep='\t')
     test_ids = pd.read_csv(TEST_CSV, names=['sample_id'])
     test_results = inference_results.merge(test_ids, on='sample_id')
     ax_size = 5
-    fig, axes = plt.subplots(2, len(HR_MEASUREMENT_TIMES), figsize=(2 * ax_size, ax_size * len(HR_MEASUREMENT_TIMES)))
+    fig, axes = plt.subplots(2, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), 2 * ax_size))
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
         name = df_hr_col(t)
         pred = test_results[name+'_prediction']
         actual = test_results[name+'_actual']
-        not_na = ~np.isnan(pred) & ~np.isnan(actual)
+        not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
         _scatter_plot(axes[0, i], actual[not_na], pred[not_na], f'HR at recovery time {i}')
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
         if t == 0:
@@ -186,8 +187,9 @@ def _evaluate_recovery_model():
         name = df_hrr_col(t)
         pred = test_results[name+'_prediction']
         actual = test_results[name+'_actual']
-        not_na = ~np.isnan(pred) & ~np.isnan(actual)
-        _scatter_plot(axes[1, i], actual[not_na], pred[not_na], f'HR at recovery time {i}')
+        not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
+        _scatter_plot(axes[1, i], actual[not_na], pred[not_na], f'HRR at recovery time {i}')
+    plt.tight_layout()
     plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_measurements_model.png'))
 
 
@@ -200,7 +202,7 @@ if __name__ == '__main__':
     load_config('INFO', OUTPUT_FOLDER, 'log_' + now_string, USER)
     if MAKE_LABELS:
         logging.info('Making biosppy labels.')
-    build_hr_biosppy_measurements_csv()
+        build_hr_biosppy_measurements_csv()
     plot_hr_from_biosppy_summary_stats()
     if TRAIN_RECOVERY_MODEL:
         logging.info('Training recovery model.')
@@ -209,3 +211,4 @@ if __name__ == '__main__':
         logging.info('Running inference on recovery model.')
         _infer_recovery_model()
     _evaluate_recovery_model()
+    logging.info('Done.')
