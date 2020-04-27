@@ -202,7 +202,7 @@ def _plot_recovery_hrs(path: str):
             plt.tight_layout()
             plt.savefig(os.path.join(FIGURE_FOLDER, f'biosppy_hr_recovery_measurements_{_sample_id_from_hd5(hd5)}.png'))
     except (ValueError, KeyError, OSError) as e:
-        logging.debug('Plotting failed for {path} with error {e}.')
+        logging.debug(f'Plotting failed for {path} with error {e}.')
 
 
 def df_hr_col(t):

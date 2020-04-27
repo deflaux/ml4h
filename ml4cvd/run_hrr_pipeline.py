@@ -14,7 +14,7 @@ from ml4cvd.tensor_generators import test_train_valid_tensor_generators, TensorG
 from ml4cvd.models import make_multimodal_multitask_model, BottleneckType, train_model_from_generators
 from ml4cvd.exercise_ecg_tensormaps import OUTPUT_FOLDER, USER, FIGURE_FOLDER, BIOSPPY_MEASUREMENTS_PATH
 from ml4cvd.exercise_ecg_tensormaps import RECOVERY_MODEL_PATH, TENSOR_FOLDER, RECOVERY_MODEL_ID, TEST_CSV, TEST_SET_LEN
-from ml4cvd.exercise_ecg_tensormaps import RECOVERY_INFERENCE_FILE, HR_MEASUREMENT_TIMES, df_hr_col, df_hrr_col
+from ml4cvd.exercise_ecg_tensormaps import RECOVERY_INFERENCE_FILE, HR_MEASUREMENT_TIMES, df_hr_col, df_hrr_col, df_diff_col
 from ml4cvd.exercise_ecg_tensormaps import build_hr_biosppy_measurements_csv, plot_hr_from_biosppy_summary_stats, BIOSPPY_SENTINEL
 from ml4cvd.exercise_ecg_tensormaps import ecg_bike_recovery_downsampled8x, _make_hr_biosppy_tmaps
 from ml4cvd.defines import TENSOR_EXT
@@ -173,6 +173,8 @@ def _evaluate_recovery_model():
     inference_results = pd.read_csv(RECOVERY_INFERENCE_FILE, sep='\t')
     test_ids = pd.read_csv(TEST_CSV, names=['sample_id'])
     test_results = inference_results.merge(test_ids, on='sample_id')
+
+    # correlations with actual measurements
     ax_size = 5
     fig, axes = plt.subplots(2, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), 2 * ax_size))
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
@@ -180,7 +182,7 @@ def _evaluate_recovery_model():
         pred = test_results[name+'_prediction']
         actual = test_results[name+'_actual']
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
-        _scatter_plot(axes[0, i], actual[not_na], pred[not_na], f'HR at recovery time {i}')
+        _scatter_plot(axes[0, i], actual[not_na], pred[not_na], f'HR at recovery time {t}')
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
         if t == 0:
             continue
@@ -188,9 +190,23 @@ def _evaluate_recovery_model():
         pred = test_results[name+'_prediction']
         actual = test_results[name+'_actual']
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
-        _scatter_plot(axes[1, i], actual[not_na], pred[not_na], f'HRR at recovery time {i}')
+        _scatter_plot(axes[1, i], actual[not_na], pred[not_na], f'HRR at recovery time {t}')
     plt.tight_layout()
     plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_measurements_model.png'))
+
+    # correlation of diffs vs. absolute error
+    label_df = pd.read_csv(BIOSPPY_MEASUREMENTS_PATH).merge(test_results, on='sample_id')
+    fig, axes = plt.subplots(1, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), ax_size))
+    for i, t in enumerate(HR_MEASUREMENT_TIMES):
+        name = df_hr_col(t)
+        diff_name = df_diff_col(t)
+        pred = label_df[name+'_prediction']
+        actual = label_df[name+'_actual']
+        diff = label_df[diff_name]
+        not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL) & ~np.isnan(diff)
+        mae = np.abs(pred[not_na] - actual[not_na])
+        _scatter_plot(axes[i], mae, diff[not_na], f'HR vs. diff at recovery time {t}')
+    plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_model_error_vs_diffs.png'))
 
 
 if __name__ == '__main__':
