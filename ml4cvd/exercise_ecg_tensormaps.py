@@ -15,7 +15,7 @@ from ml4cvd.defines import TENSOR_EXT, MODEL_EXT
 from ml4cvd.TensorMap import TensorMap, Interpretation, no_nans
 from ml4cvd.tensor_writer_ukbb import tensor_path, first_dataset_at_path
 from ml4cvd.normalizer import ZeroMeanStd1, Standardize
-from ml4cvd.tensor_from_file import _get_tensor_at_first_date
+from ml4cvd.tensor_from_file import _get_tensor_at_first_date, _all_dates
 
 
 PRETEST_DUR = 15  # DURs are measured in seconds
@@ -30,18 +30,23 @@ LEAD_NAMES = 'lead_I', 'lead_2', 'lead_3'
 TENSOR_FOLDER = '/mnt/disks/ecg-bike-tensors/2019-10-10/'
 USER = 'ndiamant'
 OUTPUT_FOLDER = f'/home/{USER}/ml/hrr_results'
+COVARIATE_FILE = os.path.join(OUTPUT_FOLDER, 'covariates.tsv')
 TEST_CSV = os.path.join(OUTPUT_FOLDER, 'test_ids.csv')
 TEST_SET_LEN = 10000
-BIOSPPY_MEASUREMENTS_PATH = os.path.join(OUTPUT_FOLDER, 'biosppy_hr_recovery_measurements.csv')
+BIOSPPY_MEASUREMENTS_FILE = os.path.join(OUTPUT_FOLDER, 'biosppy_hr_recovery_measurements.csv')
 FIGURE_FOLDER = os.path.join(OUTPUT_FOLDER, 'figures')
 RECOVERY_MODEL_ID = 'recovery_hr_model'
 RECOVERY_MODEL_PATH = os.path.join(OUTPUT_FOLDER, RECOVERY_MODEL_ID, RECOVERY_MODEL_ID + MODEL_EXT)
-RECOVERY_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, f'{RECOVERY_MODEL_ID}_inference.csv')
-PRETEST_LABELS = os.path.join(OUTPUT_FOLDER, f'hr_pretest_training_data.csv')
+RECOVERY_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, f'{RECOVERY_MODEL_ID}_inference.tsv')
+PRETEST_LABEL_FILE = os.path.join(OUTPUT_FOLDER, f'hr_pretest_training_data.csv')
 PRETEST_TRAINING_DUR = 10
-PRETEST_MODEL_ID = 'pretest_hr_model'
+BASELINE_MODEL_ID = 'pretest_baseline_model'
+BASELINE_MODEL_PATH = os.path.join(OUTPUT_FOLDER, BASELINE_MODEL_ID, BASELINE_MODEL_ID + MODEL_EXT)
+PRETEST_MODEL_ID = 'pretest_model'
 PRETEST_MODEL_PATH = os.path.join(OUTPUT_FOLDER, PRETEST_MODEL_ID, PRETEST_MODEL_ID + MODEL_EXT)
-PRETEST_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, f'{PRETEST_MODEL_ID}_inference.csv')
+HR_ACHIEVED_MODEL_ID = 'pretest_hr_achieved_model'
+HR_ACHIEVED_MODEL_PATH = os.path.join(OUTPUT_FOLDER, HR_ACHIEVED_MODEL_ID, HR_ACHIEVED_MODEL_ID + MODEL_EXT)
+PRETEST_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, 'pretest_model_inference.tsv')
 
 
 # Tensor from file helpers
@@ -266,7 +271,7 @@ def _recovery_hrs_from_path(path: str):
 
 
 def plot_hr_from_biosppy_summary_stats():
-    df = pd.read_csv(BIOSPPY_MEASUREMENTS_PATH)
+    df = pd.read_csv(BIOSPPY_MEASUREMENTS_FILE)
 
     # HR summary stats
     plt.figure(figsize=(15, 7))
@@ -299,7 +304,7 @@ def plot_hr_from_biosppy_summary_stats():
 
 
 def plot_pretest_label_summary_stats():
-    df = pd.read_csv(PRETEST_LABELS)
+    df = pd.read_csv(PRETEST_LABEL_FILE)
 
     # HR summary stats
     plt.figure(figsize=(15, 7))
@@ -335,23 +340,44 @@ def build_hr_biosppy_measurements_csv():
     df = pd.DataFrame(measures)
     delta_t = time.time() - now
     logging.info(f'Getting hr measurements from biosppy took {delta_t // 60} minutes at {delta_t / len(paths):.2f}s per path.')
-    df.to_csv(BIOSPPY_MEASUREMENTS_PATH, index=False)
+    df.to_csv(BIOSPPY_MEASUREMENTS_FILE, index=False)
 
 
 def build_pretest_training_labels():
-    biosppy_labels = pd.read_csv(BIOSPPY_MEASUREMENTS_PATH, dtype={'sample_id': str})
+    biosppy_labels = pd.read_csv(BIOSPPY_MEASUREMENTS_FILE, dtype={'sample_id': str})
     inferred_labels = pd.read_csv(RECOVERY_INFERENCE_FILE, dtype={'sample_id': str}, sep='\t')
     df = biosppy_labels.merge(inferred_labels, on='sample_id')
     new_df = pd.DataFrame()
     new_df['sample_id'] = df['sample_id']
     for t in HR_MEASUREMENT_TIMES:
         hr_name = df_hr_col(t)
-        new_df[hr_name] = np.nanmean(df[[hr_name, hr_name + '_predicted']], axis=1)  # Ensemble
+        new_df[hr_name] = np.nanmean(df[[hr_name, time_to_pred_hr_col(t, RECOVERY_MODEL_ID)]], axis=1)  # Ensemble
         hrr_name = df_hrr_col(t)
         temp_name = 'temp_hrr'
         df[temp_name] = df[df_hr_col(HR_MEASUREMENT_TIMES[0])] - df[hr_name]
-        new_df[hrr_name] = np.nanmean(df[[temp_name, hrr_name + '_predicted']], axis=1)  # Ensemble
-    new_df.to_csv(PRETEST_LABELS, index=False)
+        new_df[hrr_name] = np.nanmean(df[[temp_name, time_to_pred_hrr_col(t, RECOVERY_MODEL_ID)]], axis=1)  # Ensemble
+    new_df.to_csv(PRETEST_LABEL_FILE, index=False)
+
+
+# Inference
+ACTUAL_POSTFIX = '_actual'
+PRED_POSTFIX = '_predicted'
+
+
+def tmap_to_actual_col(tmap: TensorMap):
+    return f'{tmap.name()}{ACTUAL_POSTFIX}'
+
+
+def tmap_to_pred_col(tmap: TensorMap, model_id: str):
+    return f'{model_id}_{tmap.name}{PRED_POSTFIX}'
+
+
+def time_to_pred_hr_col(t: int, model_id: str):
+    return f'{model_id}_{df_hr_col(t)}{PRED_POSTFIX}'
+
+
+def time_to_pred_hrr_col(t: int, model_id: str):
+    return f'{model_id}_{df_hrr_col(t)}{PRED_POSTFIX}'
 
 
 # Biosppy TensorMaps
@@ -378,11 +404,11 @@ def _hr_file(file_name: str, t: int, hrr=False):
         sample_id = _sample_id_from_hd5(hd5)
         try:
             row = df.loc[sample_id]
-            hr, diff = row[f'{t}_hr'], row[f'{t}_diff']
+            hr, diff = row[df_hr_col(t)], row[df_diff_col(t)]
             if diff > BIOSPPY_DIFF_CUTOFF:  # TODO: make diff analysis a validator
                 return np.array([BIOSPPY_SENTINEL])
             if hrr:
-                peak, peak_diff = row[f'0_hr'], row[f'0_diff']
+                peak, peak_diff = row[df_hr_col(0)], row[df_diff_col(0)]
                 if peak_diff > BIOSPPY_DIFF_CUTOFF:
                     return np.array([BIOSPPY_SENTINEL])
                 out = peak - hr
@@ -417,6 +443,61 @@ def _make_hr_tmaps(file_name: str) -> Tuple[Dict[int, TensorMap], Dict[int, Tens
             normalization=HRR_NORMALIZE,
         )
     return biosppy_hr_tmaps, biosppy_hrr_tmaps
+
+
+# Covariates tensormaps
+def _get_instance(hd5: h5py.File):
+    path_prefix, name = 'ecg_bike/string', 'instance'
+    dates = _all_dates(hd5, path_prefix, name)
+    if not dates:
+        raise ValueError(f'No {name} values values available.')
+    return hd5[f'{tensor_path(path_prefix=path_prefix, name=name)}{min(dates)}/'][()]
+
+
+def _make_covariate_tff():
+    df = None
+
+    def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
+        nonlocal df
+        if df is None:
+            df = pd.read_csv(COVARIATE_FILE, dtype={'sample_id': str}, sep='\t')
+            df = df.set_index('sample_id')
+        sample_id = _sample_id_from_hd5(hd5)
+        try:
+            row = df.loc[sample_id]
+            instance = _get_instance(hd5)
+            row = row[row['instance'] == instance]
+            if not row:
+                raise ValueError(f'No matching instance in covariate file.')
+            out = np.zeros(tm.shape, np.float32)
+            val = row[tm.name]
+            if tm.interpretation == Interpretation.CATEGORICAL:
+                out[int(val)] = 1.
+            else:
+                out[0] = val
+            return out
+        except KeyError:
+            raise KeyError(f'Sample id not covariate file.')
+    return tensor_from_file
+
+
+age = TensorMap(
+    'age', shape=(1,),
+    interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization=Standardize(57, 8),
+    tensor_from_file=_make_covariate_tff(),
+)
+bmi = TensorMap(
+    'bmi', shape=(1,),
+    interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization=Standardize(27, 5),
+    tensor_from_file=_make_covariate_tff(),
+)
+sex = TensorMap(
+    'sex', shape=(2,), channel_map={'female': 1, 'male': 0},
+    interpretation=Interpretation.CATEGORICAL,
+    validator=no_nans, tensor_from_file=_make_covariate_tff(),
+)
 
 
 # ECG TensorMaps
