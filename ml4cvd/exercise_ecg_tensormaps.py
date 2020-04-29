@@ -323,7 +323,7 @@ def plot_pretest_label_summary_stats():
 
     # correlation heat map
     plt.figure(figsize=(7, 7))
-    sns.heatmap(df[DF_HR_COLS + DF_DIFF_COLS].corr(), annot=True, cbar=False)
+    sns.heatmap(df[DF_HR_COLS].corr(), annot=True, cbar=False)
     plt.savefig(os.path.join(FIGURE_FOLDER, 'biosppy_correlations.png'))
     plt.close()
 
@@ -433,7 +433,7 @@ def _make_hr_tmaps(file_name: str) -> Tuple[Dict[int, TensorMap], Dict[int, Tens
             normalization=HR_NORMALIZE,
         )
     biosppy_hrr_tmaps = {}
-    for t in HR_MEASUREMENT_TIMES:
+    for t in HR_MEASUREMENT_TIMES[1:]:
         biosppy_hrr_tmaps[t] = TensorMap(
             df_hrr_col(t), shape=(1,),
             interpretation=Interpretation.CONTINUOUS,
@@ -515,6 +515,6 @@ def make_pretest_tmap(downsample_rate: int, leads) -> TensorMap:
         'pretest_ecg', shape=(PRETEST_TRAINING_DUR * SAMPLING_RATE // downsample_rate, len(leads)),
         interpretation=Interpretation.CONTINUOUS,
         validator=no_nans, normalization=Standardize(0, 100),
-        tensor_from_file=_make_pretest_ecg_tff(downsample_rate, [0, 1, 2]),
+        tensor_from_file=_make_pretest_ecg_tff(downsample_rate, leads),
         cacheable=False, augmentations=[_rand_scale_ecg, _rand_add_noise, _rand_offset_ecg],
     )
