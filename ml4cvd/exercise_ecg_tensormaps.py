@@ -365,7 +365,7 @@ PRED_POSTFIX = '_predicted'
 
 
 def tmap_to_actual_col(tmap: TensorMap):
-    return f'{tmap.name()}{ACTUAL_POSTFIX}'
+    return f'{tmap.name}{ACTUAL_POSTFIX}'
 
 
 def tmap_to_pred_col(tmap: TensorMap, model_id: str):
@@ -426,7 +426,7 @@ def _make_hr_tmaps(file_name: str) -> Tuple[Dict[int, TensorMap], Dict[int, Tens
     biosppy_hr_tmaps = {}
     for t in HR_MEASUREMENT_TIMES:
         biosppy_hr_tmaps[t] = TensorMap(
-            df_hr_col(t), shape=(1,),
+            df_hr_col(t), shape=(1,), metrics=[],
             interpretation=Interpretation.CONTINUOUS,
             sentinel=HR_NORMALIZE.normalize(BIOSPPY_SENTINEL),
             tensor_from_file=_hr_file(file_name, t),
@@ -435,7 +435,7 @@ def _make_hr_tmaps(file_name: str) -> Tuple[Dict[int, TensorMap], Dict[int, Tens
     biosppy_hrr_tmaps = {}
     for t in HR_MEASUREMENT_TIMES[1:]:
         biosppy_hrr_tmaps[t] = TensorMap(
-            df_hrr_col(t), shape=(1,),
+            df_hrr_col(t), shape=(1,), metrics=[],
             interpretation=Interpretation.CONTINUOUS,
             sentinel=HRR_NORMALIZE.normalize(BIOSPPY_SENTINEL),
             tensor_from_file=_hr_file(file_name, t, hrr=True),

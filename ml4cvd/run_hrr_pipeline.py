@@ -109,10 +109,10 @@ def _infer_models(
     )
     generate_test.set_worker_paths(tensor_paths)
 
-    tmap_to_out_name = {tm: tm.output_name() for tm in output_tmaps}
+    out_name_to_tmap = {tm.output_name(): tm for tm in output_tmaps}
 
     def model_output_to_tmap(out_name: str) -> TensorMap:
-        return tmap_to_out_name[out_name]
+        return out_name_to_tmap[out_name]
 
     actual_cols = list(map(tmap_to_actual_col, output_tmaps))
     prediction_cols = sum(
