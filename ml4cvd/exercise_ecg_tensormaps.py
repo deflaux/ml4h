@@ -218,8 +218,8 @@ def _path_from_sample_id(sample_id: str) -> str:
     return os.path.join(TENSOR_FOLDER, sample_id + TENSOR_EXT)
 
 
-def _sample_id_from_hd5(hd5: h5py.File) -> str:
-    return os.path.basename(hd5.filename).replace(TENSOR_EXT, '')
+def _sample_id_from_hd5(hd5: h5py.File) -> int:
+    return int(os.path.basename(hd5.filename).replace(TENSOR_EXT, ''))
 
 
 def _plot_recovery_hrs(path: str):
@@ -390,7 +390,7 @@ HRR_NORMALIZE = Standardize(20, 10)
 def _hr_file(file_name: str, t: int, hrr=False):
     error = None
     try:
-        df = pd.read_csv(file_name, dtype={'sample_id': str})
+        df = pd.read_csv(file_name)
         df = df.set_index('sample_id')
         if df_diff_col(HR_MEASUREMENT_TIMES[0]) not in df.columns:  # Hacky way to handle no diff case
             for t in HR_MEASUREMENT_TIMES:
@@ -422,7 +422,7 @@ def _hr_file(file_name: str, t: int, hrr=False):
     return tensor_from_file
 
 
-def _make_hr_tmaps(file_name: str) -> Tuple[Dict[int, TensorMap], Dict[int, TensorMap]]:
+def _make_hr_tmaps(file_name: str, parents=True) -> Tuple[Dict[int, TensorMap], Dict[int, TensorMap]]:
     biosppy_hr_tmaps = {}
     for t in HR_MEASUREMENT_TIMES:
         biosppy_hr_tmaps[t] = TensorMap(
@@ -439,7 +439,7 @@ def _make_hr_tmaps(file_name: str) -> Tuple[Dict[int, TensorMap], Dict[int, Tens
             interpretation=Interpretation.CONTINUOUS,
             sentinel=HRR_NORMALIZE.normalize(BIOSPPY_SENTINEL),
             tensor_from_file=_hr_file(file_name, t, hrr=True),
-            parents=[biosppy_hr_tmaps[t], biosppy_hr_tmaps[HR_MEASUREMENT_TIMES[0]]],
+            parents=[biosppy_hr_tmaps[t], biosppy_hr_tmaps[HR_MEASUREMENT_TIMES[0]]] if parents else None,
             normalization=HRR_NORMALIZE,
         )
     return biosppy_hr_tmaps, biosppy_hrr_tmaps
@@ -454,21 +454,27 @@ def _get_instance(hd5: h5py.File):
     return hd5[f'{tensor_path(path_prefix=path_prefix, name=name)}{min(dates)}/'][()]
 
 
-def _make_covariate_tff():
+def _make_covariate_tff(join_file: str, join_file_sep: str='\t'):
     df = None
 
     def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
         nonlocal df
         if df is None:
-            df = pd.read_csv(COVARIATE_FILE, dtype={'sample_id': str}, sep='\t')
+            df = pd.read_csv(COVARIATE_FILE, sep='\t')
             df = df.set_index('sample_id')
+            to_merge = pd.read_csv(join_file,sep=join_file_sep).set_index('sample_id')
+            df = df[df.index.isin(to_merge.index)]
         sample_id = _sample_id_from_hd5(hd5)
         try:
             row = df.loc[sample_id]
-            instance = _get_instance(hd5)
-            row = row[row['instance'] == instance]
-            if not row:
-                raise ValueError(f'No matching instance in covariate file.')
+            instance = int(_get_instance(hd5))
+            if type(row) == pd.Series:   # one instance case
+                if row['instance'] != instance:
+                    raise ValueError(f'No matching instance in covariate file.')
+            else:  # many instance case
+                row = row[row['instance'] == instance]
+                if len(row) == 0:
+                    raise ValueError(f'No matching instance in covariate file.')
             out = np.zeros(tm.shape, np.float32)
             val = row[tm.name]
             if tm.interpretation == Interpretation.CATEGORICAL:
@@ -485,18 +491,18 @@ age = TensorMap(
     'age', shape=(1,),
     interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization=Standardize(57, 8),
-    tensor_from_file=_make_covariate_tff(),
+    tensor_from_file=_make_covariate_tff(PRETEST_LABEL_FILE, ','),
 )
 bmi = TensorMap(
     'bmi', shape=(1,),
     interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization=Standardize(27, 5),
-    tensor_from_file=_make_covariate_tff(),
+    tensor_from_file=_make_covariate_tff(PRETEST_LABEL_FILE, ','),
 )
 sex = TensorMap(
     'sex', shape=(2,), channel_map={'female': 1, 'male': 0},
     interpretation=Interpretation.CATEGORICAL,
-    validator=no_nans, tensor_from_file=_make_covariate_tff(),
+    validator=no_nans, tensor_from_file=_make_covariate_tff(PRETEST_LABEL_FILE, ','),
 )
 
 

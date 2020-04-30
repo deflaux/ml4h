@@ -22,7 +22,7 @@ from ml4cvd.exercise_ecg_tensormaps import plot_segment_prediction, build_pretes
 from ml4cvd.exercise_ecg_tensormaps import make_pretest_tmap, PRETEST_MODEL_ID, PRETEST_MODEL_PATH
 from ml4cvd.exercise_ecg_tensormaps import BASELINE_MODEL_ID, BASELINE_MODEL_PATH, PRETEST_INFERENCE_FILE
 from ml4cvd.exercise_ecg_tensormaps import HR_ACHIEVED_MODEL_ID, HR_ACHIEVED_MODEL_PATH
-from ml4cvd.exercise_ecg_tensormaps import age, sex, bmi, tmap_to_actual_col, tmap_to_pred_col
+from ml4cvd.exercise_ecg_tensormaps import age, sex, bmi, tmap_to_actual_col, tmap_to_pred_col, time_to_pred_hr_col, time_to_pred_hrr_col
 from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.recipes import _make_tmap_nan_on_fail
 from ml4cvd.metrics import coefficient_of_determination
@@ -52,6 +52,7 @@ hr_tmaps, hrr_tmaps = _make_hr_tmaps(PRETEST_LABEL_FILE)
 BASELINE_INPUT_TMAPS = [age, sex, bmi]
 PRETEST_INPUT_TMAPS = [make_pretest_tmap(8, [0])] + BASELINE_INPUT_TMAPS  # TODO: later will come from hyperopt config
 PRETEST_OUTPUT_TMAPS = list(hr_tmaps.values()) + list(hrr_tmaps.values())
+hr_tmaps, hrr_tmaps = _make_hr_tmaps(PRETEST_LABEL_FILE, parents=False)
 HR_ACHIEVED_INPUT_TMAPS = PRETEST_INPUT_TMAPS + [hr_tmaps[0]]  # TODO: later will come from hyperopt config
 HR_ACHIEVED_OUTPUT_TMAPS = list(hr_tmaps.values())[1:] + list(hrr_tmaps.values())
 
@@ -141,7 +142,7 @@ def _infer_models(
                     tm = model_output_to_tmap(out_name)
                     scaled = str(tm.rescale(pred[0][0]))
                     row[tmap_to_pred_col(tm, m_id)] = scaled
-            row['sample_id'] = [os.path.basename(tensor_paths[0]).replace(TENSOR_EXT, '')]  # extract sample id
+            row['sample_id'] = os.path.basename(tensor_paths[0]).replace(TENSOR_EXT, '')  # extract sample id
             for tm in no_fail_tmaps_out:
                 if ((tm.sentinel is not None and tm.sentinel == output_data[tm.output_name()][0][0])
                         or np.isnan(output_data[tm.output_name()][0][0])):
@@ -178,6 +179,7 @@ def _dist_plot(ax, truth, prediction, title):
 
 
 def _evaluate_recovery_model():
+    m_id = RECOVERY_MODEL_ID
     logging.info('Plotting recovery model results.')
     inference_results = pd.read_csv(RECOVERY_INFERENCE_FILE, sep='\t', dtype={'sample_id': str})
     test_ids = pd.read_csv(TEST_CSV, names=['sample_id'], dtype={'sample_id': str})
@@ -185,7 +187,7 @@ def _evaluate_recovery_model():
 
     # negative HRR measurements
     for t in HR_MEASUREMENT_TIMES[1:]:
-        name = df_hrr_col(t) + '_prediction'
+        name = time_to_pred_hrr_col(t, m_id)
         col = test_results[name].dropna()
         logging.info(f'HRR_{t} had {(col < 0).mean() * 100:.2f}% negative predictions in hold out data.')
         logging.info(f'HRR_{t} had {(col < -5).mean() * 100:.2f}% predictions < -5 in hold out data.')
@@ -194,17 +196,15 @@ def _evaluate_recovery_model():
     ax_size = 5
     fig, axes = plt.subplots(2, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), 2 * ax_size))
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
-        name = df_hr_col(t)
-        pred = test_results[name+'_prediction']
-        actual = test_results[name+'_actual']
+        pred = test_results[time_to_pred_hr_col(t, m_id)]
+        actual = test_results[time_to_pred_hr_col(t, m_id)]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
         _scatter_plot(axes[0, i], actual[not_na], pred[not_na], f'HR at recovery time {t}')
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
         if t == 0:
             continue
-        name = df_hrr_col(t)
-        pred = test_results[name+'_prediction']
-        actual = test_results[name+'_actual']
+        pred = test_results[time_to_pred_hrr_col(t, m_id)]
+        actual = test_results[time_to_pred_hrr_col(t, m_id)]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
         _scatter_plot(axes[1, i], actual[not_na], pred[not_na], f'HRR at recovery time {t}')
     plt.tight_layout()
@@ -214,17 +214,15 @@ def _evaluate_recovery_model():
     ax_size = 5
     fig, axes = plt.subplots(2, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), 2 * ax_size))
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
-        name = df_hr_col(t)
-        pred = test_results[name+'_prediction']
-        actual = test_results[name+'_actual']
+        pred = test_results[time_to_pred_hr_col(t, m_id)]
+        actual = test_results[time_to_pred_hr_col(t, m_id)]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
         _dist_plot(axes[0, i], actual[not_na], pred[not_na], f'HR at recovery time {t}')
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
         if t == 0:
             continue
-        name = df_hrr_col(t)
-        pred = test_results[name+'_prediction']
-        actual = test_results[name+'_actual']
+        pred = test_results[time_to_pred_hrr_col(t, m_id)]
+        actual = test_results[time_to_pred_hrr_col(t, m_id)]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
         _dist_plot(axes[1, i], actual[not_na], pred[not_na], f'HRR at recovery time {t}')
     plt.tight_layout()
@@ -236,7 +234,7 @@ def _evaluate_recovery_model():
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
         name = df_hr_col(t)
         diff_name = df_diff_col(t)
-        pred = label_df[name+'_prediction']
+        pred = label_df[time_to_pred_hr_col(t, m_id)]
         actual = label_df[name+'_actual']
         diff = label_df[diff_name]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL) & ~np.isnan(diff)
@@ -257,7 +255,7 @@ def _evaluate_recovery_model():
             row = row[1]
             plt.subplot(len(HR_MEASUREMENT_TIMES), 2, 2 * i + 1 + j)
             plot_segment_prediction(
-                row['sample_id'], t=t, pred=row[name+'_prediction'], actual=row[name+'_actual'],
+                row['sample_id'], t=t, pred=row[time_to_pred_hr_col(t, m_id)], actual=row[name+'_actual'],
                 diff=row[df_diff_col(t)],
             )
     plt.tight_layout()
@@ -271,7 +269,7 @@ def _get_pretest_config():
 
 def _get_pretest_baseline_model(use_model_file: bool):
     model = make_multimodal_multitask_model(
-        tensor_maps_in=PRETEST_INPUT_TMAPS,
+        tensor_maps_in=BASELINE_INPUT_TMAPS,
         tensor_maps_out=PRETEST_OUTPUT_TMAPS,
         activation='swish',
         learning_rate=1e-3,
@@ -415,7 +413,7 @@ if __name__ == '__main__':
     if TRAIN_HR_ACHIEVED_MODEL:
         logging.info('Training hr achieved model.')
         _train_model(
-            model=_get_pretest_model(False), tmaps_in=HR_ACHIEVED_INPUT_TMAPS, tmaps_out=HR_ACHIEVED_OUTPUT_TMAPS,
+            model=_get_hr_achieved_model(False), tmaps_in=HR_ACHIEVED_INPUT_TMAPS, tmaps_out=HR_ACHIEVED_OUTPUT_TMAPS,
             model_id=HR_ACHIEVED_MODEL_ID, batch_size=256,
         )
     if INFER_PRETEST_MODELS:
