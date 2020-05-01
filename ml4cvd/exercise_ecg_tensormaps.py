@@ -393,8 +393,8 @@ def _hr_file(file_name: str, t: int, hrr=False):
         df = pd.read_csv(file_name)
         df = df.set_index('sample_id')
         if df_diff_col(HR_MEASUREMENT_TIMES[0]) not in df.columns:  # Hacky way to handle no diff case
-            for t in HR_MEASUREMENT_TIMES:
-                df[df_diff_col(t)] = BIOSPPY_DIFF_CUTOFF - 1
+            for t2 in HR_MEASUREMENT_TIMES:
+                df[df_diff_col(t2)] = BIOSPPY_DIFF_CUTOFF - 1
     except FileNotFoundError as e:
         error = e
 
