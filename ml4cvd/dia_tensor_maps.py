@@ -1,8 +1,11 @@
+import time
 import h5py
-from typing import Tuple, Callable, List, Dict, Optional
+from typing import Tuple, Callable, List, Dict, Optional, Iterator
 import numpy as np
 from collections import Counter
 from multiprocessing import Pool
+import pandas as pd
+from functools import partial
 
 
 """
@@ -79,10 +82,21 @@ HF_ICD10 = {
 
 
 # Instance filtering
+def _all_instances(hd5: h5py.File, file_type: str):
+    for instance in hd5[file_type]:
+        yield hd5[file_type][instance]
+
+
 def _instances_with_flag(hd5: h5py.File, file_type: str, name: str) -> h5py.Group:
     for instance in hd5[file_type]:
         if name in instance:
             yield instance
+
+
+def _filter_instances(
+        hd5: h5py.File, file_type: str, instance_filter: Callable[[h5py.Group], bool],
+) -> h5py.Group:
+    yield from filter(instance_filter, _all_instances(hd5, file_type))
 
 
 def _instances_filtered_by_value(
@@ -164,24 +178,45 @@ def _age_below_20(hd5: h5py.File) -> h5py.Group:
     yield from _instances_with_flag_in_age_range(hd5, DIA, AgeRange(-np.inf, 20))
 
 
-def cross_tab_icd_inpatient_diagnosis_flag(hd5: h5py.File) -> Counter:
-    instances = _instances_filtered_by_value(hd5, DIA, CODE, _hf_code_filter)
+def cross_tab_names(instances: Iterator[h5py.Group], names: List[str]) -> Counter:
     counts = Counter()
-    names = [CODE, CODE_TYPE, INPATIENT_OUTPATIENT, DIAGNOSIS_FLAG]
     for instance in instances:
         counts[_optional_strs_from_instance_tuple(instance, names)] += 1
     return counts
 
 
-def cross_tab_icd_inpatient_diagnosis_flag_path(hd5_path: str) -> Counter:
-    try:
-        with h5py.File(hd5_path, 'r') as hd5:
-            return cross_tab_icd_inpatient_diagnosis_flag(hd5)
-    except ValueError:
-        return Counter()
+def cross_tab_names_from_path(
+        hd5_path: str, file_type: str, names: List[str], instance_filter: Callable[[h5py.Group], bool],
+) -> Counter:
+    counts = Counter()
+    with h5py.File(hd5_path, 'r') as hd5:
+        instances = _filter_instances(hd5, file_type, instance_filter)
+        for instance in instances:
+            counts[_optional_strs_from_instance_tuple(instance, names)] += 1
+    return counts
 
 
-def cross_tab_icd_inpatient_diagnosis_flag_multiprocess(hd5_paths: List[str]):
-    cross_tab_workers = 8
-    pool = Pool(cross_tab_workers)
-    return pool.map(cross_tab_icd_inpatient_diagnosis_flag_path, hd5_paths)
+def cross_tab_names_to_df(names: List[str], counter: Counter):
+    rows = []
+    for values, count in counter.items():
+        row = {name: values for name, value in zip(names, values)}
+        row['count'] = count
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def cross_tab_multiprocess(
+        file_type: str, names: List[str], instance_filter: Callable[[h5py.Group], bool],
+        hd5_paths: List[str], num_workers: int,
+) -> pd.DataFrame:
+    hd5_func = partial(
+        cross_tab_names_from_path,
+        file_type=file_type, names=names, instance_filter=instance_filter,
+    )
+    pool = Pool(num_workers)
+    print(f'Beginning cross tab of {names}.')
+    now = time.time()
+    counts = pool.map(hd5_func, hd5_paths)
+    dur = time.time() - now
+    print(f'Cross tab took {dur:.2f} seconds at {len(hd5_paths) / dur:.3f} paths/second and {dur * num_workers / len(hd5_paths):.3f} worker seconds/path.')
+    return cross_tab_names_to_df(names, counts)
