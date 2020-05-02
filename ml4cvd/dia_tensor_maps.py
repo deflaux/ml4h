@@ -110,6 +110,10 @@ def _and_instance_filters(a: Callable[[h5py.Group], bool], b: Callable[[h5py.Gro
     return lambda instance: a(instance) and b(instance)
 
 
+def _no_filter(instance: h5py.Group) -> bool:
+    return True
+
+
 # Generic use
 def _str_from_instance(instance: h5py.Group, name: str) -> str:
     return instance[name][()]
@@ -200,7 +204,7 @@ def cross_tab_names_from_path(
 def cross_tab_names_to_df(names: List[str], counter: Counter):
     rows = []
     for values, count in counter.items():
-        row = {name: values for name, value in zip(names, values)}
+        row = {name: value for name, value in zip(names, values)}
         row['count'] = count
         rows.append(row)
     return pd.DataFrame(rows)
@@ -217,7 +221,7 @@ def cross_tab_multiprocess(
     pool = Pool(num_workers)
     print(f'Beginning cross tab of {names}.')
     now = time.time()
-    counts = pool.map(hd5_func, hd5_paths)
+    counts = sum(pool.map(hd5_func, hd5_paths), Counter())
     dur = time.time() - now
     print(f'Cross tab took {dur:.2f} seconds at {len(hd5_paths) / dur:.3f} paths/second and {dur * num_workers / len(hd5_paths):.3f} worker seconds/path.')
     return cross_tab_names_to_df(names, counts)
@@ -230,7 +234,7 @@ def cross_tab_hf(hd5_paths: List[str]) -> pd.DataFrame:
 
 def cross_tab_inpatient_diagnosis_flag(hd5_paths: List[str]) -> pd.DataFrame:
     names = [INPATIENT_OUTPATIENT, DIAGNOSIS_FLAG]
-    return cross_tab_multiprocess(DIA, names, _hf_code_filter, hd5_paths, 4)
+    return cross_tab_multiprocess(DIA, names, _no_filter, hd5_paths, 4)
 
 
 if __name__ == '__main__':
