@@ -19,6 +19,7 @@ CODE = 'Code'
 CODE_TYPE = 'Code_Type'
 INPATIENT_OUTPATIENT = 'Inpatient_Outpatient'
 DIAGNOSIS_FLAG = 'Diagnosis_Flag'
+DIAGNOSIS_NAME = 'Diagnosis_Name'
 KNOWN_NAMES = [
     'Clinic', 'Code', 'Code_Type', 'Date_Age', 'Diagnosis_Flag',
     'Diagnosis_Name', 'Encounter_number', 'Hospital',
@@ -220,3 +221,23 @@ def cross_tab_multiprocess(
     dur = time.time() - now
     print(f'Cross tab took {dur:.2f} seconds at {len(hd5_paths) / dur:.3f} paths/second and {dur * num_workers / len(hd5_paths):.3f} worker seconds/path.')
     return cross_tab_names_to_df(names, counts)
+
+
+def cross_tab_hf(hd5_paths: List[str]) -> pd.DataFrame:
+    names = [CODE, CODE_TYPE, INPATIENT_OUTPATIENT, DIAGNOSIS_FLAG, DIAGNOSIS_NAME]
+    return cross_tab_multiprocess(DIA, names, _hf_code_filter, hd5_paths, 4)
+
+
+def cross_tab_inpatient_diagnosis_flag(hd5_paths: List[str]) -> pd.DataFrame:
+    names = [INPATIENT_OUTPATIENT, DIAGNOSIS_FLAG]
+    return cross_tab_multiprocess(DIA, names, _hf_code_filter, hd5_paths, 4)
+
+
+if __name__ == '__main__':
+    import os
+    d = '/data/cvrepo/loyalty-cohort-tensors/2020-04-24/'
+    paths = [os.path.join(d, f) for f in os.listdir(d)]
+    ct = cross_tab_hf(paths)
+    ct.to_csv('hf_code_cross_tab.csv', index=False)
+    ct = cross_tab_inpatient_diagnosis_flag(paths)
+    ct.to_csv('inpatient_diagnosis_cross_tab.csv', index=False)
