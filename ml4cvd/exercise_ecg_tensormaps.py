@@ -35,6 +35,8 @@ TEST_CSV = os.path.join(OUTPUT_FOLDER, 'test_ids.csv')
 TEST_SET_LEN = 10000
 BIOSPPY_MEASUREMENTS_FILE = os.path.join(OUTPUT_FOLDER, 'biosppy_hr_recovery_measurements.csv')
 FIGURE_FOLDER = os.path.join(OUTPUT_FOLDER, 'figures')
+BIOSPPY_FIGURE_FOLDER = os.path.join(FIGURE_FOLDER, 'biosppy')
+PRETEST_LABEL_FIGURE_FOLDER = os.path.join(FIGURE_FOLDER, 'pretest_labels')
 RECOVERY_MODEL_ID = 'recovery_hr_model'
 RECOVERY_MODEL_PATH = os.path.join(OUTPUT_FOLDER, RECOVERY_MODEL_ID, RECOVERY_MODEL_ID + MODEL_EXT)
 RECOVERY_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, f'{RECOVERY_MODEL_ID}_inference.tsv')
@@ -231,7 +233,7 @@ def _plot_recovery_hrs(path: str):
                 plt.subplot(num_plots, 1, i + 1)
                 _plot_segment(segment)
             plt.tight_layout()
-            plt.savefig(os.path.join(FIGURE_FOLDER, f'biosppy_hr_recovery_measurements_{_sample_id_from_hd5(hd5)}.png'))
+            plt.savefig(os.path.join(BIOSPPY_FIGURE_FOLDER, f'biosppy_hr_recovery_measurements_{_sample_id_from_hd5(hd5)}.png'))
     except (ValueError, KeyError, OSError) as e:
         logging.debug(f'Plotting failed for {path} with error {e}.')
 
@@ -279,7 +281,7 @@ def plot_hr_from_biosppy_summary_stats():
         x = df[col].dropna()
         sns.distplot(x, label=f' Time = {t}\n mean = {x.mean():.2f}\n std = {x.std():.2f}\n top 5% = {np.quantile(x, .95):.2f}')
     plt.legend()
-    plt.savefig(os.path.join(FIGURE_FOLDER, 'biosppy_hr_recovery_measurements_summary_stats.png'))
+    plt.savefig(os.path.join(BIOSPPY_FIGURE_FOLDER, 'biosppy_hr_recovery_measurements_summary_stats.png'))
 
     # HR lead diff summary stats
     plt.figure(figsize=(15, 7))
@@ -287,19 +289,19 @@ def plot_hr_from_biosppy_summary_stats():
         x = df[col].dropna().copy()
         sns.distplot(x[x < 5], label=f' Time = {t}\n mean = {x.mean():.2f}\n std = {x.std():.2f}\n top 5% = {np.quantile(x, .95):.2f}')
     plt.legend()
-    plt.savefig(os.path.join(FIGURE_FOLDER, 'biosppy_hr_diff_recovery_measurements_summary_stats.png'))
+    plt.savefig(os.path.join(BIOSPPY_FIGURE_FOLDER, 'biosppy_hr_diff_recovery_measurements_summary_stats.png'))
 
     # Random sample of hr trends
     plt.figure(figsize=(15, 7))
     trend_samples = df[DF_HR_COLS].sample(1000).values
     plt.plot(HR_MEASUREMENT_TIMES, (trend_samples - trend_samples[:, :1]).T, alpha=.2, linewidth=1, c='k')
     plt.axhline(0, c='k', linestyle='--')
-    plt.savefig(os.path.join(FIGURE_FOLDER, 'biosppy_hr_trend_samples.png'))
+    plt.savefig(os.path.join(BIOSPPY_FIGURE_FOLDER, 'biosppy_hr_trend_samples.png'))
 
     # correlation heat map
     plt.figure(figsize=(7, 7))
     sns.heatmap(df[DF_HR_COLS + DF_DIFF_COLS].corr(), annot=True, cbar=False)
-    plt.savefig(os.path.join(FIGURE_FOLDER, 'biosppy_correlations.png'))
+    plt.savefig(os.path.join(BIOSPPY_FIGURE_FOLDER, 'biosppy_correlations.png'))
     plt.close()
 
 
@@ -312,19 +314,19 @@ def plot_pretest_label_summary_stats():
         x = df[col].dropna()
         sns.distplot(x, label=f' Time = {t}\n mean = {x.mean():.2f}\n std = {x.std():.2f}\n top 5% = {np.quantile(x, .95):.2f}')
     plt.legend()
-    plt.savefig(os.path.join(FIGURE_FOLDER, 'pretest_training_labels_summary_stats.png'))
+    plt.savefig(os.path.join(PRETEST_LABEL_FIGURE_FOLDER, 'pretest_training_labels_summary_stats.png'))
 
     # Random sample of hr trends
     plt.figure(figsize=(15, 7))
     trend_samples = df[DF_HR_COLS].sample(1000).values
     plt.plot(HR_MEASUREMENT_TIMES, (trend_samples - trend_samples[:, :1]).T, alpha=.2, linewidth=1, c='k')
     plt.axhline(0, c='k', linestyle='--')
-    plt.savefig(os.path.join(FIGURE_FOLDER, 'pretest_training_labels_hr_trend_samples.png'))
+    plt.savefig(os.path.join(PRETEST_LABEL_FIGURE_FOLDER, 'pretest_training_labels_hr_trend_samples.png'))
 
     # correlation heat map
     plt.figure(figsize=(7, 7))
     sns.heatmap(df[DF_HR_COLS].corr(), annot=True, cbar=False)
-    plt.savefig(os.path.join(FIGURE_FOLDER, 'biosppy_correlations.png'))
+    plt.savefig(os.path.join(PRETEST_LABEL_FIGURE_FOLDER, 'biosppy_correlations.png'))
     plt.close()
 
 

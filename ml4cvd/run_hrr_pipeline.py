@@ -25,6 +25,7 @@ from ml4cvd.exercise_ecg_tensormaps import BASELINE_MODEL_ID, BASELINE_MODEL_PAT
 from ml4cvd.exercise_ecg_tensormaps import HR_ACHIEVED_MODEL_ID, HR_ACHIEVED_MODEL_PATH
 from ml4cvd.exercise_ecg_tensormaps import age, sex, bmi, tmap_to_actual_col, tmap_to_pred_col, time_to_pred_hr_col, time_to_pred_hrr_col
 from ml4cvd.exercise_ecg_tensormaps import time_to_actual_hr_col, time_to_actual_hrr_col
+from ml4cvd.exercise_ecg_tensormaps import BIOSPPY_FIGURE_FOLDER, PRETEST_LABEL_FIGURE_FOLDER
 from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.recipes import _make_tmap_nan_on_fail
 from ml4cvd.metrics import coefficient_of_determination
@@ -186,6 +187,7 @@ def _evaluate_model(m_id: str, inference_file: str):
     test_ids = pd.read_csv(TEST_CSV, names=['sample_id'], dtype={'sample_id': str})
     test_results = inference_results.merge(test_ids, on='sample_id')
     figure_folder = os.path.join(FIGURE_FOLDER, f'{m_id}_results')
+    os.makedirs(figure_folder, exist_ok=True)
 
     # negative HRR measurements
     for t in HR_MEASUREMENT_TIMES[1:]:
@@ -396,6 +398,8 @@ if __name__ == '__main__':
     np.random.seed(SEED)
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
     os.makedirs(FIGURE_FOLDER, exist_ok=True)
+    os.makedirs(BIOSPPY_FIGURE_FOLDER, exist_ok=True)
+    os.makedirs(PRETEST_LABEL_FIGURE_FOLDER, exist_ok=True)
     now_string = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
     load_config('INFO', OUTPUT_FOLDER, 'log_' + now_string, USER)
     if MAKE_LABELS:
