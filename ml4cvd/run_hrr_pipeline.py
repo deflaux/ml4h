@@ -1,5 +1,7 @@
 import os
+import gc
 import pandas as pd
+import json
 import datetime
 import numpy as np
 from multiprocessing import cpu_count
@@ -8,10 +10,13 @@ import logging
 from collections import Counter
 import csv
 import matplotlib.pyplot as plt
-from typing import Dict, Callable, List
+from typing import Dict, Callable, List, Tuple, Any, Optional
 from itertools import chain
+import hyperopt
+from hyperopt import hp, fmin, tpe
 
 from ml4cvd.logger import load_config
+from ml4cvd.hyperparameters import plot_trials, MAX_LOSS
 from ml4cvd.tensor_generators import test_train_valid_tensor_generators, TensorGenerator, BATCH_INPUT_INDEX, BATCH_OUTPUT_INDEX, BATCH_PATHS_INDEX
 from ml4cvd.models import make_multimodal_multitask_model, BottleneckType, train_model_from_generators
 from ml4cvd.exercise_ecg_tensormaps import OUTPUT_FOLDER, USER, FIGURE_FOLDER, BIOSPPY_MEASUREMENTS_FILE
@@ -24,8 +29,8 @@ from ml4cvd.exercise_ecg_tensormaps import make_pretest_tmap, PRETEST_MODEL_ID, 
 from ml4cvd.exercise_ecg_tensormaps import BASELINE_MODEL_ID, BASELINE_MODEL_PATH, PRETEST_INFERENCE_FILE
 from ml4cvd.exercise_ecg_tensormaps import HR_ACHIEVED_MODEL_ID, HR_ACHIEVED_MODEL_PATH
 from ml4cvd.exercise_ecg_tensormaps import age, sex, bmi, tmap_to_actual_col, tmap_to_pred_col, time_to_pred_hr_col, time_to_pred_hrr_col
-from ml4cvd.exercise_ecg_tensormaps import time_to_actual_hr_col, time_to_actual_hrr_col
-from ml4cvd.exercise_ecg_tensormaps import BIOSPPY_FIGURE_FOLDER, PRETEST_LABEL_FIGURE_FOLDER
+from ml4cvd.exercise_ecg_tensormaps import time_to_actual_hr_col, time_to_actual_hrr_col, HYPEROPT_BEST_FILE
+from ml4cvd.exercise_ecg_tensormaps import BIOSPPY_FIGURE_FOLDER, PRETEST_LABEL_FIGURE_FOLDER, HYPEROPT_FIGURE_PATH
 from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.recipes import _make_tmap_nan_on_fail
 from ml4cvd.metrics import coefficient_of_determination
@@ -37,6 +42,7 @@ MAKE_LABELS = False or not os.path.exists(BIOSPPY_MEASUREMENTS_FILE)
 TRAIN_RECOVERY_MODEL = False or not os.path.exists(RECOVERY_MODEL_PATH)
 INFER_RECOVERY_MODEL = False or not os.path.exists(RECOVERY_INFERENCE_FILE)
 MAKE_PRETEST_LABELS = False or not os.path.exists(PRETEST_LABEL_FILE)
+HYPEROPT_PRETEST_MODEL = False or not os.path.exists(HYPEROPT_BEST_FILE)
 TRAIN_BASELINE_MODEL = False or not os.path.exists(BASELINE_MODEL_PATH)
 TRAIN_PRETEST_MODEL = False or not os.path.exists(PRETEST_MODEL_PATH)
 TRAIN_HR_ACHIEVED_MODEL = False or not os.path.exists(HR_ACHIEVED_MODEL_PATH)
@@ -45,6 +51,7 @@ INFER_PRETEST_MODELS = (
     or not os.path.exists(PRETEST_INFERENCE_FILE)
     or TRAIN_BASELINE_MODEL or TRAIN_PRETEST_MODEL or TRAIN_HR_ACHIEVED_MODEL
 )
+HYPEROP_MAX_TRIALS = 100
 
 hr_tmaps, hrr_tmaps = _make_hr_tmaps(BIOSPPY_MEASUREMENTS_FILE)
 RECOVERY_INPUT_TMAPS = [ecg_bike_recovery_downsampled8x]
@@ -278,11 +285,6 @@ def _evaluate_model(m_id: str, inference_file: str):
     plt.savefig(os.path.join(figure_folder, 'large_mae_segements.png'))
 
 
-def _get_pretest_config():
-    """Gets config of best hyperoptimized model"""
-    pass  # TODO
-
-
 def _get_pretest_baseline_model(use_model_file: bool):
     model = make_multimodal_multitask_model(
         tensor_maps_in=BASELINE_INPUT_TMAPS,
@@ -301,32 +303,15 @@ def _get_pretest_baseline_model(use_model_file: bool):
 
 def _get_pretest_model(use_model_file: bool):
     """builds model to get biosppy measurements from pretest + covariates"""
-    config = _get_pretest_config()  # TODO: use config
-    model = make_multimodal_multitask_model(
-        tensor_maps_in=PRETEST_INPUT_TMAPS,
-        tensor_maps_out=PRETEST_OUTPUT_TMAPS,
-        activation='swish',
-        learning_rate=1e-3,
-        bottleneck_type=BottleneckType.FlattenRestructure,
-        optimizer='radam',
-        dense_layers=[64, 64],
-        conv_layers=[32, 32, 32, 32, 32],  # lots of residual blocks with dilation
-        dense_blocks=[32, 32, 32],
-        block_size=3,
-        conv_normalize='batch_norm',
-        conv_x=16,
-        conv_dilate=True,
-        pool_x=4,
-        pool_type='max',
-        conv_type='conv',
-        model_file=PRETEST_MODEL_PATH if use_model_file else None,
-    )
+    with open(HYPEROPT_BEST_FILE, 'r') as f:
+        space = json.load(f)
+    model = _hrr_model_from_space(space, use_model_file)
     return model
 
 
 def _get_hr_achieved_model(use_model_file: bool):
     """builds model to get biosppy measurements from pretest + covariates"""
-    config = _get_pretest_config()  # TODO: use config
+    # TODO: make use pretest model config
     model = make_multimodal_multitask_model(
         tensor_maps_in=HR_ACHIEVED_INPUT_TMAPS,
         tensor_maps_out=HR_ACHIEVED_OUTPUT_TMAPS,
@@ -355,7 +340,7 @@ def _demo_generator(gen: TensorGenerator):
         logging.info(f'\tKey {k} has mean {v.mean():.3f} and std {v.std():.3f}')
 
 
-def _train_model(model, tmaps_in, tmaps_out, model_id, batch_size):
+def _train_model(model, tmaps_in, tmaps_out, model_id, batch_size) -> Tuple[Any, Dict]:
     """
     Eventually params should come from config generated by hyperoptimization
     """
@@ -384,13 +369,104 @@ def _train_model(model, tmaps_in, tmaps_out, model_id, batch_size):
     logging.info(f'Batch description for training {model_id}.')
     _demo_generator(generate_valid)
     try:
-        train_model_from_generators(
+        model, history = train_model_from_generators(
             model, generate_train, generate_valid, training_steps, validation_steps, batch_size,
-            epochs, patience, OUTPUT_FOLDER, model_id, True, True,
+            epochs, patience, OUTPUT_FOLDER, model_id, True, True, return_history=True,
         )
     finally:
         generate_train.kill_workers()
         generate_valid.kill_workers()
+    return model, history
+
+
+def _hrr_model_from_space(space, use_model_file=False):
+    pretest_tmap = make_pretest_tmap(downsample_rate=int(np.exp(space['log_downsampling'] / np.log(2))), leads=[0])
+    tmaps_in = [pretest_tmap, age, sex, bmi]
+    m = make_multimodal_multitask_model(
+        tensor_maps_in=tmaps_in,
+        tensor_maps_out=PRETEST_OUTPUT_TMAPS,
+        activation='swish',
+        learning_rate=1e-3,
+        bottleneck_type=BottleneckType.FlattenRestructure,
+        optimizer='radam',
+        dense_layers=int(space['num_dense_layers']) * [int(space['dense_layer_units'])],
+        dropout=0,
+        conv_layers=int(space['num_res_blocks']) * [int(space['num_res_filters'])],
+        dense_blocks=int(space['num_dense_blocks']) * [int(space['num_dense_filters'])],
+        conv_type='conv',
+        conv_normalize=space['conv_normalize'],
+        conv_x=int(space['conv_x']),
+        pool_type='max',
+        pool_x=int(np.exp(space['log_pool_x']) / np.log(2)),
+        conv_dilate=True,
+        model_file=PRETEST_MODEL_PATH if use_model_file else None,
+    )
+    return m, tmaps_in
+
+
+def optimize_hrr_model_architecture():
+    conv_normalize = ['', 'batch_norm']
+    space = {
+        'conv_x': hp.quniform('conv_width', 2, 128, 1),
+        'log_pool_x': hp.quniform('log_pool_x', 0, 3, 1),
+        'log_downsampling': hp.quniform('log_dowsampling', 0, 3, 1),
+        'conv_normalize': hp.choice('conv_normalize', conv_normalize),
+        'num_res_blocks': hp.quniform('num_res_blocks', 1, 6, 1),
+        'num_res_filters': hp.quniform('res_filters', 8, 128, 1),
+        'num_dense_blocks': hp.quniform('num_dense_blocks', 1, 6, 1),
+        'dense_block_filters': hp.quniform('num_dense_filters', 8, 128, 1),
+        'num_dense_layers': hp.quniform('num_dense_layers', 1, 6, 1),
+        'dense_layer_units': hp.quniform('dense_layer_units', 8, 128, 1),
+    }
+    param_lists = {
+        'conv_normalize': conv_normalize,
+    }
+    hyperparameter_optimizer(space, param_lists)
+
+
+def hyperparameter_optimizer(space, param_lists=None):
+    param_lists = param_lists or {}
+    histories = []
+    fig_path = os.path.join(HYPEROPT_FIGURE_PATH)
+    i = 0
+    batch_size = 256
+
+    def loss_from_multimodal_multitask(x):
+        model = None
+        history = None
+        nonlocal i
+        i += 1
+        try:
+            model, tmaps_in = _hrr_model_from_space(x)
+            model, history = _train_model(model, tmaps_in, PRETEST_OUTPUT_TMAPS, 'hyperopt_model', batch_size)
+
+            if model.count_params() > 9000000:
+                logging.info(f"Model too big. Model has:{model.count_params()}. Return max loss.")
+                return MAX_LOSS
+            history.history['parameter_count'] = [model.count_params()]
+            histories.append(history.history)
+            loss = np.median(sorted((history.history['val_loss']))[:5])
+            logging.info(f"Iteration {i}: \nValidation Loss: {loss}")
+            return loss
+        except ValueError:
+            logging.exception('ValueError trying to make a model for hyperparameter optimization. Returning max loss.')
+            return MAX_LOSS
+        except:
+            logging.exception('Error trying hyperparameter optimization. Returning max loss.')
+            return MAX_LOSS
+        finally:
+            del model
+            gc.collect()
+            plt.close('all')
+            if history is None:
+                histories.append({'loss': [MAX_LOSS], 'val_loss': [MAX_LOSS], 'parameter_count': [0]})
+
+    trials = hyperopt.Trials()
+    best = fmin(loss_from_multimodal_multitask, space=space, algo=tpe.suggest, max_evals=HYPEROP_MAX_TRIALS, trials=trials)
+    with open(HYPEROPT_BEST_FILE, 'r') as f:
+        json.dump(best, f)
+    plot_trials(trials, histories, fig_path, param_lists)
+    logging.info('Saved learning plot to:{}'.format(fig_path))
 
 
 if __name__ == '__main__':
@@ -400,6 +476,7 @@ if __name__ == '__main__':
     os.makedirs(FIGURE_FOLDER, exist_ok=True)
     os.makedirs(BIOSPPY_FIGURE_FOLDER, exist_ok=True)
     os.makedirs(PRETEST_LABEL_FIGURE_FOLDER, exist_ok=True)
+    os.makedirs(HYPEROPT_FIGURE_PATH)
     now_string = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
     load_config('INFO', OUTPUT_FOLDER, 'log_' + now_string, USER)
     if MAKE_LABELS:
@@ -424,6 +501,9 @@ if __name__ == '__main__':
     if MAKE_PRETEST_LABELS:
         build_pretest_training_labels()
     plot_pretest_label_summary_stats()
+    if HYPEROPT_PRETEST_MODEL:
+        logging.info('Hyperoptimizing pretest model.')
+        optimize_hrr_model_architecture()
     if TRAIN_BASELINE_MODEL:
         logging.info('Training baseline model.')
         _train_model(

@@ -49,6 +49,8 @@ PRETEST_MODEL_PATH = os.path.join(OUTPUT_FOLDER, PRETEST_MODEL_ID, PRETEST_MODEL
 HR_ACHIEVED_MODEL_ID = 'pretest_hr_achieved_model'
 HR_ACHIEVED_MODEL_PATH = os.path.join(OUTPUT_FOLDER, HR_ACHIEVED_MODEL_ID, HR_ACHIEVED_MODEL_ID + MODEL_EXT)
 PRETEST_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, 'pretest_model_inference.tsv')
+HYPEROPT_FIGURE_PATH = os.path.join(FIGURE_FOLDER, 'hyperopt')
+HYPEROPT_BEST_FILE = os.path.join(OUTPUT_FOLDER, 'hyperopt_best_params.json')
 
 
 # Tensor from file helpers
@@ -74,14 +76,14 @@ def _get_bike_ecg(hd5: h5py.File, start: int, stop: int, leads: Union[List[int],
     return tensor
 
 
-def _get_downsampled_bike_ecg(length: int, hd5: h5py.File, start: int, rate: int, leads: Union[List[int], slice]):
-    length = length * rate
+def _get_downsampled_bike_ecg(length: float, hd5: h5py.File, start: int, rate: float, leads: Union[List[int], slice]):
+    length = int(length * rate)
     ecg = _get_bike_ecg(hd5, start, start + length, leads)
     ecg = _downsample_ecg(ecg, rate)
     return ecg
 
 
-def _make_pretest_ecg_tff(downsample_rate: int, leads: Union[List[int], slice], random_start=True):
+def _make_pretest_ecg_tff(downsample_rate: float, leads: Union[List[int], slice], random_start=True):
     def tff(tm: TensorMap, hd5: h5py.File, dependents=None):
         _check_phase_full_len(hd5, 'pretest')
         start = np.random.randint(0, SAMPLING_RATE * PRETEST_DUR - tm.shape[0] * downsample_rate) if random_start else 0
@@ -118,15 +120,16 @@ def _warp_ecg(ecg):
     return warped_ecg
 
 
-def _downsample_ecg(ecg, rate: int):
+def _downsample_ecg(ecg, rate: float):
     """
     rate=2 halves the sampling rate. Uses linear interpolation. Requires ECG to be divisible by rate.
     """
-    assert ecg.shape[0] % rate == 0  # TODO: make this not true so easier to hyperoptimize?
-    i = np.arange(0, ecg.shape[0], rate)
+    new_len = ecg.shape[0] // rate
+    i = np.linspace(0, 1, new_len)
+    x = np.linspace(0, 1, ecg.shape[0])
     downsampled = np.zeros((ecg.shape[0] // rate, ecg.shape[1]))
     for j in range(ecg.shape[1]):
-        downsampled[:, j] = np.interp(i, np.arange(ecg.shape[0]), ecg[:, j])
+        downsampled[:, j] = np.interp(i, x, ecg[:, j])
     return downsampled
 
 
@@ -525,12 +528,11 @@ ecg_bike_recovery_downsampled8x = TensorMap(
 )
 
 
-def make_pretest_tmap(downsample_rate: int, leads) -> TensorMap:
-    assert PRETEST_TRAINING_DUR * SAMPLING_RATE % downsample_rate == 0
+def make_pretest_tmap(downsample_rate: float, leads) -> TensorMap:
     return TensorMap(
-        'pretest_ecg', shape=(PRETEST_TRAINING_DUR * SAMPLING_RATE // downsample_rate, len(leads)),
+        'pretest_ecg', shape=(int(PRETEST_TRAINING_DUR * SAMPLING_RATE // downsample_rate), len(leads)),
         interpretation=Interpretation.CONTINUOUS,
         validator=no_nans, normalization=Standardize(0, 100),
         tensor_from_file=_make_pretest_ecg_tff(downsample_rate, leads),
-        cacheable=False, augmentations=[_rand_scale_ecg, _rand_add_noise, _rand_offset_ecg],
+        cacheable=False, augmentations=[_rand_add_noise],
     )
