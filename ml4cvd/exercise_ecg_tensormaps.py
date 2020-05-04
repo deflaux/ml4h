@@ -380,6 +380,14 @@ def time_to_pred_hrr_col(t: int, model_id: str):
     return f'{model_id}_{df_hrr_col(t)}{PRED_POSTFIX}'
 
 
+def time_to_actual_hr_col(t: int):
+    return f'{df_hr_col(t)}{PRED_POSTFIX}'
+
+
+def time_to_actual_hrr_col(t: int):
+    return f'{df_hrr_col(t)}{PRED_POSTFIX}'
+
+
 # Biosppy TensorMaps
 BIOSPPY_SENTINEL = -1000
 BIOSPPY_DIFF_CUTOFF = 5

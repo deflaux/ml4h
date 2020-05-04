@@ -24,6 +24,7 @@ from ml4cvd.exercise_ecg_tensormaps import make_pretest_tmap, PRETEST_MODEL_ID, 
 from ml4cvd.exercise_ecg_tensormaps import BASELINE_MODEL_ID, BASELINE_MODEL_PATH, PRETEST_INFERENCE_FILE
 from ml4cvd.exercise_ecg_tensormaps import HR_ACHIEVED_MODEL_ID, HR_ACHIEVED_MODEL_PATH
 from ml4cvd.exercise_ecg_tensormaps import age, sex, bmi, tmap_to_actual_col, tmap_to_pred_col, time_to_pred_hr_col, time_to_pred_hrr_col
+from ml4cvd.exercise_ecg_tensormaps import time_to_actual_hr_col, time_to_actual_hrr_col
 from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.recipes import _make_tmap_nan_on_fail
 from ml4cvd.metrics import coefficient_of_determination
@@ -179,12 +180,12 @@ def _dist_plot(ax, truth, prediction, title):
     ax.legend(loc="upper left")
 
 
-def _evaluate_recovery_model():
-    m_id = RECOVERY_MODEL_ID
+def _evaluate_model(m_id: str, inference_file: str):
     logging.info('Plotting recovery model results.')
-    inference_results = pd.read_csv(RECOVERY_INFERENCE_FILE, sep='\t', dtype={'sample_id': str})
+    inference_results = pd.read_csv(inference_file, sep='\t', dtype={'sample_id': str})
     test_ids = pd.read_csv(TEST_CSV, names=['sample_id'], dtype={'sample_id': str})
     test_results = inference_results.merge(test_ids, on='sample_id')
+    figure_folder = os.path.join(FIGURE_FOLDER, f'{m_id}_results')
 
     # negative HRR measurements
     for t in HR_MEASUREMENT_TIMES[1:]:
@@ -197,37 +198,43 @@ def _evaluate_recovery_model():
     ax_size = 5
     fig, axes = plt.subplots(2, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), 2 * ax_size))
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
-        pred = test_results[time_to_pred_hr_col(t, m_id)]
-        actual = test_results[time_to_pred_hr_col(t, m_id)]
+        pred_col = time_to_pred_hr_col(t, m_id)
+        if pred_col not in test_results.columns:
+            continue
+        pred = test_results[pred_col]
+        actual = test_results[time_to_actual_hr_col(t)]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
         _scatter_plot(axes[0, i], actual[not_na], pred[not_na], f'HR at recovery time {t}')
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
         if t == 0:
             continue
         pred = test_results[time_to_pred_hrr_col(t, m_id)]
-        actual = test_results[time_to_pred_hrr_col(t, m_id)]
+        actual = test_results[time_to_actual_hrr_col(t)]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
         _scatter_plot(axes[1, i], actual[not_na], pred[not_na], f'HRR at recovery time {t}')
     plt.tight_layout()
-    plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_measurements_model.png'))
+    plt.savefig(os.path.join(figure_folder, 'model_correlations.png'))
 
     # distributions of predicted and actual measurements
     ax_size = 5
     fig, axes = plt.subplots(2, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), 2 * ax_size))
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
-        pred = test_results[time_to_pred_hr_col(t, m_id)]
-        actual = test_results[time_to_pred_hr_col(t, m_id)]
+        pred_col = time_to_pred_hr_col(t, m_id)
+        if pred_col not in test_results.columns:
+            continue
+        pred = test_results[pred_col]
+        actual = test_results[time_to_actual_hr_col(t)]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
         _dist_plot(axes[0, i], actual[not_na], pred[not_na], f'HR at recovery time {t}')
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
         if t == 0:
             continue
         pred = test_results[time_to_pred_hrr_col(t, m_id)]
-        actual = test_results[time_to_pred_hrr_col(t, m_id)]
+        actual = test_results[time_to_actual_hrr_col(t)]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
         _dist_plot(axes[1, i], actual[not_na], pred[not_na], f'HRR at recovery time {t}')
     plt.tight_layout()
-    plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_model_distributions.png'))
+    plt.savefig(os.path.join(figure_folder, 'distributions.png'))
 
     # correlation of diffs vs. absolute error
     label_df = pd.read_csv(BIOSPPY_MEASUREMENTS_FILE, dtype={'sample_id': str}).merge(test_results, on='sample_id')
@@ -235,21 +242,27 @@ def _evaluate_recovery_model():
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
         name = df_hr_col(t)
         diff_name = df_diff_col(t)
-        pred = label_df[time_to_pred_hr_col(t, m_id)]
+        pred_col = time_to_pred_hr_col(t, m_id)
+        if pred_col not in label_df.columns:
+            continue
+        pred = label_df[pred_col]
         actual = label_df[name+'_actual']
         diff = label_df[diff_name]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL) & ~np.isnan(diff)
         mae = np.abs(pred - actual)
         label_df[name + '_mae'] = mae
         _scatter_plot(axes[i], mae[not_na], diff[not_na], f'HR vs. diff at recovery time {t}')
-    plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_model_error_vs_diffs.png'))
+    plt.savefig(os.path.join(figure_folder, 'model_error_vs_diffs.png'))
 
     # some really wrong predictions
     plots_per_time = 2
     plt.figure(figsize=(ax_size * 4, len(HR_MEASUREMENT_TIMES) * ax_size))
     for i, t in enumerate(HR_MEASUREMENT_TIMES):
         name = df_hr_col(t)
-        mae = label_df[name + '_mae']
+        mae_name = name + '_mae'
+        if mae_name not in label_df:
+            continue
+        mae = label_df[mae_name]
         select = (mae > np.quantile(mae.dropna(), .99)) & ~np.isnan(mae)
         rows = label_df[select].sample(2)
         for j, row in enumerate(rows.iterrows()):
@@ -260,7 +273,7 @@ def _evaluate_recovery_model():
                 diff=row[df_diff_col(t)],
             )
     plt.tight_layout()
-    plt.savefig(os.path.join(FIGURE_FOLDER, f'hr_recovery_model_large_diff_segements.png'))
+    plt.savefig(os.path.join(figure_folder, 'large_mae_segements.png'))
 
 
 def _get_pretest_config():
@@ -403,7 +416,7 @@ if __name__ == '__main__':
             output_tmaps=RECOVERY_OUTPUT_TMAPS,
             inference_tsv=RECOVERY_INFERENCE_FILE,
         )
-    _evaluate_recovery_model()
+    _evaluate_model(RECOVERY_MODEL_ID, RECOVERY_INFERENCE_FILE)
     if MAKE_PRETEST_LABELS:
         build_pretest_training_labels()
     plot_pretest_label_summary_stats()
@@ -433,4 +446,7 @@ if __name__ == '__main__':
             output_tmaps=PRETEST_OUTPUT_TMAPS,
             inference_tsv=PRETEST_INFERENCE_FILE,
         )
+    _evaluate_model(BASELINE_MODEL_ID, PRETEST_INFERENCE_FILE)
+    _evaluate_model(PRETEST_MODEL_ID, PRETEST_INFERENCE_FILE)
+    _evaluate_model(HR_ACHIEVED_MODEL_ID, PRETEST_INFERENCE_FILE)
     logging.info('~~~~~~~~~~~~~~~~~~~ DONE ~~~~~~~~~~~~~~~~~~~')
