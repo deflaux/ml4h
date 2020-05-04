@@ -421,6 +421,7 @@ if __name__ == '__main__':
             inference_tsv=RECOVERY_INFERENCE_FILE,
         )
     _evaluate_model(RECOVERY_MODEL_ID, RECOVERY_INFERENCE_FILE)
+    plt.close('all')
     if MAKE_PRETEST_LABELS:
         build_pretest_training_labels()
     plot_pretest_label_summary_stats()
@@ -453,4 +454,5 @@ if __name__ == '__main__':
     _evaluate_model(BASELINE_MODEL_ID, PRETEST_INFERENCE_FILE)
     _evaluate_model(PRETEST_MODEL_ID, PRETEST_INFERENCE_FILE)
     _evaluate_model(HR_ACHIEVED_MODEL_ID, PRETEST_INFERENCE_FILE)
+    plt.close('all')
     logging.info('~~~~~~~~~~~~~~~~~~~ DONE ~~~~~~~~~~~~~~~~~~~')

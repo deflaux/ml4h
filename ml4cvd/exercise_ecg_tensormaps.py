@@ -205,7 +205,7 @@ def plot_segment_prediction(sample_id: str, t: int, pred: float, actual: float, 
                 '\n'.join([
                     f'{sample_id} at time {t} after recovery',
                     f'biosppy hr {actual:.2f}',
-                    f'recovery model hr {pred:.2f}',
+                    f'model hr {pred:.2f}',
                     f'biosppy lead difference {diff:.2f}',
                 ]),
             )
@@ -383,11 +383,11 @@ def time_to_pred_hrr_col(t: int, model_id: str):
 
 
 def time_to_actual_hr_col(t: int):
-    return f'{df_hr_col(t)}{PRED_POSTFIX}'
+    return f'{df_hr_col(t)}{ACTUAL_POSTFIX}'
 
 
 def time_to_actual_hrr_col(t: int):
-    return f'{df_hrr_col(t)}{PRED_POSTFIX}'
+    return f'{df_hrr_col(t)}{ACTUAL_POSTFIX}'
 
 
 # Biosppy TensorMaps
