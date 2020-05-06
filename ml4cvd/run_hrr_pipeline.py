@@ -27,7 +27,7 @@ from ml4cvd.exercise_ecg_tensormaps import ecg_bike_recovery_downsampled8x, _mak
 from ml4cvd.exercise_ecg_tensormaps import plot_segment_prediction, build_pretest_training_labels, PRETEST_LABEL_FILE
 from ml4cvd.exercise_ecg_tensormaps import make_pretest_tmap, PRETEST_MODEL_ID, PRETEST_MODEL_PATH
 from ml4cvd.exercise_ecg_tensormaps import BASELINE_MODEL_ID, BASELINE_MODEL_PATH, PRETEST_INFERENCE_FILE
-from ml4cvd.exercise_ecg_tensormaps import HR_ACHIEVED_MODEL_ID, HR_ACHIEVED_MODEL_PATH
+from ml4cvd.exercise_ecg_tensormaps import HR_ACHIEVED_MODEL_ID, HR_ACHIEVED_MODEL_PATH, bike_resting_hr
 from ml4cvd.exercise_ecg_tensormaps import age, sex, bmi, tmap_to_actual_col, tmap_to_pred_col, time_to_pred_hr_col, time_to_pred_hrr_col
 from ml4cvd.exercise_ecg_tensormaps import time_to_actual_hr_col, time_to_actual_hrr_col, HYPEROPT_BEST_FILE
 from ml4cvd.exercise_ecg_tensormaps import BIOSPPY_FIGURE_FOLDER, PRETEST_LABEL_FIGURE_FOLDER, HYPEROPT_FIGURE_PATH
@@ -59,11 +59,10 @@ RECOVERY_OUTPUT_TMAPS = list(hr_tmaps.values()) + list(hrr_tmaps.values())
 VALIDATION_RATIO = .1
 
 hr_tmaps, hrr_tmaps = _make_hr_tmaps(PRETEST_LABEL_FILE)
-BASELINE_INPUT_TMAPS = [age, sex, bmi]
-PRETEST_INPUT_TMAPS = [make_pretest_tmap(8, [0])] + BASELINE_INPUT_TMAPS  # TODO: later will come from hyperopt config
+PRETEST_COVARIATE_TMAPS = [age, sex, bmi]
+BASELINE_INPUT_TMAPS = PRETEST_COVARIATE_TMAPS + [bike_resting_hr]
 PRETEST_OUTPUT_TMAPS = list(hr_tmaps.values()) + list(hrr_tmaps.values())
 hr_tmaps, hrr_tmaps = _make_hr_tmaps(PRETEST_LABEL_FILE, parents=False)
-HR_ACHIEVED_INPUT_TMAPS = PRETEST_INPUT_TMAPS + [hr_tmaps[0]]  # TODO: later will come from hyperopt config
 HR_ACHIEVED_OUTPUT_TMAPS = list(hr_tmaps.values())[1:] + list(hrr_tmaps.values())
 
 
@@ -305,32 +304,15 @@ def _get_pretest_model(use_model_file: bool):
     """builds model to get biosppy measurements from pretest + covariates"""
     with open(HYPEROPT_BEST_FILE, 'r') as f:
         space = json.load(f)
-    return _hrr_model_from_space(space, use_model_file)
+    return _pretest_model_from_space(space, use_model_file)
 
 
 def _get_hr_achieved_model(use_model_file: bool):
     """builds model to get biosppy measurements from pretest + covariates"""
     # TODO: make use pretest model config
-    model = make_multimodal_multitask_model(
-        tensor_maps_in=HR_ACHIEVED_INPUT_TMAPS,
-        tensor_maps_out=HR_ACHIEVED_OUTPUT_TMAPS,
-        activation='swish',
-        learning_rate=1e-3,
-        bottleneck_type=BottleneckType.FlattenRestructure,
-        optimizer='radam',
-        dense_layers=[64, 64],
-        conv_layers=[32, 32, 32, 32, 32],  # lots of residual blocks with dilation
-        dense_blocks=[32, 32, 32],
-        block_size=3,
-        conv_normalize='batch_norm',
-        conv_x=16,
-        conv_dilate=True,
-        pool_x=4,
-        pool_type='max',
-        conv_type='conv',
-        model_file=HR_ACHIEVED_MODEL_PATH if use_model_file else None,
-    )
-    return model
+    with open(HYPEROPT_BEST_FILE, 'r') as f:
+        space = json.load(f)
+    return _hr_achieved_model_from_space(space, use_model_file)
 
 
 def _demo_generator(gen: TensorGenerator):
@@ -378,12 +360,38 @@ def _train_model(model, tmaps_in, tmaps_out, model_id, batch_size) -> Tuple[Any,
     return model, history
 
 
-def _hrr_model_from_space(space, use_model_file=False):
+def _pretest_model_from_space(space, use_model_file=False):
     pretest_tmap = make_pretest_tmap(downsample_rate=int(np.exp(space['log_downsampling'] / np.log(2))), leads=[0])
-    tmaps_in = [pretest_tmap, age, sex, bmi]
+    tmaps_in = [pretest_tmap] + PRETEST_COVARIATE_TMAPS
     m = make_multimodal_multitask_model(
         tensor_maps_in=tmaps_in,
         tensor_maps_out=PRETEST_OUTPUT_TMAPS,
+        activation='swish',
+        learning_rate=1e-3,
+        bottleneck_type=BottleneckType.FlattenRestructure,
+        optimizer='radam',
+        dense_layers=int(space['num_dense_layers']) * [int(space['dense_layer_units'])],
+        dropout=0,
+        conv_layers=int(space['num_res_blocks']) * [int(space['num_res_filters'])],
+        dense_blocks=int(space['num_dense_blocks']) * [int(space['num_dense_block_filters'])],
+        conv_type='conv',
+        conv_normalize=space['conv_normalize'],
+        conv_x=int(space['conv_x']),
+        pool_type='max',
+        pool_x=int(np.exp(space['log_pool_x']) / np.log(2)),
+        conv_dilate=True,
+        model_file=PRETEST_MODEL_PATH if use_model_file else None,
+        block_size=3,
+    )
+    return m, tmaps_in
+
+
+def _hr_achieved_model_from_space(space, use_model_file=False):
+    pretest_tmap = make_pretest_tmap(downsample_rate=int(np.exp(space['log_downsampling'] / np.log(2))), leads=[0])
+    tmaps_in = [pretest_tmap, make_pretest_tmap(8, [0])] + PRETEST_COVARIATE_TMAPS
+    m = make_multimodal_multitask_model(
+        tensor_maps_in=tmaps_in,
+        tensor_maps_out=HR_ACHIEVED_OUTPUT_TMAPS,
         activation='swish',
         learning_rate=1e-3,
         bottleneck_type=BottleneckType.FlattenRestructure,
@@ -437,7 +445,7 @@ def hyperparameter_optimizer(space, param_lists=None):
         nonlocal i
         i += 1
         try:
-            model, tmaps_in = _hrr_model_from_space(x)
+            model, tmaps_in = _pretest_model_from_space(x)
             model, history = _train_model(model, tmaps_in, PRETEST_OUTPUT_TMAPS, 'hyperopt_model', batch_size)
 
             if model.count_params() > 9000000:
@@ -520,15 +528,17 @@ if __name__ == '__main__':
         )
     if TRAIN_HR_ACHIEVED_MODEL:
         logging.info('Training hr achieved model.')
+        model, hr_achieved_tmaps_in = _get_hr_achieved_model(False)
         _train_model(
-            model=_get_hr_achieved_model(False), tmaps_in=HR_ACHIEVED_INPUT_TMAPS, tmaps_out=HR_ACHIEVED_OUTPUT_TMAPS,
+            model=_get_hr_achieved_model(False), tmaps_in=hr_achieved_tmaps_in, tmaps_out=HR_ACHIEVED_OUTPUT_TMAPS,
             model_id=HR_ACHIEVED_MODEL_ID, batch_size=256,
         )
     if INFER_PRETEST_MODELS:
+        _, hr_achieved_tmaps_in = _get_hr_achieved_model(False)
         _infer_models(
             models=[_get_pretest_baseline_model(True), _get_pretest_model(True), _get_hr_achieved_model(True)],
             model_ids=[BASELINE_MODEL_ID, PRETEST_MODEL_ID, HR_ACHIEVED_MODEL_ID],
-            input_tmaps=HR_ACHIEVED_INPUT_TMAPS,
+            input_tmaps=hr_achieved_tmaps_in,
             output_tmaps=PRETEST_OUTPUT_TMAPS,
             inference_tsv=PRETEST_INFERENCE_FILE,
         )

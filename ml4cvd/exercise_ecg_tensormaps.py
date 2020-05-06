@@ -15,7 +15,7 @@ from ml4cvd.defines import TENSOR_EXT, MODEL_EXT
 from ml4cvd.TensorMap import TensorMap, Interpretation, no_nans
 from ml4cvd.tensor_writer_ukbb import tensor_path, first_dataset_at_path
 from ml4cvd.normalizer import ZeroMeanStd1, Standardize
-from ml4cvd.tensor_from_file import _get_tensor_at_first_date, _all_dates
+from ml4cvd.tensor_from_file import _get_tensor_at_first_date, _all_dates, normalized_first_date
 
 
 PRETEST_DUR = 15  # DURs are measured in seconds
@@ -526,6 +526,10 @@ sex = TensorMap(
     'sex', shape=(2,), channel_map={'female': 1, 'male': 0},
     interpretation=Interpretation.CATEGORICAL,
     validator=no_nans, tensor_from_file=_make_covariate_tff(PRETEST_LABEL_FILE, ','),
+)
+bike_resting_hr = TensorMap(
+    'resting_hr', path_prefix='ecg_bike/continuous', shape=(1,), normalization=Standardize(70, 10),
+    tensor_from_file=normalized_first_date, interpretation=Interpretation.CONTINUOUS, validator=no_nans,
 )
 
 
