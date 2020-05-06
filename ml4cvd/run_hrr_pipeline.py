@@ -445,7 +445,7 @@ def hyperparameter_optimizer(space, param_lists=None):
                 return MAX_LOSS
             history.history['parameter_count'] = [model.count_params()]
             histories.append(history.history)
-            loss = np.median(sorted((history.history['val_loss']))[:5])
+            loss = np.median(sorted((history.history['val_loss']))[:5])  # median best val losses as proxy for test loss
             logging.info(f"Iteration {i}: \nValidation Loss: {loss}")
             return loss
         except ValueError:

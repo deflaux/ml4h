@@ -108,16 +108,26 @@ def _make_recovery_ecg_tff(downsample_rate: int, leads: Union[List[int], slice],
 
 # ECG transformations
 def _warp_ecg(ecg):
-    """Warning: does some weird stuff at the boundaries"""
-    i = np.arange(ecg.shape[0])
-    warped = i + (
-        np.random.rand() * 100 * np.sin(i / (500 + np.random.rand() * 100))
-        + np.random.rand() * 100 * np.cos(i / (500 + np.random.rand() * 100))
+    warp_strength = .02
+    i = np.linspace(0, 1, len(ecg))
+    envelope = warp_strength * (.5 - np.abs(.5 - i))
+    warped = i + envelope * (
+        np.sin(np.random.rand() * 5 + np.random.randn() * 5)
+        + np.cos(np.random.rand() * 5 + np.random.randn() * 5)
     )
     warped_ecg = np.zeros_like(ecg)
     for j in range(ecg.shape[1]):
         warped_ecg[:, j] = np.interp(i, warped, ecg[:, j])
     return warped_ecg
+
+
+def _random_crop_ecg(ecg):
+    cropped_ecg = ecg.copy()
+    for j in range(ecg.shape[1]):
+        crop_len = np.random.randint(len(ecg)) // 3
+        crop_start = np.random.randint(len(ecg) - crop_len)
+        cropped_ecg[:, j][crop_start: crop_start + crop_len] = np.random.randn()
+    return cropped_ecg
 
 
 def _downsample_ecg(ecg, rate: float):
@@ -534,5 +544,5 @@ def make_pretest_tmap(downsample_rate: float, leads) -> TensorMap:
         interpretation=Interpretation.CONTINUOUS,
         validator=no_nans, normalization=Standardize(0, 100),
         tensor_from_file=_make_pretest_ecg_tff(downsample_rate, leads),
-        cacheable=False, augmentations=[_rand_add_noise],
+        cacheable=False, augmentations=[_warp_ecg, _rand_add_noise, _random_crop_ecg],
     )
