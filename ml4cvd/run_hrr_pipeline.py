@@ -538,7 +538,7 @@ if __name__ == '__main__':
         _infer_models(
             models=[_get_pretest_baseline_model(True), _get_pretest_model(True), _get_hr_achieved_model(True)],
             model_ids=[BASELINE_MODEL_ID, PRETEST_MODEL_ID, HR_ACHIEVED_MODEL_ID],
-            input_tmaps=hr_achieved_tmaps_in,
+            input_tmaps=hr_achieved_tmaps_in + [bike_resting_hr],
             output_tmaps=PRETEST_OUTPUT_TMAPS,
             inference_tsv=PRETEST_INFERENCE_FILE,
         )
