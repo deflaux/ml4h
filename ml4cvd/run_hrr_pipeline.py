@@ -121,10 +121,9 @@ def _infer_models(
     no_fail_tmaps_out = [_make_tmap_nan_on_fail(tmap) for tmap in output_tmaps]
     # hard code batch size to 1 so we can iterate over file names and generated tensors together in the tensor_paths for loop
     generate_test = TensorGenerator(
-        1, input_tmaps, no_fail_tmaps_out, tensor_paths, num_workers=0,
+        1, input_tmaps, no_fail_tmaps_out, tensor_paths, num_workers=8,
         cache_size=0, keep_paths=True, mixup=0,
     )
-    generate_test.set_worker_paths(tensor_paths)
 
     out_name_to_tmap = {tm.output_name(): tm for tm in output_tmaps}
 
@@ -150,7 +149,9 @@ def _infer_models(
             batch = next(generate_test)
             input_data, output_data, tensor_paths = batch[BATCH_INPUT_INDEX], batch[BATCH_OUTPUT_INDEX], batch[BATCH_PATHS_INDEX]
             if tensor_paths[0] in tensor_paths_inferred:
-                next(generate_test)  # this prints end of epoch info
+                continue
+            if generate_test.stats_q.qsize() == generate_test.num_workers:
+                generate_test.aggregate_and_print_stats()
                 logging.info(f"Inference on {stats['count']} tensors finished. Inference TSV file at: {inference_tsv}")
                 break
             for m, m_id in zip(models, model_ids):
@@ -493,7 +494,7 @@ def plot_hyperopt():
     histories = []
     for path in os.listdir(HISTORY_PATH):
         if path.endswith('.p') and 'history' in path:
-            with open(path, 'rb') as f:
+            with open(os.path.join(HISTORY_PATH, path), 'rb') as f:
                 histories.append(pickle.load(f))
 
 
