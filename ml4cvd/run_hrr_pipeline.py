@@ -14,6 +14,8 @@ from typing import Dict, Callable, List, Tuple, Any, Optional
 from itertools import chain
 import hyperopt
 from hyperopt import hp, fmin, tpe
+import pickle
+import time
 
 from ml4cvd.logger import load_config
 from ml4cvd.hyperparameters import plot_trials, MAX_LOSS
@@ -52,7 +54,8 @@ INFER_PRETEST_MODELS = (
     or TRAIN_BASELINE_MODEL or TRAIN_PRETEST_MODEL or TRAIN_HR_ACHIEVED_MODEL
 )
 HYPEROPT_MAX_TRIALS = 25
-
+HISTORY_PATH = os.path.join(OUTPUT_FOLDER, 'hyperopt_histories')
+TRIAL_PATH = os.path.join(HISTORY_PATH, 'trial_history.p')
 hr_tmaps, hrr_tmaps = _make_hr_tmaps(BIOSPPY_MEASUREMENTS_FILE)
 RECOVERY_INPUT_TMAPS = [ecg_bike_recovery_downsampled8x]
 RECOVERY_OUTPUT_TMAPS = list(hr_tmaps.values()) + list(hrr_tmaps.values())
@@ -64,6 +67,10 @@ BASELINE_INPUT_TMAPS = PRETEST_COVARIATE_TMAPS + [bike_resting_hr]
 PRETEST_OUTPUT_TMAPS = list(hr_tmaps.values()) + list(hrr_tmaps.values())
 hr_tmaps, hrr_tmaps = _make_hr_tmaps(PRETEST_LABEL_FILE, parents=False)
 HR_ACHIEVED_OUTPUT_TMAPS = list(hr_tmaps.values())[1:] + list(hrr_tmaps.values())
+
+
+def history_path():
+    return os.path.join(HISTORY_PATH, f'history_{int(time.time())}.p')
 
 
 def _get_results_from_bucket():
@@ -406,7 +413,7 @@ def _hr_achieved_model_from_space(space, use_model_file=False):
         pool_type='max',
         pool_x=int(np.exp(space['log_pool_x']) / np.log(2)),
         conv_dilate=True,
-        model_file=PRETEST_MODEL_PATH if use_model_file else None,
+        model_file=HR_ACHIEVED_MODEL_PATH if use_model_file else None,
         block_size=3,
     )
     return m, tmaps_in
@@ -433,15 +440,17 @@ def optimize_hrr_model_architecture():
 
 
 def hyperparameter_optimizer(space, param_lists=None):
-    param_lists = param_lists or {}
     histories = []
-    fig_path = os.path.join(HYPEROPT_FIGURE_PATH)
-    i = 0
     batch_size = 256
+    if os.path.exists(TRIAL_PATH):
+        with open(TRIAL_PATH, 'rb') as f:
+            trials = pickle.load(f)
+    else:
+        trials = hyperopt.Trials()
+    i = len(trials.trials)
 
     def loss_from_multimodal_multitask(x):
         model = None
-        history = None
         nonlocal i
         i += 1
         try:
@@ -452,8 +461,11 @@ def hyperparameter_optimizer(space, param_lists=None):
                 logging.info(f"Model too big. Model has:{model.count_params()}. Return max loss.")
                 return MAX_LOSS
             history.history['parameter_count'] = [model.count_params()]
-            histories.append(history.history)
+            history.history['i'] = i
+            history.history['space'] = x
             loss = np.median(sorted((history.history['val_loss']))[:5])  # median best val losses as proxy for test loss
+            history.history['stated_loss'] = loss
+            histories.append(history.history)
             logging.info(f"Iteration {i}: \nValidation Loss: {loss}")
             return loss
         except ValueError:
@@ -466,15 +478,26 @@ def hyperparameter_optimizer(space, param_lists=None):
             del model
             gc.collect()
             plt.close('all')
-            if history is None:
-                histories.append({'loss': [MAX_LOSS], 'val_loss': [MAX_LOSS], 'parameter_count': [0]})
-
-    trials = hyperopt.Trials()
-    best = fmin(loss_from_multimodal_multitask, space=space, algo=tpe.suggest, max_evals=HYPEROPT_MAX_TRIALS, trials=trials)
+    best = fmin(
+        loss_from_multimodal_multitask, space=space, algo=tpe.suggest,
+        max_evals=HYPEROPT_MAX_TRIALS + len(trials.trials), trials=trials,
+    )
     with open(HYPEROPT_BEST_FILE, 'w') as f:
         json.dump(best, f)
-    plot_trials(trials, histories, fig_path, param_lists)
-    logging.info('Saved learning plot to:{}'.format(fig_path))
+    with open(TRIAL_PATH, 'wb') as f:
+        pickle.dump(trials, f)
+    with open(history_path(), 'wb') as f:
+        pickle.dump(histories, f)
+
+
+def plot_hyperopt():
+    with open(TRIAL_PATH, 'rb') as f:
+        trials = pickle.load(f)
+    histories = []
+    for path in os.listdir(HISTORY_PATH):
+        if path.endswith('.p') and 'history' in path:
+            with open(path, 'rb') as f:
+                histories.append(pickle.load(f))
 
 
 if __name__ == '__main__':
@@ -485,6 +508,7 @@ if __name__ == '__main__':
     os.makedirs(BIOSPPY_FIGURE_FOLDER, exist_ok=True)
     os.makedirs(PRETEST_LABEL_FIGURE_FOLDER, exist_ok=True)
     os.makedirs(HYPEROPT_FIGURE_PATH, exist_ok=True)
+    os.makedirs(HISTORY_PATH, exist_ok=True)
     now_string = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
     load_config('INFO', OUTPUT_FOLDER, 'log_' + now_string, USER)
     if MAKE_LABELS:
@@ -513,6 +537,7 @@ if __name__ == '__main__':
     if HYPEROPT_PRETEST_MODEL:
         logging.info('Hyperoptimizing pretest model.')
         optimize_hrr_model_architecture()
+    plot_hyperopt()
     if TRAIN_BASELINE_MODEL:
         logging.info('Training baseline model.')
         _train_model(
