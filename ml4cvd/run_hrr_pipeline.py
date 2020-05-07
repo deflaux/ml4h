@@ -388,7 +388,7 @@ def _pretest_model_from_space(space, use_model_file=False):
 
 def _hr_achieved_model_from_space(space, use_model_file=False):
     pretest_tmap = make_pretest_tmap(downsample_rate=int(np.exp(space['log_downsampling'] / np.log(2))), leads=[0])
-    tmaps_in = [pretest_tmap, make_pretest_tmap(8, [0])] + PRETEST_COVARIATE_TMAPS
+    tmaps_in = [pretest_tmap, hr_tmaps[0]] + PRETEST_COVARIATE_TMAPS
     m = make_multimodal_multitask_model(
         tensor_maps_in=tmaps_in,
         tensor_maps_out=HR_ACHIEVED_OUTPUT_TMAPS,
@@ -530,13 +530,13 @@ if __name__ == '__main__':
         logging.info('Training hr achieved model.')
         model, hr_achieved_tmaps_in = _get_hr_achieved_model(False)
         _train_model(
-            model=_get_hr_achieved_model(False), tmaps_in=hr_achieved_tmaps_in, tmaps_out=HR_ACHIEVED_OUTPUT_TMAPS,
+            model=model, tmaps_in=hr_achieved_tmaps_in, tmaps_out=HR_ACHIEVED_OUTPUT_TMAPS,
             model_id=HR_ACHIEVED_MODEL_ID, batch_size=256,
         )
     if INFER_PRETEST_MODELS:
         _, hr_achieved_tmaps_in = _get_hr_achieved_model(False)
         _infer_models(
-            models=[_get_pretest_baseline_model(True), _get_pretest_model(True), _get_hr_achieved_model(True)],
+            models=[_get_pretest_baseline_model(True), _get_pretest_model(True)[0], _get_hr_achieved_model(True)[0]],
             model_ids=[BASELINE_MODEL_ID, PRETEST_MODEL_ID, HR_ACHIEVED_MODEL_ID],
             input_tmaps=hr_achieved_tmaps_in + [bike_resting_hr],
             output_tmaps=PRETEST_OUTPUT_TMAPS,
