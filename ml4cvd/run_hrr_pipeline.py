@@ -64,9 +64,9 @@ VALIDATION_RATIO = .1
 hr_tmaps, hrr_tmaps = _make_hr_tmaps(PRETEST_LABEL_FILE)
 PRETEST_COVARIATE_TMAPS = [age, sex, bmi]
 BASELINE_INPUT_TMAPS = PRETEST_COVARIATE_TMAPS + [bike_resting_hr]
-PRETEST_OUTPUT_TMAPS = list(hr_tmaps.values()) + list(hrr_tmaps.values())
+PRETEST_OUTPUT_TMAPS = [hr_tmaps[0], hr_tmaps[50], hrr_tmaps[50]]
 hr_tmaps, hrr_tmaps = _make_hr_tmaps(PRETEST_LABEL_FILE, parents=False)
-HR_ACHIEVED_OUTPUT_TMAPS = list(hr_tmaps.values())[1:] + list(hrr_tmaps.values())
+HR_ACHIEVED_OUTPUT_TMAPS = [hr_tmaps[50], hrr_tmaps[50]]
 
 
 def history_path():
@@ -201,7 +201,8 @@ def _evaluate_model(m_id: str, inference_file: str):
     test_results = inference_results.merge(test_ids, on='sample_id')
     figure_folder = os.path.join(FIGURE_FOLDER, f'{m_id}_results')
     os.makedirs(figure_folder, exist_ok=True)
-
+    hrr_pred_times = [t for t in HR_MEASUREMENT_TIMES if time_to_pred_hrr_col(t, m_id) in inference_results.columns]
+    hr_pred_times = [t for t in HR_MEASUREMENT_TIMES if time_to_pred_hr_col(t, m_id) in inference_results.columns]
     # negative HRR measurements
     for t in HR_MEASUREMENT_TIMES[1:]:
         name = time_to_pred_hrr_col(t, m_id)
@@ -211,8 +212,8 @@ def _evaluate_model(m_id: str, inference_file: str):
 
     # correlations with actual measurements
     ax_size = 5
-    fig, axes = plt.subplots(2, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), 2 * ax_size))
-    for i, t in enumerate(HR_MEASUREMENT_TIMES):
+    fig, axes = plt.subplots(2, len(hr_pred_times), figsize=(ax_size * len(hr_pred_times), 2 * ax_size))
+    for i, t in enumerate(hr_pred_times):
         pred_col = time_to_pred_hr_col(t, m_id)
         if pred_col not in test_results.columns:
             continue
@@ -220,9 +221,7 @@ def _evaluate_model(m_id: str, inference_file: str):
         actual = test_results[time_to_actual_hr_col(t)]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
         _scatter_plot(axes[0, i], actual[not_na], pred[not_na], f'HR at recovery time {t}')
-    for i, t in enumerate(HR_MEASUREMENT_TIMES):
-        if t == 0:
-            continue
+    for i, t in enumerate(hrr_pred_times):
         pred = test_results[time_to_pred_hrr_col(t, m_id)]
         actual = test_results[time_to_actual_hrr_col(t)]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
@@ -232,8 +231,8 @@ def _evaluate_model(m_id: str, inference_file: str):
 
     # distributions of predicted and actual measurements
     ax_size = 5
-    fig, axes = plt.subplots(2, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), 2 * ax_size))
-    for i, t in enumerate(HR_MEASUREMENT_TIMES):
+    fig, axes = plt.subplots(2, len(hr_pred_times), figsize=(ax_size * len(hr_pred_times), 2 * ax_size))
+    for i, t in enumerate(hr_pred_times):
         pred_col = time_to_pred_hr_col(t, m_id)
         if pred_col not in test_results.columns:
             continue
@@ -241,9 +240,7 @@ def _evaluate_model(m_id: str, inference_file: str):
         actual = test_results[time_to_actual_hr_col(t)]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
         _dist_plot(axes[0, i], actual[not_na], pred[not_na], f'HR at recovery time {t}')
-    for i, t in enumerate(HR_MEASUREMENT_TIMES):
-        if t == 0:
-            continue
+    for i, t in enumerate(hrr_pred_times):
         pred = test_results[time_to_pred_hrr_col(t, m_id)]
         actual = test_results[time_to_actual_hrr_col(t)]
         not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
@@ -253,8 +250,8 @@ def _evaluate_model(m_id: str, inference_file: str):
 
     # correlation of diffs vs. absolute error
     label_df = pd.read_csv(BIOSPPY_MEASUREMENTS_FILE, dtype={'sample_id': str}).merge(test_results, on='sample_id')
-    fig, axes = plt.subplots(1, len(HR_MEASUREMENT_TIMES), figsize=(ax_size * len(HR_MEASUREMENT_TIMES), ax_size))
-    for i, t in enumerate(HR_MEASUREMENT_TIMES):
+    fig, axes = plt.subplots(1, len(hr_pred_times), figsize=(ax_size * len(hr_pred_times), ax_size))
+    for i, t in enumerate(hr_pred_times):
         name = df_hr_col(t)
         diff_name = df_diff_col(t)
         pred_col = time_to_pred_hr_col(t, m_id)
@@ -271,8 +268,8 @@ def _evaluate_model(m_id: str, inference_file: str):
 
     # some really wrong predictions
     plots_per_time = 2
-    plt.figure(figsize=(ax_size * 4, len(HR_MEASUREMENT_TIMES) * ax_size))
-    for i, t in enumerate(HR_MEASUREMENT_TIMES):
+    plt.figure(figsize=(ax_size * 4, len(hr_pred_times) * ax_size))
+    for i, t in enumerate(hr_pred_times):
         name = df_hr_col(t)
         mae_name = name + '_mae'
         if mae_name not in label_df:
@@ -282,7 +279,7 @@ def _evaluate_model(m_id: str, inference_file: str):
         rows = label_df[select].sample(2)
         for j, row in enumerate(rows.iterrows()):
             row = row[1]
-            plt.subplot(len(HR_MEASUREMENT_TIMES), 2, 2 * i + 1 + j)
+            plt.subplot(len(hr_pred_times), 2, 2 * i + 1 + j)
             plot_segment_prediction(
                 row['sample_id'], t=t, pred=row[time_to_pred_hr_col(t, m_id)], actual=row[name+'_actual'],
                 diff=row[df_diff_col(t)],
