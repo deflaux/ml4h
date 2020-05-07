@@ -10,7 +10,7 @@ import logging
 from collections import Counter
 import csv
 import matplotlib.pyplot as plt
-from typing import Dict, Callable, List, Tuple, Any, Optional
+from typing import Dict, Callable, List, Tuple, Any, Optional, Set
 from itertools import chain
 import hyperopt
 from hyperopt import hp, fmin, tpe
@@ -111,67 +111,75 @@ def _get_recovery_model(use_model_file):
     return model
 
 
+def _handle_inference_batch(
+        output_name_to_tmap: Dict[str, TensorMap], model, model_id: str, batch,
+        visited_paths: Set[str], rows: List[Dict[str, str]],
+):
+    input_data, output_data, tensor_paths = batch[BATCH_INPUT_INDEX], batch[BATCH_OUTPUT_INDEX], batch[BATCH_PATHS_INDEX]
+    pred = model.predict(input_data)
+    for pred, out_name in zip(pred, model.output_names):
+        tm = output_name_to_tmap[out_name]
+        scaled = tm.rescale(pred)
+        for i, row in enumerate(rows):
+            if tensor_paths[i] in visited_paths:
+                continue
+            visited_paths.add(tensor_paths[0])
+            row[tmap_to_pred_col(tm, model_id)] = scaled[i, 0]
+            row['sample_id'] = os.path.basename(tensor_paths[i]).replace(TENSOR_EXT, '')  # extract sample id
+            if ((tm.sentinel is not None and tm.sentinel == output_data[tm.output_name()][i][0])
+                    or np.isnan(output_data[tm.output_name()][i][0])):
+                row[tmap_to_actual_col(tm)] = 'NA'
+            else:
+                row[tmap_to_actual_col(tm)] = (str(tm.rescale(output_data[tm.output_name()])[i][0]))
+
+
 def _infer_models(
         models: List[Callable], model_ids: List[str], inference_tsv: str,
         input_tmaps: List[TensorMap], output_tmaps: List[TensorMap],
 ):
     stats = Counter()
-    tensor_paths_inferred = set()
+    visited_paths = set()
     tensor_paths = [os.path.join(TENSOR_FOLDER, tp) for tp in sorted(os.listdir(TENSOR_FOLDER)) if os.path.splitext(tp)[-1].lower() == TENSOR_EXT]
     no_fail_tmaps_out = [_make_tmap_nan_on_fail(tmap) for tmap in output_tmaps]
     # hard code batch size to 1 so we can iterate over file names and generated tensors together in the tensor_paths for loop
-    generate_test = TensorGenerator(
-        1, input_tmaps, no_fail_tmaps_out, tensor_paths, num_workers=8,
-        cache_size=0, keep_paths=True, mixup=0,
-    )
-
-    out_name_to_tmap = {tm.output_name(): tm for tm in output_tmaps}
-
-    def model_output_to_tmap(out_name: str) -> TensorMap:
-        return out_name_to_tmap[out_name]
-
-    actual_cols = list(map(tmap_to_actual_col, output_tmaps))
-    prediction_cols = sum(
-        [
-            [tmap_to_pred_col(model_output_to_tmap(out_name), m_id) for out_name in m.output_names]
-            for m, m_id in zip(models, model_ids)
-        ],
-        [],
-    )
-    with open(inference_tsv, mode='w') as inference_file:
-        inference_writer = csv.DictWriter(
-            inference_file, fieldnames=['sample_id'] + actual_cols + prediction_cols,
-            delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL,
+    generate_test = None
+    try:
+        generate_test = TensorGenerator(
+            128, input_tmaps, no_fail_tmaps_out, tensor_paths, num_workers=8,
+            cache_size=0, keep_paths=True, mixup=0,
         )
-        inference_writer.writeheader()
-        while True:
-            row = {}
-            batch = next(generate_test)
-            input_data, output_data, tensor_paths = batch[BATCH_INPUT_INDEX], batch[BATCH_OUTPUT_INDEX], batch[BATCH_PATHS_INDEX]
-            if tensor_paths[0] in tensor_paths_inferred:
-                continue
-            if generate_test.stats_q.qsize() == generate_test.num_workers:
-                generate_test.aggregate_and_print_stats()
-                logging.info(f"Inference on {stats['count']} tensors finished. Inference TSV file at: {inference_tsv}")
-                break
-            for m, m_id in zip(models, model_ids):
-                for pred, out_name in zip(m.predict(input_data), m.output_names):
-                    tm = model_output_to_tmap(out_name)
-                    scaled = str(tm.rescale(pred[0][0]))
-                    row[tmap_to_pred_col(tm, m_id)] = scaled
-            row['sample_id'] = os.path.basename(tensor_paths[0]).replace(TENSOR_EXT, '')  # extract sample id
-            for tm in no_fail_tmaps_out:
-                if ((tm.sentinel is not None and tm.sentinel == output_data[tm.output_name()][0][0])
-                        or np.isnan(output_data[tm.output_name()][0][0])):
-                    row[tmap_to_actual_col(tm)] = 'NA'
-                else:
-                    row[tmap_to_actual_col(tm)] = (str(tm.rescale(output_data[tm.output_name()])[0][0]))
 
-            inference_writer.writerow(row)
-            tensor_paths_inferred.add(tensor_paths[0])
-            stats['count'] += 1
-            if stats['count'] % 250 == 0:
-                logging.info(f"Wrote:{stats['count']} rows of inference.  Last tensor:{tensor_paths[0]}")
+        output_name_to_tmap = {tm.output_name(): tm for tm in output_tmaps}
+        actual_cols = list(map(tmap_to_actual_col, output_tmaps))
+        prediction_cols = sum(
+            [
+                [tmap_to_pred_col(output_name_to_tmap[out_name], m_id) for out_name in m.output_names]
+                for m, m_id in zip(models, model_ids)
+            ],
+            [],
+        )
+        with open(inference_tsv, mode='w') as inference_file:
+            inference_writer = csv.DictWriter(
+                inference_file, fieldnames=['sample_id'] + actual_cols + prediction_cols,
+                delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL,
+            )
+            inference_writer.writeheader()
+            while True:
+                batch = next(generate_test)
+                rows = [{} for _ in range(len(batch[BATCH_PATHS_INDEX]))]
+                for model, model_id in zip(models, model_ids):
+                    _handle_inference_batch(output_name_to_tmap, model, model_id, batch, visited_paths, rows)
+                inference_writer.writerows(rows)
+                if generate_test.stats_q.qsize() == generate_test.num_workers:
+                    generate_test.aggregate_and_print_stats()
+                    logging.info(f"Inference on {stats['count']} tensors finished. Inference TSV file at: {inference_tsv}")
+                    break
+                stats['count'] += 1
+                if stats['count'] % 250 == 0:
+                    logging.info(f"Wrote:{stats['count']} rows of inference.")
+    finally:
+        if generate_test:
+            generate_test.kill_workers()
 
 
 def _scatter_plot(ax, truth, prediction, title):
