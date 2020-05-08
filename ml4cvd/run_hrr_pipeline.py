@@ -73,20 +73,6 @@ def history_path():
     return os.path.join(HISTORY_PATH, f'history_{int(time.time())}.p')
 
 
-def _get_results_from_bucket():
-    """
-    Gets trained models, test_csv, inference results, from bucket
-    """
-    pass
-
-
-def _put_results_in_bucket():
-    """
-    Puts trained models, test_csv, inference results, from bucket
-    """
-    pass
-
-
 def _get_recovery_model(use_model_file):
     """builds model to get biosppy measurements from recovery"""
     model = make_multimodal_multitask_model(
@@ -120,24 +106,25 @@ def _handle_inference_batch(
     for pred, out_name in zip(pred, model.output_names):
         tm = output_name_to_tmap[out_name]
         scaled = tm.rescale(pred)
+        actual = output_data[tm.output_name()]
         for i, row in enumerate(rows):
             if tensor_paths[i] in visited_paths:
                 continue
             visited_paths.add(tensor_paths[0])
-            row[tmap_to_pred_col(tm, model_id)] = scaled[i, 0]
+            row[tmap_to_pred_col(tm, model_id)] = f'{scaled[i, 0]:.3f}'
             row['sample_id'] = os.path.basename(tensor_paths[i]).replace(TENSOR_EXT, '')  # extract sample id
-            if ((tm.sentinel is not None and tm.sentinel == output_data[tm.output_name()][i][0])
-                    or np.isnan(output_data[tm.output_name()][i][0])):
+            if ((tm.sentinel is not None and tm.sentinel == actual[i][0])
+                    or np.isnan(actual[i][0])):
                 row[tmap_to_actual_col(tm)] = 'NA'
             else:
-                row[tmap_to_actual_col(tm)] = (str(tm.rescale(output_data[tm.output_name()])[i][0]))
+                row[tmap_to_actual_col(tm)] = f'{tm.rescale(actual[i, 0]):.3f}'
 
 
 def _infer_models(
         models: List[Callable], model_ids: List[str], inference_tsv: str,
         input_tmaps: List[TensorMap], output_tmaps: List[TensorMap],
 ):
-    stats = Counter()
+    count = 0
     visited_paths = set()
     tensor_paths = [os.path.join(TENSOR_FOLDER, tp) for tp in sorted(os.listdir(TENSOR_FOLDER)) if os.path.splitext(tp)[-1].lower() == TENSOR_EXT]
     no_fail_tmaps_out = [_make_tmap_nan_on_fail(tmap) for tmap in output_tmaps]
@@ -150,7 +137,7 @@ def _infer_models(
         )
 
         output_name_to_tmap = {tm.output_name(): tm for tm in output_tmaps}
-        actual_cols = list(map(tmap_to_actual_col, output_tmaps))
+        actual_cols = list(map(tmap_to_actual_col, no_fail_tmaps_out))
         prediction_cols = sum(
             [
                 [tmap_to_pred_col(output_name_to_tmap[out_name], m_id) for out_name in m.output_names]
@@ -172,11 +159,10 @@ def _infer_models(
                 inference_writer.writerows(rows)
                 if generate_test.stats_q.qsize() == generate_test.num_workers:
                     generate_test.aggregate_and_print_stats()
-                    logging.info(f"Inference on {stats['count']} tensors finished. Inference TSV file at: {inference_tsv}")
+                    logging.info(f"Inference on {len(visited_paths)} tensors finished. Inference TSV file at: {inference_tsv}")
                     break
-                stats['count'] += 1
-                if stats['count'] % 250 == 0:
-                    logging.info(f"Wrote:{stats['count']} rows of inference.")
+                count += 1
+                logging.info(f"Wrote:{count} batches of inference.")
     finally:
         if generate_test:
             generate_test.kill_workers()
@@ -213,7 +199,7 @@ def _evaluate_model(m_id: str, inference_file: str):
     hrr_pred_times = [t for t in HR_MEASUREMENT_TIMES if time_to_pred_hrr_col(t, m_id) in inference_results.columns]
     hr_pred_times = [t for t in HR_MEASUREMENT_TIMES if time_to_pred_hr_col(t, m_id) in inference_results.columns]
     # negative HRR measurements
-    for t in HR_MEASUREMENT_TIMES[1:]:
+    for t in hrr_pred_times:
         name = time_to_pred_hrr_col(t, m_id)
         col = test_results[name].dropna()
         logging.info(f'HRR_{t} had {(col < 0).mean() * 100:.2f}% negative predictions in hold out data.')
@@ -565,6 +551,7 @@ if __name__ == '__main__':
             model_id=HR_ACHIEVED_MODEL_ID, batch_size=256,
         )
     if INFER_PRETEST_MODELS:
+        logging.info('Running inference on pretest models.')
         _, hr_achieved_tmaps_in = _get_hr_achieved_model(False)
         _infer_models(
             models=[_get_pretest_baseline_model(True), _get_pretest_model(True)[0], _get_hr_achieved_model(True)[0]],
@@ -573,6 +560,7 @@ if __name__ == '__main__':
             output_tmaps=PRETEST_OUTPUT_TMAPS,
             inference_tsv=PRETEST_INFERENCE_FILE,
         )
+    logging.info('Evaluating pretest model predictions.')
     _evaluate_model(BASELINE_MODEL_ID, PRETEST_INFERENCE_FILE)
     _evaluate_model(PRETEST_MODEL_ID, PRETEST_INFERENCE_FILE)
     _evaluate_model(HR_ACHIEVED_MODEL_ID, PRETEST_INFERENCE_FILE)

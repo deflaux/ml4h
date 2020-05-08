@@ -413,7 +413,7 @@ HRR_NORMALIZE = Standardize(20, 10)
 def _hr_file(file_name: str, t: int, hrr=False):
     error = None
     try:
-        df = pd.read_csv(file_name)
+        df = pd.read_csv(file_name, dtype={'sample_id': int})
         df = df.set_index('sample_id')
         if df_diff_col(HR_MEASUREMENT_TIMES[0]) not in df.columns:  # Hacky way to handle no diff case
             for t2 in HR_MEASUREMENT_TIMES:
