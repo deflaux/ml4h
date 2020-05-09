@@ -27,9 +27,9 @@ from ml4cvd.exercise_ecg_tensormaps import RECOVERY_INFERENCE_FILE, HR_MEASUREME
 from ml4cvd.exercise_ecg_tensormaps import build_hr_biosppy_measurements_csv, plot_hr_from_biosppy_summary_stats, BIOSPPY_SENTINEL
 from ml4cvd.exercise_ecg_tensormaps import ecg_bike_recovery_downsampled8x, _make_hr_tmaps, plot_pretest_label_summary_stats
 from ml4cvd.exercise_ecg_tensormaps import plot_segment_prediction, build_pretest_training_labels, PRETEST_LABEL_FILE
-from ml4cvd.exercise_ecg_tensormaps import make_pretest_tmap, PRETEST_MODEL_ID, PRETEST_MODEL_PATH
+from ml4cvd.exercise_ecg_tensormaps import make_pretest_tmap, PRETEST_MODEL_ID, PRETEST_MODEL_PATH, PRETEST_75_ACHIEVED_INFERENCE_FILE
 from ml4cvd.exercise_ecg_tensormaps import BASELINE_MODEL_ID, BASELINE_MODEL_PATH, PRETEST_INFERENCE_FILE
-from ml4cvd.exercise_ecg_tensormaps import HR_ACHIEVED_MODEL_ID, HR_ACHIEVED_MODEL_PATH, bike_resting_hr
+from ml4cvd.exercise_ecg_tensormaps import HR_ACHIEVED_MODEL_ID, HR_ACHIEVED_MODEL_PATH, bike_resting_hr, hr_achieved, hr_achieved_75
 from ml4cvd.exercise_ecg_tensormaps import age, sex, bmi, tmap_to_actual_col, tmap_to_pred_col, time_to_pred_hr_col, time_to_pred_hrr_col
 from ml4cvd.exercise_ecg_tensormaps import time_to_actual_hr_col, time_to_actual_hrr_col, HYPEROPT_BEST_FILE
 from ml4cvd.exercise_ecg_tensormaps import BIOSPPY_FIGURE_FOLDER, PRETEST_LABEL_FIGURE_FOLDER, HYPEROPT_FIGURE_PATH
@@ -50,7 +50,7 @@ TRAIN_PRETEST_MODEL = False or not os.path.exists(PRETEST_MODEL_PATH)
 TRAIN_HR_ACHIEVED_MODEL = False or not os.path.exists(HR_ACHIEVED_MODEL_PATH)
 INFER_PRETEST_MODELS = (
     False
-    or not os.path.exists(PRETEST_INFERENCE_FILE)
+    or not os.path.exists(PRETEST_INFERENCE_FILE) or not os.path.exists(PRETEST_75_ACHIEVED_INFERENCE_FILE)
     or TRAIN_BASELINE_MODEL or TRAIN_PRETEST_MODEL or TRAIN_HR_ACHIEVED_MODEL
 )
 HYPEROPT_MAX_TRIALS = 25
@@ -67,6 +67,7 @@ BASELINE_INPUT_TMAPS = PRETEST_COVARIATE_TMAPS + [bike_resting_hr]
 PRETEST_OUTPUT_TMAPS = [hr_tmaps[0], hr_tmaps[50], hrr_tmaps[50]]
 hr_tmaps, hrr_tmaps = _make_hr_tmaps(PRETEST_LABEL_FILE, parents=False)
 HR_ACHIEVED_OUTPUT_TMAPS = [hr_tmaps[50], hrr_tmaps[50]]
+PRETEST_BOLT_FILE = os.path.join(OUTPUT_FOLDER, 'pretest_results_for_bolt.tsv')
 
 
 def history_path():
@@ -128,7 +129,6 @@ def _infer_models(
     visited_paths = set()
     tensor_paths = [os.path.join(TENSOR_FOLDER, tp) for tp in sorted(os.listdir(TENSOR_FOLDER)) if os.path.splitext(tp)[-1].lower() == TENSOR_EXT]
     no_fail_tmaps_out = [_make_tmap_nan_on_fail(tmap) for tmap in output_tmaps]
-    # hard code batch size to 1 so we can iterate over file names and generated tensors together in the tensor_paths for loop
     generate_test = None
     try:
         generate_test = TensorGenerator(
@@ -208,6 +208,8 @@ def _evaluate_model(m_id: str, inference_file: str):
     # correlations with actual measurements
     ax_size = 5
     fig, axes = plt.subplots(2, len(hr_pred_times), figsize=(ax_size * len(hr_pred_times), 2 * ax_size))
+    if type(axes[0]) != list:  # when len(hr_pred_times) == 1
+        axes[0] = [axes[0]]
     for i, t in enumerate(hr_pred_times):
         pred_col = time_to_pred_hr_col(t, m_id)
         if pred_col not in test_results.columns:
@@ -227,6 +229,8 @@ def _evaluate_model(m_id: str, inference_file: str):
     # distributions of predicted and actual measurements
     ax_size = 5
     fig, axes = plt.subplots(2, len(hr_pred_times), figsize=(ax_size * len(hr_pred_times), 2 * ax_size))
+    if type(axes[0]) != list:  # when len(hr_pred_times) == 1
+        axes[0] = [axes[0]]
     for i, t in enumerate(hr_pred_times):
         pred_col = time_to_pred_hr_col(t, m_id)
         if pred_col not in test_results.columns:
@@ -271,7 +275,7 @@ def _evaluate_model(m_id: str, inference_file: str):
             continue
         mae = label_df[mae_name]
         select = (mae > np.quantile(mae.dropna(), .99)) & ~np.isnan(mae)
-        rows = label_df[select].sample(2)
+        rows = label_df[select].sample(plots_per_time)
         for j, row in enumerate(rows.iterrows()):
             row = row[1]
             plt.subplot(len(hr_pred_times), 2, 2 * i + 1 + j)
@@ -306,12 +310,12 @@ def _get_pretest_model(use_model_file: bool):
     return _pretest_model_from_space(space, use_model_file)
 
 
-def _get_hr_achieved_model(use_model_file: bool):
+def _get_hr_achieved_model(use_model_file: bool, constant_hr_achieved: bool = False):
     """builds model to get biosppy measurements from pretest + covariates"""
     # TODO: make use pretest model config
     with open(HYPEROPT_BEST_FILE, 'r') as f:
         space = json.load(f)
-    return _hr_achieved_model_from_space(space, use_model_file)
+    return _hr_achieved_model_from_space(space, use_model_file, constant_hr_achieved=constant_hr_achieved)
 
 
 def _demo_generator(gen: TensorGenerator):
@@ -385,9 +389,9 @@ def _pretest_model_from_space(space, use_model_file=False):
     return m, tmaps_in
 
 
-def _hr_achieved_model_from_space(space, use_model_file=False):
+def _hr_achieved_model_from_space(space, use_model_file: bool = False, constant_hr_achieved: bool = False):
     pretest_tmap = make_pretest_tmap(downsample_rate=int(np.exp(space['log_downsampling'] / np.log(2))), leads=[0])
-    tmaps_in = [pretest_tmap, hr_tmaps[0]] + PRETEST_COVARIATE_TMAPS
+    tmaps_in = [pretest_tmap, hr_achieved_75 if constant_hr_achieved else hr_achieved] + PRETEST_COVARIATE_TMAPS
     m = make_multimodal_multitask_model(
         tensor_maps_in=tmaps_in,
         tensor_maps_out=HR_ACHIEVED_OUTPUT_TMAPS,
@@ -492,6 +496,27 @@ def plot_hyperopt():
                 histories.append(pickle.load(f))
 
 
+def _get_hrr_cols(df: pd.DataFrame, t: int) -> List[str]:
+    return [col for col in df.columns if df_hrr_col(t) in col]
+
+
+def prep_pretest_inferences_for_bolt():
+    truth = pd.read_csv(PRETEST_LABEL_FILE)
+    truth = truth[['sample_id'] + _get_hrr_cols(truth, 50)]
+    pred = pd.read_csv(PRETEST_INFERENCE_FILE, sep='\t')
+    pred = pred[['sample_id'] + _get_hrr_cols(pred, 50)]
+    pred_75 = pd.read_csv(PRETEST_75_ACHIEVED_INFERENCE_FILE, sep='\t')
+    pred_75_col = _get_hrr_cols(pred, 50)[0]
+    pred_75 = pred_75[['sample_id', pred_75_col]]
+    pred_75 = pred_75.rename(columns={pred_75_col: pred_75_col + '_75_hr_achieved'})
+    combined = truth.merge(pred, on='sample_id')
+    combined = combined.merge(pred_75, on='sample_id')
+    combined.dropna()
+    combined = combined.rename(columns={'sample_id': 'FID'})
+    combined['IID'] = combined['FID']
+    combined.to_csv(PRETEST_BOLT_FILE, sep='\t', index=False)
+
+
 if __name__ == '__main__':
     """Always remakes figures"""
     np.random.seed(SEED)
@@ -560,9 +585,18 @@ if __name__ == '__main__':
             output_tmaps=PRETEST_OUTPUT_TMAPS,
             inference_tsv=PRETEST_INFERENCE_FILE,
         )
+        hr_achieved_model, hr_achieved_tmaps_in = _get_hr_achieved_model(use_model_file=True, constant_hr_achieved=True)
+        _infer_models(
+            models=[hr_achieved_model],
+            model_ids=[HR_ACHIEVED_MODEL_ID],
+            input_tmaps=hr_achieved_tmaps_in,
+            output_tmaps=PRETEST_OUTPUT_TMAPS,
+            inference_tsv=PRETEST_75_ACHIEVED_INFERENCE_FILE,
+        )
     logging.info('Evaluating pretest model predictions.')
     _evaluate_model(BASELINE_MODEL_ID, PRETEST_INFERENCE_FILE)
     _evaluate_model(PRETEST_MODEL_ID, PRETEST_INFERENCE_FILE)
     _evaluate_model(HR_ACHIEVED_MODEL_ID, PRETEST_INFERENCE_FILE)
+    prep_pretest_inferences_for_bolt()
     plt.close('all')
     logging.info('~~~~~~~~~~~~~~~~~~~ DONE ~~~~~~~~~~~~~~~~~~~')

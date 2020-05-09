@@ -49,6 +49,7 @@ PRETEST_MODEL_PATH = os.path.join(OUTPUT_FOLDER, PRETEST_MODEL_ID, PRETEST_MODEL
 HR_ACHIEVED_MODEL_ID = 'pretest_hr_achieved_model'
 HR_ACHIEVED_MODEL_PATH = os.path.join(OUTPUT_FOLDER, HR_ACHIEVED_MODEL_ID, HR_ACHIEVED_MODEL_ID + MODEL_EXT)
 PRETEST_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, 'pretest_model_inference.tsv')
+PRETEST_75_ACHIEVED_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, 'pretest_75_achieved_inference.tsv')
 HYPEROPT_FIGURE_PATH = os.path.join(FIGURE_FOLDER, 'hyperopt')
 HYPEROPT_BEST_FILE = os.path.join(OUTPUT_FOLDER, 'hyperopt_best_params.json')
 
@@ -468,6 +469,35 @@ def _make_hr_tmaps(file_name: str, parents=True) -> Tuple[Dict[int, TensorMap], 
     return biosppy_hr_tmaps, biosppy_hrr_tmaps
 
 
+def _make_pretest_hr_achieved_tensor_from_file():
+    age_tff = _make_covariate_tff(join_file=PRETEST_LABEL_FILE, join_file_sep='\t')
+    max_hr_tff = _hr_file(PRETEST_LABEL_FILE, 0)
+
+    def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
+        age = age_tff(tm, hd5)
+        max_hr = max_hr_tff(tm, hd5)
+        if max_hr == BIOSPPY_SENTINEL:
+            return np.array([BIOSPPY_SENTINEL])
+        return max_hr / (220 - age)
+    return tensor_from_file
+
+
+hr_achieved = TensorMap(
+    'hr_achieved', shape=(1,), metrics=[],
+    interpretation=Interpretation.CONTINUOUS,
+    sentinel=HRR_NORMALIZE.normalize(BIOSPPY_SENTINEL),
+    tensor_from_file=_make_pretest_hr_achieved_tensor_from_file(),
+)
+
+
+hr_achieved_75 = TensorMap(
+    'hr_achieved_75', shape=(1,), metrics=[],
+    interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=lambda hd5, _: .75,
+    normalization=HRR_NORMALIZE,
+)
+
+
 # Covariates tensormaps
 def _get_instance(hd5: h5py.File):
     path_prefix, name = 'ecg_bike/string', 'instance'
@@ -485,7 +515,7 @@ def _make_covariate_tff(join_file: str, join_file_sep: str='\t'):
         if df is None:
             df = pd.read_csv(COVARIATE_FILE, sep='\t')
             df = df.set_index('sample_id')
-            to_merge = pd.read_csv(join_file,sep=join_file_sep).set_index('sample_id')
+            to_merge = pd.read_csv(join_file, sep=join_file_sep).set_index('sample_id')
             df = df[df.index.isin(to_merge.index)]
         sample_id = _sample_id_from_hd5(hd5)
         try:
