@@ -69,6 +69,7 @@ PRETEST_OUTPUT_TMAPS = [hr_tmaps[0], hr_tmaps[50], hrr_tmaps[50]]
 hr_tmaps, hrr_tmaps = _make_hr_tmaps(PRETEST_LABEL_FILE, parents=False)
 HR_ACHIEVED_OUTPUT_TMAPS = [hr_tmaps[50], hrr_tmaps[50]]
 PRETEST_BOLT_FILE = os.path.join(OUTPUT_FOLDER, 'pretest_results_for_bolt.tsv')
+PRETEST_TEST_BOLT_FILE = os.path.join(OUTPUT_FOLDER, 'pretest_test_results_for_bolt.tsv')
 
 
 def history_path():
@@ -504,6 +505,7 @@ def _get_hrr_cols(df: pd.DataFrame, t: int) -> List[str]:
 
 
 def prep_pretest_inferences_for_bolt():
+    test_ids = pd.read_csv(TEST_CSV, names=['sample_id'])
     truth = pd.read_csv(PRETEST_LABEL_FILE)
     truth = truth[['sample_id'] + _get_hrr_cols(truth, 50)]
     pred = pd.read_csv(PRETEST_INFERENCE_FILE, sep='\t')
@@ -517,7 +519,15 @@ def prep_pretest_inferences_for_bolt():
     combined.dropna()
     combined = combined.rename(columns={'sample_id': 'FID'})
     combined['IID'] = combined['FID']
+    cols = list(combined.columns)
+    # reorder so FID, IID are first
+    cols.remove('FID')
+    cols.remove('IID')
+    combined = combined[['FID', 'IID'] + cols]
+    # save tsvs
     combined.to_csv(PRETEST_BOLT_FILE, sep='\t', index=False)
+    combined_test = combined.merge(test_ids, on='sample_id')
+    combined_test.to_csv(PRETEST_TEST_BOLT_FILE, sep='\t', index=False)
 
 
 if __name__ == '__main__':
