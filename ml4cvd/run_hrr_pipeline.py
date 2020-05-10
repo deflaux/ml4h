@@ -505,7 +505,6 @@ def _get_hrr_cols(df: pd.DataFrame, t: int) -> List[str]:
 
 
 def prep_pretest_inferences_for_bolt():
-    test_ids = pd.read_csv(TEST_CSV, names=['sample_id'])
     truth = pd.read_csv(PRETEST_LABEL_FILE)
     truth = truth[['sample_id'] + _get_hrr_cols(truth, 50)]
     pred = pd.read_csv(PRETEST_INFERENCE_FILE, sep='\t')
@@ -526,7 +525,8 @@ def prep_pretest_inferences_for_bolt():
     combined = combined[['FID', 'IID'] + cols]
     # save tsvs
     combined.to_csv(PRETEST_BOLT_FILE, sep='\t', index=False)
-    combined_test = combined.merge(test_ids, on='sample_id')
+    test_ids = pd.read_csv(TEST_CSV, names=['FID'])
+    combined_test = combined.merge(test_ids, on='FID')
     combined_test.to_csv(PRETEST_TEST_BOLT_FILE, sep='\t', index=False)
 
 
