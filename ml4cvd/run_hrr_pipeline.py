@@ -50,9 +50,10 @@ TRAIN_PRETEST_MODEL = False or not os.path.exists(PRETEST_MODEL_PATH)
 TRAIN_HR_ACHIEVED_MODEL = False or not os.path.exists(HR_ACHIEVED_MODEL_PATH)
 INFER_PRETEST_MODELS = (
     False
-    or not os.path.exists(PRETEST_INFERENCE_FILE) or not os.path.exists(PRETEST_75_ACHIEVED_INFERENCE_FILE)
+    or not os.path.exists(PRETEST_INFERENCE_FILE)
     or TRAIN_BASELINE_MODEL or TRAIN_PRETEST_MODEL or TRAIN_HR_ACHIEVED_MODEL
 )
+INFER_75_ACHIEVED_MODEL = False or not os.path.exists(PRETEST_75_ACHIEVED_INFERENCE_FILE)
 HYPEROPT_MAX_TRIALS = 25
 HISTORY_PATH = os.path.join(OUTPUT_FOLDER, 'hyperopt_histories')
 TRIAL_PATH = os.path.join(HISTORY_PATH, 'trial_history.p')
@@ -208,8 +209,8 @@ def _evaluate_model(m_id: str, inference_file: str):
     # correlations with actual measurements
     ax_size = 5
     fig, axes = plt.subplots(2, len(hr_pred_times), figsize=(ax_size * len(hr_pred_times), 2 * ax_size))
-    if type(axes[0]) != list:  # when len(hr_pred_times) == 1
-        axes[0] = [axes[0]]
+    if len(axes.shape) == 1:  # when len(hr_pred_times) == 1
+        axes = axes[..., np.newaxis]
     for i, t in enumerate(hr_pred_times):
         pred_col = time_to_pred_hr_col(t, m_id)
         if pred_col not in test_results.columns:
@@ -229,8 +230,8 @@ def _evaluate_model(m_id: str, inference_file: str):
     # distributions of predicted and actual measurements
     ax_size = 5
     fig, axes = plt.subplots(2, len(hr_pred_times), figsize=(ax_size * len(hr_pred_times), 2 * ax_size))
-    if type(axes[0]) != list:  # when len(hr_pred_times) == 1
-        axes[0] = [axes[0]]
+    if len(axes.shape) == 1:  # when len(hr_pred_times) == 1
+        axes = axes[..., np.newaxis]
     for i, t in enumerate(hr_pred_times):
         pred_col = time_to_pred_hr_col(t, m_id)
         if pred_col not in test_results.columns:
@@ -250,6 +251,8 @@ def _evaluate_model(m_id: str, inference_file: str):
     # correlation of diffs vs. absolute error
     label_df = pd.read_csv(BIOSPPY_MEASUREMENTS_FILE, dtype={'sample_id': str}).merge(test_results, on='sample_id')
     fig, axes = plt.subplots(1, len(hr_pred_times), figsize=(ax_size * len(hr_pred_times), ax_size))
+    if type(axes) != np.ndarray:  # when len(hr_pred_times) == 1
+        axes = [axes]
     for i, t in enumerate(hr_pred_times):
         name = df_hr_col(t)
         diff_name = df_diff_col(t)
@@ -497,7 +500,7 @@ def plot_hyperopt():
 
 
 def _get_hrr_cols(df: pd.DataFrame, t: int) -> List[str]:
-    return [col for col in df.columns if df_hrr_col(t) in col]
+    return [col for col in df.columns if df_hrr_col(t) in col and 'actual' not in col]
 
 
 def prep_pretest_inferences_for_bolt():
@@ -506,7 +509,7 @@ def prep_pretest_inferences_for_bolt():
     pred = pd.read_csv(PRETEST_INFERENCE_FILE, sep='\t')
     pred = pred[['sample_id'] + _get_hrr_cols(pred, 50)]
     pred_75 = pd.read_csv(PRETEST_75_ACHIEVED_INFERENCE_FILE, sep='\t')
-    pred_75_col = _get_hrr_cols(pred, 50)[0]
+    pred_75_col = _get_hrr_cols(pred_75, 50)[0]
     pred_75 = pred_75[['sample_id', pred_75_col]]
     pred_75 = pred_75.rename(columns={pred_75_col: pred_75_col + '_75_hr_achieved'})
     combined = truth.merge(pred, on='sample_id')
@@ -585,12 +588,13 @@ if __name__ == '__main__':
             output_tmaps=PRETEST_OUTPUT_TMAPS,
             inference_tsv=PRETEST_INFERENCE_FILE,
         )
+    if INFER_75_ACHIEVED_MODEL:
         hr_achieved_model, hr_achieved_tmaps_in = _get_hr_achieved_model(use_model_file=True, constant_hr_achieved=True)
         _infer_models(
             models=[hr_achieved_model],
             model_ids=[HR_ACHIEVED_MODEL_ID],
             input_tmaps=hr_achieved_tmaps_in,
-            output_tmaps=PRETEST_OUTPUT_TMAPS,
+            output_tmaps=HR_ACHIEVED_OUTPUT_TMAPS,
             inference_tsv=PRETEST_75_ACHIEVED_INFERENCE_FILE,
         )
     logging.info('Evaluating pretest model predictions.')

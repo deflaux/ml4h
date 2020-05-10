@@ -469,35 +469,6 @@ def _make_hr_tmaps(file_name: str, parents=True) -> Tuple[Dict[int, TensorMap], 
     return biosppy_hr_tmaps, biosppy_hrr_tmaps
 
 
-def _make_pretest_hr_achieved_tensor_from_file():
-    age_tff = _make_covariate_tff(join_file=PRETEST_LABEL_FILE, join_file_sep='\t')
-    max_hr_tff = _hr_file(PRETEST_LABEL_FILE, 0)
-
-    def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
-        age = age_tff(tm, hd5)
-        max_hr = max_hr_tff(tm, hd5)
-        if max_hr == BIOSPPY_SENTINEL:
-            return np.array([BIOSPPY_SENTINEL])
-        return max_hr / (220 - age)
-    return tensor_from_file
-
-
-hr_achieved = TensorMap(
-    'hr_achieved', shape=(1,), metrics=[],
-    interpretation=Interpretation.CONTINUOUS,
-    sentinel=HRR_NORMALIZE.normalize(BIOSPPY_SENTINEL),
-    tensor_from_file=_make_pretest_hr_achieved_tensor_from_file(),
-)
-
-
-hr_achieved_75 = TensorMap(
-    'hr_achieved_75', shape=(1,), metrics=[],
-    interpretation=Interpretation.CONTINUOUS,
-    tensor_from_file=lambda hd5, _: .75,
-    normalization=HRR_NORMALIZE,
-)
-
-
 # Covariates tensormaps
 def _get_instance(hd5: h5py.File):
     path_prefix, name = 'ecg_bike/string', 'instance'
@@ -513,7 +484,7 @@ def _make_covariate_tff(join_file: str, join_file_sep: str='\t'):
     def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
         nonlocal df
         if df is None:
-            df = pd.read_csv(COVARIATE_FILE, sep='\t')
+            df = pd.read_csv(COVARIATE_FILE, sep='\t', dtype={'sample_id': int})
             df = df.set_index('sample_id')
             to_merge = pd.read_csv(join_file, sep=join_file_sep).set_index('sample_id')
             df = df[df.index.isin(to_merge.index)]
@@ -560,6 +531,38 @@ sex = TensorMap(
 bike_resting_hr = TensorMap(
     'resting_hr', path_prefix='ecg_bike/continuous', shape=(1,), normalization=Standardize(70, 10),
     tensor_from_file=normalized_first_date, interpretation=Interpretation.CONTINUOUS, validator=no_nans,
+)
+
+
+def _make_pretest_hr_achieved_tensor_from_file():
+    age_tff = _make_covariate_tff(join_file=PRETEST_LABEL_FILE, join_file_sep=',')
+    max_hr_tff = _hr_file(PRETEST_LABEL_FILE, 0)
+
+    def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
+        age_ = age_tff(age, hd5).copy()
+        max_hr = max_hr_tff(tm, hd5).copy()
+        if max_hr == BIOSPPY_SENTINEL:
+            return np.array([BIOSPPY_SENTINEL])
+        return max_hr / (220 - age_)
+    return tensor_from_file
+
+
+def make_constant_tensor_from_file(constant: float):
+    def tff(tm: TensorMap, hd5: h5py.File, dependents=None):
+        return np.array([constant])
+    return tff
+
+
+hr_achieved = TensorMap(
+    'hr_achieved', shape=(1,), metrics=[],
+    interpretation=Interpretation.CONTINUOUS,
+    sentinel=BIOSPPY_SENTINEL,
+    tensor_from_file=_make_pretest_hr_achieved_tensor_from_file(),
+)
+hr_achieved_75 = TensorMap(
+    'hr_achieved', shape=(1,), metrics=[],
+    interpretation=Interpretation.CONTINUOUS,
+    tensor_from_file=make_constant_tensor_from_file(.75),
 )
 
 
