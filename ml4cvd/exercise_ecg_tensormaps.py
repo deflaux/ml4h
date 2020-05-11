@@ -53,6 +53,14 @@ PRETEST_75_ACHIEVED_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, 'pretest_75_ach
 HYPEROPT_FIGURE_PATH = os.path.join(FIGURE_FOLDER, 'hyperopt')
 HYPEROPT_BEST_FILE = os.path.join(OUTPUT_FOLDER, 'hyperopt_best_params.json')
 
+REST_TENSOR_FOLDER = '/mnt/discs/ecg-rest-38k-tensors/2020-03-14'
+REST_IDS = os.path.join(OUTPUT_FOLDER, 'ecg_rest_ids.csv')
+REST_MODEL_ID = 'rest_model'
+REST_MODEL_PATH = os.path.join(OUTPUT_FOLDER, REST_MODEL_ID, REST_MODEL_ID + MODEL_EXT)
+REST_HR_ACHIEVED_MODEL_ID = 'rest_hr_achieved_model'
+REST_HR_ACHIEVED_MODEL_PATH = os.path.join(OUTPUT_FOLDER, REST_HR_ACHIEVED_MODEL_ID, REST_HR_ACHIEVED_MODEL_ID + MODEL_EXT)
+TRANSFER_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, 'transfer_model_inference.tsv')
+
 
 # Tensor from file helpers
 def _check_phase_full_len(hd5: h5py.File, phase: str):
@@ -89,6 +97,16 @@ def _make_pretest_ecg_tff(downsample_rate: float, leads: Union[List[int], slice]
         _check_phase_full_len(hd5, 'pretest')
         start = np.random.randint(0, SAMPLING_RATE * PRETEST_DUR - tm.shape[0] * downsample_rate) if random_start else 0
         return _get_downsampled_bike_ecg(tm.shape[0], hd5, start, downsample_rate, leads)
+    return tff
+
+
+def _make_downsampled_rest_tff(downsample_rate: float):
+    def tff(tm: TensorMap, hd5: h5py.File, dependents=None):
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        for k, idx in tm.channel_map.items():
+            data = tm.hd5_first_dataset_in_group(hd5, f'{tm.path_prefix}/{k}/')
+            tensor[:, tm.channel_map[k]] = _downsample_ecg(data, downsample_rate)
+        return tensor
     return tff
 
 
@@ -236,6 +254,10 @@ def _path_from_sample_id(sample_id: str) -> str:
 
 def _sample_id_from_hd5(hd5: h5py.File) -> int:
     return int(os.path.basename(hd5.filename).replace(TENSOR_EXT, ''))
+
+
+def _sample_id_from_path(path: str) -> int:
+    return int(os.path.basename(path).replace(TENSOR_EXT, ''))
 
 
 def _plot_recovery_hrs(path: str):
@@ -511,6 +533,13 @@ def _make_covariate_tff(join_file: str, join_file_sep: str='\t'):
     return tensor_from_file
 
 
+def make_rest_ids():
+    pd.DataFrame(
+        [_sample_id_from_path(path) for path in os.listdir(REST_TENSOR_FOLDER) if path.endswith(TENSOR_EXT)],
+        columns='sample_id',
+    ).to_csv(REST_IDS, index=False)
+
+
 age = TensorMap(
     'age', shape=(1,),
     interpretation=Interpretation.CONTINUOUS,
@@ -531,6 +560,27 @@ sex = TensorMap(
 bike_resting_hr = TensorMap(
     'resting_hr', path_prefix='ecg_bike/continuous', shape=(1,), normalization=Standardize(70, 10),
     tensor_from_file=normalized_first_date, interpretation=Interpretation.CONTINUOUS, validator=no_nans,
+)
+rest_age = TensorMap(
+    'age', shape=(1,),
+    interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization=Standardize(57, 8),
+    tensor_from_file=_make_covariate_tff(PRETEST_LABEL_FILE, ','),
+)
+rest_bmi = TensorMap(
+    'bmi', shape=(1,),
+    interpretation=Interpretation.CONTINUOUS,
+    validator=no_nans, normalization=Standardize(27, 5),
+    tensor_from_file=_make_covariate_tff(PRETEST_LABEL_FILE, ','),
+)
+rest_sex = TensorMap(
+    'sex', shape=(2,), channel_map={'female': 1, 'male': 0},
+    interpretation=Interpretation.CATEGORICAL,
+    validator=no_nans, tensor_from_file=_make_covariate_tff(PRETEST_LABEL_FILE, ','),
+)
+rest_resting_hr = TensorMap(
+    'resting_hr', Interpretation.CONTINUOUS, path_prefix='ukb_ecg_rest',
+    channel_map={'VentricularRate': 0}, validator=no_nans,
 )
 
 
@@ -581,5 +631,15 @@ def make_pretest_tmap(downsample_rate: float, leads) -> TensorMap:
         interpretation=Interpretation.CONTINUOUS,
         validator=no_nans, normalization=Standardize(0, 100),
         tensor_from_file=_make_pretest_ecg_tff(downsample_rate, leads),
+        cacheable=False, augmentations=[_warp_ecg, _rand_add_noise, _random_crop_ecg],
+    )
+
+
+def make_rest_ecg_tmap(downsample_rate: float, channel_map: Dict[str, int]) -> TensorMap:
+    return TensorMap(
+        'rest_ecg', shape=(int(PRETEST_TRAINING_DUR * SAMPLING_RATE // downsample_rate), len(channel_map)),
+        interpretation=Interpretation.CONTINUOUS,
+        validator=no_nans, normalization=Standardize(0, 100),  # TODO: investigate normalization
+        tensor_from_file=_make_downsampled_rest_tff(downsample_rate),
         cacheable=False, augmentations=[_warp_ecg, _rand_add_noise, _random_crop_ecg],
     )
