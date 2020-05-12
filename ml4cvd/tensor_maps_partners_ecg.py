@@ -10,6 +10,7 @@ from typing import Dict, List, Callable, Union, Tuple
 from ml4cvd.tensor_maps_by_hand import TMAPS
 from ml4cvd.defines import ECG_REST_AMP_LEADS, PARTNERS_DATE_FORMAT, STOP_CHAR, PARTNERS_CHAR_2_IDX, PARTNERS_DATETIME_FORMAT
 from ml4cvd.TensorMap import TensorMap, str2date, Interpretation, make_range_validator, decompress_data, TimeSeriesOrder
+from ml4cvd.normalizer import Standardize
 
 
 YEAR_DAYS = 365.26
@@ -93,6 +94,37 @@ def make_voltage(population_normalize: float = None):
             tensor /= population_normalize
         return tensor
     return get_voltage_from_file
+
+
+def make_voltage_no_resample():
+    def get_voltage_from_file(tm, hd5, dependents=None):
+        ecg_dates = _get_ecg_dates(tm, hd5)
+        dynamic, shape = _is_dynamic_shape(tm, len(ecg_dates))
+        tensor = np.zeros(shape, dtype=np.float32)
+        for i, ecg_date in enumerate(ecg_dates):
+            for cm in tm.channel_map:
+                try:
+                    path = _make_hd5_path(tm, ecg_date, cm)
+                    voltage = decompress_data(data_compressed=hd5[path][()], dtype=hd5[path].attrs['dtype'])
+                    slices = (i, ..., tm.channel_map[cm]) if dynamic else (..., tm.channel_map[cm])
+                    tensor[slices] = voltage
+                except KeyError:
+                    logging.warning(f'KeyError for channel {cm} in {tm.name}')
+        return tensor
+    return get_voltage_from_file
+
+
+def voltage_full_validator(tm: TensorMap, tensor: np.ndarray, hd5: h5py.File):
+    assert None not in tm.shape  # only for static tms for now
+    min_full_frac = .9
+    if not np.all(np.count_nonzero(tensor, axis=0) / tm.shape[0] > min_full_frac):
+        raise ValueError(f'{tm.name} has more than {(1 - min_full_frac) * 100:.2f}% zeros in at least one lead.')
+
+
+TMAPS['partners_ecg_5000_only'] = TensorMap(
+    'ecg_rest_5000', shape=(5000, 12), path_prefix=PARTNERS_PREFIX, tensor_from_file=make_voltage_no_resample(),
+    normalization=Standardize(0, 100), channel_map=ECG_REST_AMP_LEADS, validator=voltage_full_validator,
+)
 
 
 TMAPS['partners_ecg_voltage'] = TensorMap(
