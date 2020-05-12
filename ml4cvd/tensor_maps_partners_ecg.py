@@ -96,34 +96,57 @@ def make_voltage(population_normalize: float = None):
     return get_voltage_from_file
 
 
-def make_voltage_no_resample():
-    def get_voltage_from_file(tm, hd5, dependents=None):
-        ecg_dates = _get_ecg_dates(tm, hd5)
-        dynamic, shape = _is_dynamic_shape(tm, len(ecg_dates))
-        tensor = np.zeros(shape, dtype=np.float32)
-        for i, ecg_date in enumerate(ecg_dates):
-            for cm in tm.channel_map:
-                try:
-                    path = _make_hd5_path(tm, ecg_date, cm)
-                    voltage = decompress_data(data_compressed=hd5[path][()], dtype=hd5[path].attrs['dtype'])
-                    slices = (i, ..., tm.channel_map[cm]) if dynamic else (..., tm.channel_map[cm])
-                    tensor[slices] = voltage
-                except KeyError:
-                    logging.warning(f'KeyError for channel {cm} in {tm.name}')
-        return tensor
-    return get_voltage_from_file
+def voltage_from_file_no_resample(tm, hd5, dependents=None):
+    ecg_dates = _get_ecg_dates(tm, hd5)
+    dynamic, shape = _is_dynamic_shape(tm, len(ecg_dates))
+    tensor = np.zeros(shape, dtype=np.float32)
+    for i, ecg_date in enumerate(ecg_dates):
+        for cm in tm.channel_map:
+            try:
+                path = _make_hd5_path(tm, ecg_date, cm)
+                voltage = decompress_data(data_compressed=hd5[path][()], dtype=hd5[path].attrs['dtype'])
+                if len(voltage) != tm.shape[0]:
+                    raise ValueError(f'Voltage is not the right length for TensorMap {tm.name}.')
+                slices = (i, ..., tm.channel_map[cm]) if dynamic else (..., tm.channel_map[cm])
+                tensor[slices] = voltage
+            except KeyError:
+                logging.warning(f'KeyError for channel {cm} in {tm.name}')
+    return tensor
+
+
+def _find_max_zero_run(x: np.ndarray):
+    assert x.ndim == 1
+    run_ends = np.flatnonzero(np.diff(x, append=np.nan))
+    run_lens = np.diff(run_ends, prepend=0)
+    run_lens[0] += 1
+    run_vals = x[run_ends]
+    zero_run_lens = run_lens[run_vals == 0]
+    if len(zero_run_lens) == 0:
+        return 0
+    return np.array(np.max(zero_run_lens)).reshape(1)
 
 
 def voltage_full_validator(tm: TensorMap, tensor: np.ndarray, hd5: h5py.File):
-    assert None not in tm.shape  # only for static tms for now
-    min_full_frac = .9
-    if not np.all(np.count_nonzero(tensor, axis=0) / tm.shape[0] > min_full_frac):
-        raise ValueError(f'{tm.name} has more than {(1 - min_full_frac) * 100:.2f}% zeros in at least one lead.')
+    assert None not in tm.shape
+    max_zero_run_frac = .2
+    for lead in range(tensor.shape[-1]):
+        if _find_max_zero_run(tensor) / tensor.shape[0] > max_zero_run_frac:
+            raise ValueError(f'{tm.name} has a zero run great than {max_zero_run_frac * 100: .2f}%.')
 
 
-TMAPS['partners_ecg_5000_only'] = TensorMap(
-    'ecg_rest_5000', shape=(5000, 12), path_prefix=PARTNERS_PREFIX, tensor_from_file=make_voltage_no_resample(),
+TMAPS['partners_ecg_5000_only'] = partners_ecg_5k_only = TensorMap(
+    'ecg_rest_5000', shape=(5000, 12), path_prefix=PARTNERS_PREFIX, tensor_from_file=voltage_from_file_no_resample,
     normalization=Standardize(0, 100), channel_map=ECG_REST_AMP_LEADS, validator=voltage_full_validator,
+)
+
+
+def _max_zero_run_frac(tm: TensorMap, hd5: h5py.File, dependents=None):
+    ecg = voltage_from_file_no_resample(partners_ecg_5k_only, hd5)
+    return np.max(_find_max_zero_run(ecg[:, lead]) / ecg.shape[0] for lead in range(ecg.shape[-1]))
+
+
+TMAPS['partners_ecg_max_zero_frac'] = TensorMap(
+    'ecg_rest_5000', shape=(1,), path_prefix=PARTNERS_PREFIX, tensor_from_file=_max_zero_run_frac,
 )
 
 
