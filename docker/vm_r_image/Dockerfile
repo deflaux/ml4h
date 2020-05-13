@@ -150,6 +150,12 @@ RUN  R -f /home/jupyter-user/src/install.R
 # 	&& R -f install.R $USER \
 # 	&& rm -rf install.R
 
+# Take care of plink2
+RUN wget http://s3.amazonaws.com/plink2-assets/plink2_linux_avx2_20200409.zip -O /home/jupyter-user/packages/plink2.zip && \
+    cd /home/jupyter-user/packages && \
+    unzip /home/jupyter-user/packages/plink2.zip
+
+
 RUN mkdir -p /home/jupyter-user/notebooks
 #ADD jupyter.R /home/jupyter-user/src
 #RUN R -f /home/jupyter-user/src/jupyter.R 

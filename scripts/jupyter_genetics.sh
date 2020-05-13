@@ -97,7 +97,7 @@ ${DOCKER_COMMAND} run -it \
 -v /home/${USER}/:/home/jupyter/ \
 -v /mnt/:/home/jupyter/notebooks/mnt \
 -p 0.0.0.0:${PORT}:${PORT} \
-${DOCKER_IMAGE} /bin/bash -c "pip install -e /home/jupyter/ml; pip install pandas; pip install matplotlib; pip install seaborn; pip install scipy; pip install google-cloud-storage; pip install google-cloud-bigquery; jupyter notebook --no-browser --ip=0.0.0.0 --port=${PORT} --NotebookApp.token= --allow-root --notebook-dir=/home/jupyter/notebooks"
+${DOCKER_IMAGE} /bin/bash -c "pip install -e /home/jupyter/ml; pip install pandas; pip install matplotlib; pip install seaborn; pip install scipy; pip21 install google-cloud-storage; pip install google-cloud-bigquery; jupyter notebook --no-browser --ip=0.0.0.0 --port=${PORT} --NotebookApp.token= --allow-root --notebook-dir=/home/jupyter"
 
 
 # Automatically back up any local notebooks and artifacts non-recursively (no subfolders)
