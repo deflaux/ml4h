@@ -560,9 +560,13 @@ def plot_hyperopt():
         trials = pickle.load(f)
     histories = []
     for path in os.listdir(HISTORY_PATH):
-        if path.endswith('.p') and 'history' in path:
+        if path.endswith('.p') and path.startswith('history'):
             with open(os.path.join(HISTORY_PATH, path), 'rb') as f:
-                histories.append(pickle.load(f))
+                histories += pickle.load(f)
+    histories_for_plot = [{'loss': [MAX_LOSS], 'val_loss': [MAX_LOSS]} for _ in len(trials.trials)]
+    for history in histories:
+        histories_for_plot[history['i']] = history
+    plot_trials(trials, histories_for_plot, HYPEROPT_FIGURE_PATH, {'conv_normalize': ['', 'batch_norm']})
 
 
 def _get_hrr_cols(df: pd.DataFrame, t: int) -> List[str]:
