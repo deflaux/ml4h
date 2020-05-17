@@ -142,11 +142,11 @@ TMAPS['partners_ecg_5000_only'] = partners_ecg_5k_only = TensorMap(
 
 def _max_zero_run_frac(tm: TensorMap, hd5: h5py.File, dependents=None):
     ecg = voltage_from_file_no_resample(partners_ecg_5k_only, hd5)
-    return np.max(_find_max_zero_run(ecg[:, lead]) / ecg.shape[0] for lead in range(ecg.shape[-1]))
+    return np.max([_find_max_zero_run(ecg[:, lead]) / ecg.shape[0] for lead in range(ecg.shape[-1])])
 
 
 TMAPS['partners_ecg_max_zero_frac'] = TensorMap(
-    'ecg_rest_5000', shape=(1,), path_prefix=PARTNERS_PREFIX, tensor_from_file=_max_zero_run_frac,
+    'max_zero_run_frac', shape=(1,), path_prefix=PARTNERS_PREFIX, tensor_from_file=_max_zero_run_frac,
 )
 
 
