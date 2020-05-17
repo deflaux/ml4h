@@ -67,7 +67,7 @@ def parse_args():
     parser.add_argument('--phenos_folder', default='gs://ml4cvd/phenotypes/', help='Path to folder of phenotype defining CSVs.')
     parser.add_argument('--phecode_definitions', default='/mnt/ml4cvd/projects/jamesp/data/phecode_definitions1.2.csv', help='CSV of phecode definitions')
     parser.add_argument('--dicoms', default='./dicoms/', help='Path to folder of dicoms.')
-    parser.add_argument('--test_csv', default=None, help='Path to CSV with Sample IDs to reserve for testing')
+    parser.add_argument('--sample_csv', default=None, help='Path to CSV with Sample IDs to restrict tensor paths')
     parser.add_argument('--tsv_style', default='standard', choices=['standard', 'genetics'], help='Format choice for the TSV file produced in output by infer and explore modes.')
     parser.add_argument('--app_csv', help='Path to file used to link sample IDs between UKBB applications 17488 and 7089')
     parser.add_argument('--tensors', help='Path to folder containing tensors, or where tensors will be written.')
@@ -173,11 +173,20 @@ def parse_args():
     # Training and Hyper-Parameter Optimization Parameters
     parser.add_argument('--epochs', default=12, type=int, help='Number of training epochs.')
     parser.add_argument('--batch_size', default=16, type=int, help='Mini batch size for stochastic gradient descent algorithms.')
-    parser.add_argument('--valid_ratio', default=0.2, type=float, help='Rate of training tensors to save for validation must be in [0.0, 1.0].')
-    parser.add_argument('--test_ratio', default=0.1, type=float, help='Rate of training tensors to save for testing [0.0, 1.0].')
+    parser.add_argument('--train_csv', help='Path to CSV with Sample IDs to reserve for training.')
+    parser.add_argument('--valid_csv', help='Path to CSV with Sample IDs to reserve for validation. Takes precedence over valid_ratio.')
+    parser.add_argument('--test_csv', help='Path to CSV with Sample IDs to reserve for testing. Takes precedence over test_ratio.')
     parser.add_argument(
-        '--test_modulo', default=0, type=int,
-        help='Sample IDs modulo this number will be reserved for testing. Set to 1 to only reserve test_ratio for testing.',
+        '--valid_ratio', default=0.2, type=float,
+        help='Rate of training tensors to save for validation must be in [0.0, 1.0]. '
+             'If any of train/valid/test csv is specified, split by ratio is applied on the remaining tensors after reserving tensors given by csvs. '
+             'If not specified, default 0.2 is used. If default ratios are used with train_csv, some tensors may be ignored because ratios do not sum to 1.',
+    )
+    parser.add_argument(
+        '--test_ratio', default=0.1, type=float,
+        help='Rate of training tensors to save for testing must be in [0.0, 1.0]. '
+             'If any of train/valid/test csv is specified, split by ratio is applied on the remaining tensors after reserving tensors given by csvs. '
+             'If not specified, default 0.1 is used. If default ratios are used with train_csv, some tensors may be ignored because ratios do not sum to 1.',
     )
     parser.add_argument('--test_steps', default=32, type=int, help='Number of batches to use for testing.')
     parser.add_argument('--training_steps', default=400, type=int, help='Number of training batches to examine in an epoch.')
@@ -217,6 +226,54 @@ def parse_args():
     # Training optimization options
     parser.add_argument('--num_workers', default=multiprocessing.cpu_count(), type=int, help="Number of workers to use for every tensor generator.")
     parser.add_argument('--cache_size', default=3.5e9/multiprocessing.cpu_count(), type=float, help="Tensor map cache size per worker.")
+
+    # Cross reference arguments
+    parser.add_argument(
+        '--tensors_name', default='Tensors',
+        help='Name of dataset at tensors, e.g. ECG. '
+             'Adds contextual detail to summary CSV and plots.',
+    )
+    parser.add_argument(
+        '--join_tensors', default=['partners_ecg_patientid_clean'], nargs='+',
+        help='TensorMap or column name in csv of value in tensors used in join with reference. '
+             'Can be more than 1 join value.',
+    )
+    parser.add_argument(
+        '--time_tensor', default='partners_ecg_datetime',
+        help='TensorMap or column name in csv of value in tensors to perform time cross-ref on. '
+             'Time cross referencing is optional.',
+    )
+    parser.add_argument(
+        '--reference_tensors',
+        help='Either a csv or directory of hd5 containing a reference dataset.',
+    )
+    parser.add_argument(
+        '--reference_name', default='Reference',
+        help='Name of dataset at reference, e.g. STS. '
+             'Adds contextual detail to summary CSV and plots.',
+    )
+    parser.add_argument(
+        '--reference_join_tensors', nargs='+',
+        help='TensorMap or column name in csv of value in reference used in join in tensors. '
+             'Can be more than 1 join value.',
+    )
+    parser.add_argument(
+        '--reference_start_time_tensor', nargs='+',
+        help='TensorMap or column name in csv of start of time window in reference. '
+             'An integer can be provided as a second argument to specify an offset to the start time. '
+             'e.g. tStart -30',
+    )
+    parser.add_argument(
+        '--reference_end_time_tensor', nargs='+',
+        help='TensorMap or column name in csv of end of time window in reference. '
+             'An integer can be provided as a second argument to specify an offset to the end time. '
+             'e.g. tEnd 30',
+    )
+    parser.add_argument(
+        '--reference_label',
+        help='TensorMap or column name of value in csv to report distribution on, e.g. mortality. '
+             'Label distribution reporting is optional.',
+    )
 
     args = parser.parse_args()
     _process_args(args)
