@@ -5,6 +5,7 @@ import gc
 import os
 import logging
 import numpy as np
+import pandas as pd
 from collections import Counter
 from timeit import default_timer as timer
 
@@ -403,6 +404,16 @@ def plot_trials(trials, histories, figure_path, param_lists={}):
     plt.tight_layout()
     plt.savefig(learning_path)
     logging.info('Saved learning curve plot to: {}'.format(learning_path))
+
+    # parallel axis plot
+    df_rows = [
+        {**histories[i]['space'], **{'loss': lplot[i]}}
+        for i in range(len(histories)) if histories[i]
+        if 'space' in histories[i]
+    ]
+    plt.figure(figsize=((len(histories) + 1) * 10, 10))
+    pd.tools.plotting.parallel_coordinates(pd.DataFrame(df_rows), 'loss')
+    plt.savefig(os.path.join(figure_path, 'parallel_coordinates_plot' + IMAGE_EXT))
 
 
 if __name__ == '__main__':
