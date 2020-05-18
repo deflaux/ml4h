@@ -17,6 +17,7 @@ matplotlib.use('Agg') # Need this to write images from the GSA servers.  Order m
 import matplotlib.pyplot as plt # First import matplotlib, then use Agg, then import plt
 
 from skimage.filters import threshold_otsu
+from scipy.stats import linregress
 
 from ml4cvd.arguments import parse_args
 from ml4cvd.plots import plot_metric_history
@@ -420,6 +421,13 @@ def plot_trials(trials, histories, figure_path, param_lists={}):
     df['loss_'] = df['loss']
     pd.plotting.parallel_coordinates(df.round(3), 'loss_', colormap=cm, sort_labels=True)
     plt.savefig(os.path.join(figure_path, 'parallel_coordinates_plot' + IMAGE_EXT))
+
+    linreg_cols = df.columns
+    linreg_cols.remove('loss')
+    linreg_cols.remove('_loss')
+    for col in linreg_cols:
+        slope, intercept, r_value, p_value, std_err = linregress(df[col], df['loss'])
+        logging.info(f'Standardized column {col} has slope {slope:.3f}, intercept {intercept: .3f}, and p value {p_value: .4f}')
 
 
 if __name__ == '__main__':
