@@ -1057,6 +1057,11 @@ def make_multimodal_multitask_model(
         try:
             m_other = load_model(model_layers, custom_objects=custom_dict, compile=False)
             for other_layer in m_other.layers:
+                if other_layer.name == 'conv1d':
+                    logging.info(f'Not loading layer {other_layer.name}')
+                if other_layer.name.startswith('output'):
+                    logging.info(f'Not loading layer {other_layer.name}')
+                    continue
                 try:
                     target_layer = m.get_layer(other_layer.name)
                     target_layer.set_weights(other_layer.get_weights())

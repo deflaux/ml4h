@@ -53,7 +53,7 @@ PRETEST_75_ACHIEVED_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, 'pretest_75_ach
 HYPEROPT_FIGURE_PATH = os.path.join(FIGURE_FOLDER, 'hyperopt')
 HYPEROPT_BEST_FILE = os.path.join(OUTPUT_FOLDER, 'hyperopt_best_params.json')
 
-REST_TENSOR_FOLDER = '/mnt/discs/ecg-rest-38k-tensors/2020-03-14'
+REST_TENSOR_FOLDER = '/mnt/disks/ecg-rest-38k-tensors/2020-03-14'
 REST_IDS = os.path.join(OUTPUT_FOLDER, 'ecg_rest_ids.csv')
 REST_MODEL_ID = 'rest_model'
 REST_MODEL_PATH = os.path.join(OUTPUT_FOLDER, REST_MODEL_ID, REST_MODEL_ID + MODEL_EXT)
@@ -104,8 +104,8 @@ def _make_downsampled_rest_tff(downsample_rate: float):
     def tff(tm: TensorMap, hd5: h5py.File, dependents=None):
         tensor = np.zeros(tm.shape, dtype=np.float32)
         for k, idx in tm.channel_map.items():
-            data = tm.hd5_first_dataset_in_group(hd5, f'{tm.path_prefix}/{k}/')
-            tensor[:, tm.channel_map[k]] = _downsample_ecg(data, downsample_rate)
+            data = np.array(tm.hd5_first_dataset_in_group(hd5, f'{tm.path_prefix}/{k}/'))[:, np.newaxis]
+            tensor[:, tm.channel_map[k]] = _downsample_ecg(data, downsample_rate)[0]
         return tensor
     return tff
 
@@ -464,7 +464,7 @@ def _hr_file(file_name: str, t: int, hrr=False):
                 out = BIOSPPY_SENTINEL
             return np.array([out])
         except KeyError:
-            raise KeyError(f'Sample id not in {file_name}.')
+            raise KeyError(f'Sample id not in {file_name} for TensorMap {tm.name}.')
     return tensor_from_file
 
 
@@ -500,7 +500,7 @@ def _get_instance(hd5: h5py.File):
     return hd5[f'{tensor_path(path_prefix=path_prefix, name=name)}{min(dates)}/'][()]
 
 
-def _make_covariate_tff(join_file: str, join_file_sep: str='\t'):
+def _make_covariate_tff(join_file: str, join_file_sep: str='\t', fixed_instance: bool = False):
     df = None
 
     def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
@@ -513,7 +513,7 @@ def _make_covariate_tff(join_file: str, join_file_sep: str='\t'):
         sample_id = _sample_id_from_hd5(hd5)
         try:
             row = df.loc[sample_id]
-            instance = int(_get_instance(hd5))
+            instance = 2 if fixed_instance else int(_get_instance(hd5))
             if type(row) == pd.Series:   # one instance case
                 if row['instance'] != instance:
                     raise ValueError(f'No matching instance in covariate file.')
@@ -529,14 +529,14 @@ def _make_covariate_tff(join_file: str, join_file_sep: str='\t'):
                 out[0] = val
             return out
         except KeyError:
-            raise KeyError(f'Sample id not covariate file.')
+            raise KeyError(f'Sample id not covariate file for TensorMap {tm.name}.')
     return tensor_from_file
 
 
 def make_rest_ids():
     pd.DataFrame(
         [_sample_id_from_path(path) for path in os.listdir(REST_TENSOR_FOLDER) if path.endswith(TENSOR_EXT)],
-        columns='sample_id',
+        columns=['sample_id'],
     ).to_csv(REST_IDS, index=False)
 
 
@@ -565,18 +565,18 @@ rest_age = TensorMap(
     'age', shape=(1,),
     interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization=Standardize(57, 8),
-    tensor_from_file=_make_covariate_tff(PRETEST_LABEL_FILE, ','),
+    tensor_from_file=_make_covariate_tff(REST_IDS, ',', fixed_instance=True),
 )
 rest_bmi = TensorMap(
     'bmi', shape=(1,),
     interpretation=Interpretation.CONTINUOUS,
     validator=no_nans, normalization=Standardize(27, 5),
-    tensor_from_file=_make_covariate_tff(PRETEST_LABEL_FILE, ','),
+    tensor_from_file=_make_covariate_tff(REST_IDS, ',', fixed_instance=True),
 )
 rest_sex = TensorMap(
     'sex', shape=(2,), channel_map={'female': 1, 'male': 0},
     interpretation=Interpretation.CATEGORICAL,
-    validator=no_nans, tensor_from_file=_make_covariate_tff(PRETEST_LABEL_FILE, ','),
+    validator=no_nans, tensor_from_file=_make_covariate_tff(REST_IDS, ',', fixed_instance=True),
 )
 rest_resting_hr = TensorMap(
     'resting_hr', Interpretation.CONTINUOUS, path_prefix='ukb_ecg_rest',
@@ -584,8 +584,8 @@ rest_resting_hr = TensorMap(
 )
 
 
-def _make_pretest_hr_achieved_tensor_from_file():
-    age_tff = _make_covariate_tff(join_file=PRETEST_LABEL_FILE, join_file_sep=',')
+def _make_hr_achieved_tensor_from_file(pretest=True):
+    age_tff = _make_covariate_tff(join_file=PRETEST_LABEL_FILE, join_file_sep=',') if pretest else _make_covariate_tff(REST_IDS, ',', fixed_instance=True)
     max_hr_tff = _hr_file(PRETEST_LABEL_FILE, 0)
 
     def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
@@ -607,7 +607,13 @@ hr_achieved = TensorMap(
     'hr_achieved', shape=(1,), metrics=[],
     interpretation=Interpretation.CONTINUOUS,
     sentinel=BIOSPPY_SENTINEL,
-    tensor_from_file=_make_pretest_hr_achieved_tensor_from_file(),
+    tensor_from_file=_make_hr_achieved_tensor_from_file(),
+)
+rest_hr_achieved = TensorMap(
+    'hr_achieved', shape=(1,), metrics=[],
+    interpretation=Interpretation.CONTINUOUS,
+    sentinel=BIOSPPY_SENTINEL,
+    tensor_from_file=_make_hr_achieved_tensor_from_file(pretest=False),
 )
 hr_achieved_75 = TensorMap(
     'hr_achieved', shape=(1,), metrics=[],
@@ -641,5 +647,6 @@ def make_rest_ecg_tmap(downsample_rate: float, channel_map: Dict[str, int]) -> T
         interpretation=Interpretation.CONTINUOUS,
         validator=no_nans, normalization=Standardize(0, 100),  # TODO: investigate normalization
         tensor_from_file=_make_downsampled_rest_tff(downsample_rate),
+        channel_map=channel_map, path_prefix='ukb_ecg_rest',
         cacheable=False, augmentations=[_warp_ecg, _rand_add_noise, _random_crop_ecg],
     )

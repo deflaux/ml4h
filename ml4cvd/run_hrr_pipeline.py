@@ -15,6 +15,7 @@ import hyperopt
 from hyperopt import hp, fmin, tpe
 import pickle
 import time
+import tensorflow as tf
 
 from ml4cvd.logger import load_config
 from ml4cvd.hyperparameters import plot_trials, MAX_LOSS
@@ -34,7 +35,7 @@ from ml4cvd.exercise_ecg_tensormaps import time_to_actual_hr_col, time_to_actual
 from ml4cvd.exercise_ecg_tensormaps import BIOSPPY_FIGURE_FOLDER, PRETEST_LABEL_FIGURE_FOLDER, HYPEROPT_FIGURE_PATH
 from ml4cvd.exercise_ecg_tensormaps import rest_age, rest_bmi, rest_sex, make_rest_ecg_tmap, rest_resting_hr
 from ml4cvd.exercise_ecg_tensormaps import REST_MODEL_PATH, REST_HR_ACHIEVED_MODEL_PATH, REST_MODEL_ID
-from ml4cvd.exercise_ecg_tensormaps import REST_HR_ACHIEVED_MODEL_ID, REST_TENSOR_FOLDER, REST_IDS, TRANSFER_INFERENCE_FILE
+from ml4cvd.exercise_ecg_tensormaps import REST_HR_ACHIEVED_MODEL_ID, REST_TENSOR_FOLDER, REST_IDS, TRANSFER_INFERENCE_FILE, rest_hr_achieved
 from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.recipes import _make_tmap_nan_on_fail
 from ml4cvd.metrics import coefficient_of_determination
@@ -348,13 +349,18 @@ def _train_model(
     patience = 8
     epochs = 100
     data = pd.read_csv(PRETEST_LABEL_FILE)
+    test_ids = pd.read_csv(TEST_CSV, names=['sample_id'])
+    test_ids = test_ids.set_index('sample_id')
     if transfer:
         rest_ids = pd.read_csv(REST_IDS)
         data = data.merge(rest_ids, on='sample_id')
+    data = data[~data.index.isin(test_ids.index)]
     error_free_ratio = len(data[df_hr_col(0)].dropna()) / len(data)
-    data_set_len = (len(data) - TEST_SET_LEN) * error_free_ratio // batch_size  # approximation
+    data_set_len = len(data) * error_free_ratio // batch_size  # approximation
+    if data_set_len < 50:
+        workers = 4
     training_steps = int(data_set_len * (1 - VALIDATION_RATIO))
-    validation_steps = int(data_set_len * VALIDATION_RATIO)
+    validation_steps = max(int(data_set_len * VALIDATION_RATIO), 1)
 
     generate_train, generate_valid, _ = test_train_valid_tensor_generators(
         tensor_maps_in=tmaps_in,
@@ -477,9 +483,9 @@ def _get_rest_model(transfer_model: bool, model_file: str):
 def _get_rest_hr_achieved_model(transfer_model: bool, model_file: str, constant_hr_achieved: bool):
     with open(HYPEROPT_BEST_FILE, 'r') as f:
         space = json.load(f)
-    hr_achieved_tmap = hr_achieved_75 if constant_hr_achieved else hr_achieved
+    hr_achieved_tmap = hr_achieved_75 if constant_hr_achieved else rest_hr_achieved
     return _rest_model_from_space(
-        space, model_file=model_file, covariate_tmaps_in=REST_COVARIATE_TMAPS + [hr_achieved_tmap], use_ecg=True,
+        space, model_file=model_file, covariate_tmaps_in=[hr_achieved_tmap] + REST_COVARIATE_TMAPS, use_ecg=True,
         transfer_model=transfer_model, tmaps_out=HR_ACHIEVED_OUTPUT_TMAPS,
     )
 
@@ -563,7 +569,7 @@ def plot_hyperopt():
         if path.endswith('.p') and path.startswith('history'):
             with open(os.path.join(HISTORY_PATH, path), 'rb') as f:
                 histories += pickle.load(f)
-    histories_for_plot = [{'loss': [MAX_LOSS], 'val_loss': [MAX_LOSS]} for _ in len(trials.trials)]
+    histories_for_plot = [{'loss': [MAX_LOSS], 'val_loss': [MAX_LOSS], 'parameter_count': [1e7]} for _ in range(len(trials.trials))]
     for history in histories:
         histories_for_plot[history['i']] = history
     plot_trials(trials, histories_for_plot, HYPEROPT_FIGURE_PATH, {'conv_normalize': ['', 'batch_norm']})
@@ -639,6 +645,7 @@ if __name__ == '__main__':
         optimize_hrr_model_architecture()
     plot_hyperopt()
     if TRAIN_BASELINE_MODEL:
+        tf.keras.backend.clear_session()
         logging.info('Training baseline model.')
         _train_model(
             model=_get_baseline_model(False, BASELINE_INPUT_TMAPS),
@@ -646,6 +653,7 @@ if __name__ == '__main__':
             model_id=BASELINE_MODEL_ID, batch_size=256,
         )
     if TRAIN_PRETEST_MODEL:
+        tf.keras.backend.clear_session()
         logging.info('Training pretest model.')
         model, tmaps_in = _get_pretest_model(False)
         _train_model(
@@ -653,6 +661,7 @@ if __name__ == '__main__':
             model_id=PRETEST_MODEL_ID, batch_size=256,
         )
     if TRAIN_HR_ACHIEVED_MODEL:
+        tf.keras.backend.clear_session()
         logging.info('Training hr achieved model.')
         model, hr_achieved_tmaps_in = _get_hr_achieved_model(False)
         _train_model(
@@ -685,12 +694,16 @@ if __name__ == '__main__':
     prep_pretest_inferences_for_bolt()
     plt.close('all')
     if TRANSFER_PRETEST_MODEL:
+        tf.keras.backend.clear_session()
+        logging.info('Transferring pretest model.')
         pretest_transfer, tmaps_in = _get_rest_model(transfer_model=True, model_file=PRETEST_MODEL_PATH)
         _train_model(
             model=pretest_transfer, tmaps_in=tmaps_in, tmaps_out=PRETEST_OUTPUT_TMAPS,
             model_id=REST_MODEL_ID, batch_size=256, transfer=True,
         )
     if TRANSFER_HR_ACHIEVED_MODEL:
+        tf.keras.backend.clear_session()
+        logging.info('Transferring hr achieved model.')
         hr_achieved_transfer, tmaps_in = _get_rest_hr_achieved_model(
             transfer_model=True, model_file=HR_ACHIEVED_MODEL_PATH, constant_hr_achieved=False,
         )
@@ -699,6 +712,7 @@ if __name__ == '__main__':
             model_id=REST_HR_ACHIEVED_MODEL_ID, batch_size=256, transfer=True,
         )
     if INFER_TRANSFER_MODELS:
+        logging.info('Inferring transferred models.')
         pretest_transfer, _ = _get_rest_model(transfer_model=False, model_file=REST_MODEL_PATH)
         hr_achieved_transfer, hr_achieved_tmaps_in = _get_rest_hr_achieved_model(
             transfer_model=False, model_file=REST_HR_ACHIEVED_MODEL_PATH, constant_hr_achieved=True,
@@ -712,6 +726,7 @@ if __name__ == '__main__':
             inference_tsv=TRANSFER_INFERENCE_FILE,
             transfer=True,
         )
+    logging.info('Evaluating transferred model predictions.')
     _evaluate_model(BASELINE_MODEL_ID, TRANSFER_INFERENCE_FILE)
     _evaluate_model(REST_MODEL_ID, TRANSFER_INFERENCE_FILE)
     _evaluate_model(REST_HR_ACHIEVED_MODEL_ID, TRANSFER_INFERENCE_FILE)
