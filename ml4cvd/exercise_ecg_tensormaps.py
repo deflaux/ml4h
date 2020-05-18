@@ -578,9 +578,17 @@ rest_sex = TensorMap(
     interpretation=Interpretation.CATEGORICAL,
     validator=no_nans, tensor_from_file=_make_covariate_tff(REST_IDS, ',', fixed_instance=True),
 )
+
+
+def rest_ecg_hr(tm: TensorMap, hd5: h5py.File, dependents=None):
+    rhr = _get_tensor_at_first_date(hd5, 'ukb_ecg_rest', 'VentricularRate')
+    return np.array(rhr, dtype=np.float32).reshape(tm.shape)
+
+
+
 rest_resting_hr = TensorMap(
-    'resting_hr', Interpretation.CONTINUOUS, path_prefix='ukb_ecg_rest',
-    channel_map={'VentricularRate': 0}, validator=no_nans,
+    'resting_hr', Interpretation.CONTINUOUS, tensor_from_file=rest_ecg_hr,
+    normalization=Standardize(70, 10), validator=no_nans, shape=(1,),
 )
 
 
