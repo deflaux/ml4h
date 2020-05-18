@@ -417,17 +417,16 @@ def plot_trials(trials, histories, figure_path, param_lists={}):
         df_rows.append(row)
     plt.figure(figsize=((len(histories) + 1) * .5, 10))
     df = pd.DataFrame(df_rows)
-    df = (df-df.min())/(df.max()-df.min())  # max-min normalize
-    df['loss_'] = df['loss']
-    pd.plotting.parallel_coordinates(df.round(3), 'loss_', colormap=cm, sort_labels=True)
+    df['loss_'] = df['loss'].round(3)
+    pd.plotting.parallel_coordinates((df-df.min())/(df.max()-df.min()), 'loss_', colormap=cm, sort_labels=True)
     plt.savefig(os.path.join(figure_path, 'parallel_coordinates_plot' + IMAGE_EXT))
 
-    linreg_cols = df.columns
+    linreg_cols = list(df.columns)
     linreg_cols.remove('loss')
-    linreg_cols.remove('_loss')
+    linreg_cols.remove('loss_')
     for col in linreg_cols:
-        slope, intercept, r_value, p_value, std_err = linregress(df[col], df['loss'])
-        logging.info(f'Standardized column {col} has slope {slope:.3f}, intercept {intercept: .3f}, and p value {p_value: .4f}')
+        slope, intercept, r_value, p_value, std_err = linregress((df[col] - df[col].mean() / df[col].std()), df['loss'])
+        logging.info(f'Normalized column {col} has slope {slope:.3f}, intercept {intercept:.3f}, and p value {p_value:.4f}')
 
 
 if __name__ == '__main__':
