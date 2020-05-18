@@ -18,7 +18,6 @@ import matplotlib.pyplot as plt # First import matplotlib, then use Agg, then im
 
 from skimage.filters import threshold_otsu
 
-
 from ml4cvd.arguments import parse_args
 from ml4cvd.plots import plot_metric_history
 from ml4cvd.tensor_maps_by_script import TMAPS
@@ -406,13 +405,20 @@ def plot_trials(trials, histories, figure_path, param_lists={}):
     logging.info('Saved learning curve plot to: {}'.format(learning_path))
 
     # parallel axis plot
-    df_rows = [
-        {**histories[i]['space'], **{'loss': lplot[i]}}
-        for i in range(len(histories)) if histories[i]
-        if 'space' in histories[i]
-    ]
-    plt.figure(figsize=((len(histories) + 1) * 10, 10))
-    pd.tools.plotting.parallel_coordinates(pd.DataFrame(df_rows), 'loss')
+    df_rows = []
+    for history, loss in zip(histories, lplot):
+        if 'space' not in history:
+            continue
+        row = history['space'].copy()
+        for param, option in param_lists.items():
+            row[param] = option.index(row[param])
+        row['loss'] = loss
+        df_rows.append(row)
+    plt.figure(figsize=((len(histories) + 1) * .5, 10))
+    df = pd.DataFrame(df_rows)
+    df = (df-df.min())/(df.max()-df.min())  # max-min normalize
+    df['loss_'] = df['loss']
+    pd.plotting.parallel_coordinates(df.round(3), 'loss_', colormap=cm, sort_labels=True)
     plt.savefig(os.path.join(figure_path, 'parallel_coordinates_plot' + IMAGE_EXT))
 
 
