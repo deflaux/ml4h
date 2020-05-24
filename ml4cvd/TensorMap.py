@@ -10,7 +10,7 @@
 import logging
 import datetime
 from enum import Enum, auto
-from typing import Any, Union, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import h5py
 import numcodecs
@@ -49,6 +49,12 @@ class Interpretation(Enum):
     def __str__(self):
         """class Interpretation.FLOAT_ARRAY becomes float_array"""
         return str.lower(super().__str__().split('.')[1])
+
+
+class TimeSeriesOrder(Enum):
+    NEWEST = 'NEWEST'
+    OLDEST = 'OLDEST'
+    RANDOM = 'RANDOM'
 
 
 def _convert_old_normalization(normalization: Optional[Dict]) -> Optional[Normalizer]:
@@ -96,11 +102,14 @@ class TensorMap(object):
         loss_weight: Optional[float] = 1.0,
         channel_map: Optional[Dict[str, int]] = None,
         storage_type: Optional[StorageType] = None,
-        dependent_map: Optional[str] = None,
+        dependent_map: Optional["TensorMap"] = None,
         augmentations: Optional[List[Callable[[np.ndarray], np.ndarray]]] = None,
         normalization: Optional[Normalizer] = None,
         annotation_units: Optional[int] = 32,
         tensor_from_file: Optional[Callable] = None,
+        time_series_limit: Optional[int] = None,
+        time_series_order: Optional[TimeSeriesOrder] = TimeSeriesOrder.NEWEST,
+        time_series_lookup: Optional[Dict[int,Tuple]] = None,
         discretization_bounds: Optional[List[float]] = None,
     ):
         """TensorMap constructor
@@ -127,6 +136,9 @@ class TensorMap(object):
         :param normalization: Dictionary specifying normalization values
         :param annotation_units: Size of embedding dimension for unstructured input tensor maps.
         :param tensor_from_file: Function that returns numpy array from hd5 file for this TensorMap
+        :param time_series_limit: If set, indicates dynamic shaping and sets the maximum number of tensors in a time series to use
+        :param time_series_order: When selecting tensors in a time series, use newest, oldest, or randomly ordered tensors
+        :param time_series_lookup: Dict of time intervals filtering which tensors are used in a time series
         :param discretization_bounds: List of floats that delineate the boundaries of the bins that will be used
                                           for producing categorical values from continuous values
         """
@@ -152,6 +164,9 @@ class TensorMap(object):
         self.dependent_map = dependent_map
         self.annotation_units = annotation_units
         self.tensor_from_file = tensor_from_file
+        self.time_series_limit = time_series_limit
+        self.time_series_order = time_series_order
+        self.time_series_lookup = time_series_lookup
         self.discretization_bounds = discretization_bounds
 
         # Infer loss from interpretation
@@ -179,10 +194,11 @@ class TensorMap(object):
             self.activation = 'sigmoid'
 
         # Infer shape from channel map or interpretation
-        if self.shape is None and self.is_time_to_event():
-            self.shape = (2,)
-        elif self.shape is None:
-            self.shape = (len(channel_map),)
+        if self.shape is None:
+            self.shape = (2,) if self.is_time_to_event() else (len(channel_map),)
+            # Setting time_series_limit indicates dynamic shaping which is always accompanied by 1st dim of None
+            if self.time_series_limit is not None:
+                self.shape = (None,) + self.shape
 
         if self.discretization_bounds is not None:
             self.input_shape = self.shape
@@ -214,6 +230,9 @@ class TensorMap(object):
 
         if self.validator is None:
             self.validator = lambda tm, x, hd5: None
+
+    def __repr__(self):
+        return f'TensorMap({self.name}, {self.shape}, {self.interpretation})'
 
     def __eq__(self, other):
         if not isinstance(other, TensorMap):
@@ -445,7 +464,7 @@ def _default_tensor_from_file(tm, hd5, dependents={}):
     elif tm.is_language():
         tensor = np.zeros(tm.shape, dtype=np.float32)
         if PARTNERS_READ_TEXT in tm.name:
-            caption = _decompress_data(data_compressed=hd5[tm.name][()], dtype=hd5[tm.name].attrs['dtype'])
+            caption = decompress_data(data_compressed=hd5[tm.name][()], dtype=hd5[tm.name].attrs['dtype'])
         else:
             caption = str(tm.hd5_first_dataset_in_group(hd5, tm.hd5_key_guess())[()]).strip()
         char_idx = np.random.randint(len(caption) + 1)
@@ -465,7 +484,11 @@ def _default_tensor_from_file(tm, hd5, dependents={}):
         raise ValueError(f'No default tensor_from_file for TensorMap {tm.name} with interpretation: {tm.interpretation}')
 
 
-def _decompress_data(data_compressed, dtype):
+def decompress_data(data_compressed: np.array, dtype: str) -> np.array:
+    """Decompresses a compressed byte array. If the primitive type of the data
+    to decompress is a string, calls decode using the zstd codec. If the
+    primitive type of the data to decompress is not a string (e.g. int or
+    float), the buffer is interpreted using the passed dtype."""
     codec = numcodecs.zstd.Zstd()
     data_decompressed = codec.decode(data_compressed)
     if dtype == 'str':
