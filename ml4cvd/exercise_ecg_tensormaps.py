@@ -1,6 +1,7 @@
 import os
 import time
 import h5py
+import copy
 import biosppy
 import seaborn as sns
 import logging
@@ -30,6 +31,7 @@ LEAD_NAMES = 'lead_I', 'lead_2', 'lead_3'
 TENSOR_FOLDER = '/mnt/disks/ecg-bike-tensors/2019-10-10/'
 USER = 'ndiamant'
 OUTPUT_FOLDER = f'/home/{USER}/ml/hrr_results'
+EXPLORE_OUTPUT_FOLDER = os.path.join(OUTPUT_FOLDER, 'explore_results')
 COVARIATE_FILE = os.path.join(OUTPUT_FOLDER, 'covariates.tsv')
 TEST_CSV = os.path.join(OUTPUT_FOLDER, 'test_ids.csv')
 TEST_SET_LEN = 10000
@@ -637,6 +639,19 @@ ecg_bike_recovery_downsampled8x = TensorMap(
     tensor_from_file=_make_recovery_ecg_tff(8, [0, 1, 2]),
     cacheable=False, augmentations=[_rand_scale_ecg, _rand_add_noise, _rand_offset_ecg],
 )
+
+
+def tmap_error_detect(tmap: TensorMap) -> TensorMap:
+    """Modifies tm so it returns 1 unless previous tensor from file fails"""
+    new_tm = copy.deepcopy(tmap)
+    new_tm.shape = (1,)
+    new_tm.interpretation = Interpretation.CONTINUOUS
+
+    def tff(_: TensorMap, hd5: h5py.File, dependents=None):
+        tmap.tensor_from_file(tmap, hd5, dependents)
+        return np.array([1.])
+    new_tm.tensor_from_file = tff
+    return new_tm
 
 
 def make_pretest_tmap(downsample_rate: float, leads) -> TensorMap:

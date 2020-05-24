@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from typing import Dict, Callable, List, Tuple, Any, Optional, Set
 from itertools import chain
 import hyperopt
-from hyperopt import hp, fmin, tpe
+from hyperopt import hp, fmin, tpe, STATUS_OK, STATUS_FAIL
 import pickle
 import time
 import tensorflow as tf
@@ -68,6 +68,7 @@ hr_tmaps, hrr_tmaps = _make_hr_tmaps(BIOSPPY_MEASUREMENTS_FILE)
 RECOVERY_INPUT_TMAPS = [ecg_bike_recovery_downsampled8x]
 RECOVERY_OUTPUT_TMAPS = list(hr_tmaps.values()) + list(hrr_tmaps.values())
 VALIDATION_RATIO = .1
+PRETEST_BATCH_SIZE = 256
 
 hr_tmaps, hrr_tmaps = _make_hr_tmaps(PRETEST_LABEL_FILE)
 PRETEST_COVARIATE_TMAPS = [age, sex, bmi]
@@ -385,11 +386,12 @@ def _train_model(
     finally:
         generate_train.kill_workers()
         generate_valid.kill_workers()
+        gc.collect()
     return model, history
 
 
 def _pretest_model_from_space(space, use_model_file=False):
-    pretest_tmap = make_pretest_tmap(downsample_rate=int(np.exp(space['log_downsampling'] / np.log(2))), leads=[0])
+    pretest_tmap = make_pretest_tmap(downsample_rate=4, leads=[0])
     tmaps_in = [pretest_tmap] + PRETEST_COVARIATE_TMAPS
     m = make_multimodal_multitask_model(
         tensor_maps_in=tmaps_in,
@@ -403,10 +405,10 @@ def _pretest_model_from_space(space, use_model_file=False):
         conv_layers=int(space['num_res_blocks']) * [int(space['num_res_filters'])],
         dense_blocks=int(space['num_dense_blocks']) * [int(space['num_dense_block_filters'])],
         conv_type='conv',
-        conv_normalize=space['conv_normalize'],
+        conv_normalize='layer_norm',
         conv_x=int(space['conv_x']),
         pool_type='max',
-        pool_x=int(np.exp(space['log_pool_x']) / np.log(2)),
+        pool_x=2,
         conv_dilate=True,
         model_file=PRETEST_MODEL_PATH if use_model_file else None,
         block_size=3,
@@ -415,7 +417,7 @@ def _pretest_model_from_space(space, use_model_file=False):
 
 
 def _hr_achieved_model_from_space(space, use_model_file: bool = False, constant_hr_achieved: bool = False):
-    pretest_tmap = make_pretest_tmap(downsample_rate=int(np.exp(space['log_downsampling'] / np.log(2))), leads=[0])
+    pretest_tmap = make_pretest_tmap(downsample_rate=4, leads=[0])
     tmaps_in = [pretest_tmap, hr_achieved_75 if constant_hr_achieved else hr_achieved] + PRETEST_COVARIATE_TMAPS
     m = make_multimodal_multitask_model(
         tensor_maps_in=tmaps_in,
@@ -429,10 +431,10 @@ def _hr_achieved_model_from_space(space, use_model_file: bool = False, constant_
         conv_layers=int(space['num_res_blocks']) * [int(space['num_res_filters'])],
         dense_blocks=int(space['num_dense_blocks']) * [int(space['num_dense_block_filters'])],
         conv_type='conv',
-        conv_normalize=space['conv_normalize'],
+        conv_normalize='layer_norm',
         conv_x=int(space['conv_x']),
         pool_type='max',
-        pool_x=int(np.exp(space['log_pool_x']) / np.log(2)),
+        pool_x=2,
         conv_dilate=True,
         model_file=HR_ACHIEVED_MODEL_PATH if use_model_file else None,
         block_size=3,
@@ -458,10 +460,10 @@ def _rest_model_from_space(
         conv_layers=int(space['num_res_blocks']) * [int(space['num_res_filters'])],
         dense_blocks=int(space['num_dense_blocks']) * [int(space['num_dense_block_filters'])],
         conv_type='conv',
-        conv_normalize=space['conv_normalize'],
+        conv_normalize='layer_norm',
         conv_x=int(space['conv_x']),
         pool_type='max',
-        pool_x=int(np.exp(space['log_pool_x']) / np.log(2)),
+        pool_x=2,
         conv_dilate=True,
         model_file=model_file if not transfer_model else None,
         block_size=3,
@@ -491,12 +493,8 @@ def _get_rest_hr_achieved_model(transfer_model: bool, model_file: str, constant_
 
 
 def optimize_hrr_model_architecture():
-    conv_normalize = ['', 'batch_norm']
     space = {
         'conv_x': hp.quniform('conv_x', 2, 128, 1),
-        'log_pool_x': hp.quniform('log_pool_x', 0, 3, 1),
-        'log_downsampling': hp.quniform('log_downsampling', 0, 3, 1),
-        'conv_normalize': hp.choice('conv_normalize', conv_normalize),
         'num_res_blocks': hp.quniform('num_res_blocks', 1, 6, 1),
         'num_res_filters': hp.quniform('num_res_filters', 8, 128, 1),
         'num_dense_blocks': hp.quniform('num_dense_blocks', 1, 6, 1),
@@ -504,21 +502,19 @@ def optimize_hrr_model_architecture():
         'num_dense_layers': hp.quniform('num_dense_layers', 1, 6, 1),
         'dense_layer_units': hp.quniform('dense_layer_units', 8, 128, 1),
     }
-    param_lists = {
-        'conv_normalize': conv_normalize,
-    }
-    hyperparameter_optimizer(space, param_lists)
+    hyperparameter_optimizer(space)
 
 
-def hyperparameter_optimizer(space, param_lists=None):
+def hyperparameter_optimizer(space):
     histories = []
-    batch_size = 256
+    batch_size = PRETEST_BATCH_SIZE
     if os.path.exists(TRIAL_PATH):
         with open(TRIAL_PATH, 'rb') as f:
             trials = pickle.load(f)
     else:
         trials = hyperopt.Trials()
     i = len(trials.trials)
+    fail = {'status': STATUS_FAIL}
 
     def loss_from_multimodal_multitask(x):
         model = None
@@ -529,8 +525,8 @@ def hyperparameter_optimizer(space, param_lists=None):
             model, history = _train_model(model, tmaps_in, PRETEST_OUTPUT_TMAPS, 'hyperopt_model', batch_size)
 
             if model.count_params() > 9000000:
-                logging.info(f"Model too big. Model has:{model.count_params()}. Return max loss.")
-                return MAX_LOSS
+                logging.info(f"Model too big. Model has:{model.count_params()}.")
+                return fail
             history.history['parameter_count'] = [model.count_params()]
             history.history['i'] = i
             history.history['space'] = x
@@ -538,13 +534,13 @@ def hyperparameter_optimizer(space, param_lists=None):
             history.history['stated_loss'] = loss
             histories.append(history.history)
             logging.info(f"Iteration {i}: \nValidation Loss: {loss}")
-            return loss
+            return {'loss': loss, 'status': STATUS_OK}
         except ValueError:
-            logging.exception('ValueError trying to make a model for hyperparameter optimization. Returning max loss.')
-            return MAX_LOSS
-        except:
-            logging.exception('Error trying hyperparameter optimization. Returning max loss.')
-            return MAX_LOSS
+            logging.exception('ValueError trying to make a model for hyperparameter optimization.')
+            return fail
+        except KeyboardInterrupt:
+            logging.exception('Skipping this trial.')
+            return fail
         finally:
             del model
             gc.collect()
@@ -572,7 +568,7 @@ def plot_hyperopt():
     histories_for_plot = [{'loss': [MAX_LOSS], 'val_loss': [MAX_LOSS], 'parameter_count': [1e7]} for _ in range(len(trials.trials))]
     for history in histories:
         histories_for_plot[history['i']] = history
-    plot_trials(trials, histories_for_plot, HYPEROPT_FIGURE_PATH, {'conv_normalize': ['', 'batch_norm']})
+    plot_trials(trials, histories_for_plot, HYPEROPT_FIGURE_PATH, {})
 
 
 def _get_hrr_cols(df: pd.DataFrame, t: int) -> List[str]:
@@ -650,7 +646,7 @@ if __name__ == '__main__':
         _train_model(
             model=_get_baseline_model(False, BASELINE_INPUT_TMAPS),
             tmaps_in=BASELINE_INPUT_TMAPS, tmaps_out=PRETEST_OUTPUT_TMAPS,
-            model_id=BASELINE_MODEL_ID, batch_size=256,
+            model_id=BASELINE_MODEL_ID, batch_size=PRETEST_BATCH_SIZE,
         )
     if TRAIN_PRETEST_MODEL:
         tf.keras.backend.clear_session()
@@ -658,7 +654,7 @@ if __name__ == '__main__':
         model, tmaps_in = _get_pretest_model(False)
         _train_model(
             model=model, tmaps_in=tmaps_in, tmaps_out=PRETEST_OUTPUT_TMAPS,
-            model_id=PRETEST_MODEL_ID, batch_size=256,
+            model_id=PRETEST_MODEL_ID, batch_size=PRETEST_BATCH_SIZE,
         )
     if TRAIN_HR_ACHIEVED_MODEL:
         tf.keras.backend.clear_session()
@@ -666,7 +662,7 @@ if __name__ == '__main__':
         model, hr_achieved_tmaps_in = _get_hr_achieved_model(False)
         _train_model(
             model=model, tmaps_in=hr_achieved_tmaps_in, tmaps_out=HR_ACHIEVED_OUTPUT_TMAPS,
-            model_id=HR_ACHIEVED_MODEL_ID, batch_size=256,
+            model_id=HR_ACHIEVED_MODEL_ID, batch_size=PRETEST_BATCH_SIZE,
         )
     if INFER_PRETEST_MODELS:
         logging.info('Running inference on pretest models.')
@@ -699,7 +695,7 @@ if __name__ == '__main__':
         pretest_transfer, tmaps_in = _get_rest_model(transfer_model=True, model_file=PRETEST_MODEL_PATH)
         _train_model(
             model=pretest_transfer, tmaps_in=tmaps_in, tmaps_out=PRETEST_OUTPUT_TMAPS,
-            model_id=REST_MODEL_ID, batch_size=256, transfer=True,
+            model_id=REST_MODEL_ID, batch_size=PRETEST_BATCH_SIZE, transfer=True,
         )
     if TRANSFER_HR_ACHIEVED_MODEL:
         tf.keras.backend.clear_session()
@@ -709,7 +705,7 @@ if __name__ == '__main__':
         )
         _train_model(
             model=hr_achieved_transfer, tmaps_in=tmaps_in, tmaps_out=HR_ACHIEVED_OUTPUT_TMAPS,
-            model_id=REST_HR_ACHIEVED_MODEL_ID, batch_size=256, transfer=True,
+            model_id=REST_HR_ACHIEVED_MODEL_ID, batch_size=PRETEST_BATCH_SIZE, transfer=True,
         )
     if INFER_TRANSFER_MODELS:
         logging.info('Inferring transferred models.')
