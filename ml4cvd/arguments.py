@@ -23,16 +23,18 @@ from collections import defaultdict
 
 from ml4cvd.logger import load_config
 from ml4cvd.TensorMap import TensorMap
-from ml4cvd.models import parent_sort, BottleneckType
+from ml4cvd.models import parent_sort, BottleneckType, check_no_bottleneck
 from ml4cvd.tensor_maps_by_hand import TMAPS
 from ml4cvd.defines import IMPUTATION_RANDOM, IMPUTATION_MEAN
-from ml4cvd.tensor_maps_partners_ecg import build_partners_tensor_maps
+from ml4cvd.tensor_maps_partners_ecg import build_partners_tensor_maps, build_cardiac_surgery_tensor_maps
 from ml4cvd.tensor_map_maker import generate_continuous_tensor_map_from_file
 
 
 BOTTLENECK_STR_TO_ENUM = {
     'flatten_restructure': BottleneckType.FlattenRestructure,
     'global_average_pool': BottleneckType.GlobalAveragePoolStructured,
+    'variational': BottleneckType.Variational,
+    'no_bottleneck': BottleneckType.NoBottleNeck,
 }
 
 
@@ -65,7 +67,8 @@ def parse_args():
     parser.add_argument('--phenos_folder', default='gs://ml4cvd/phenotypes/', help='Path to folder of phenotype defining CSVs.')
     parser.add_argument('--phecode_definitions', default='/mnt/ml4cvd/projects/jamesp/data/phecode_definitions1.2.csv', help='CSV of phecode definitions')
     parser.add_argument('--dicoms', default='./dicoms/', help='Path to folder of dicoms.')
-    parser.add_argument('--test_csv', default=None, help='Path to CSV with Sample IDs to reserve for testing')
+    parser.add_argument('--sample_csv', default=None, help='Path to CSV with Sample IDs to restrict tensor paths')
+    parser.add_argument('--tsv_style', default='standard', choices=['standard', 'genetics'], help='Format choice for the TSV file produced in output by infer and explore modes.')
     parser.add_argument('--app_csv', help='Path to file used to link sample IDs between UKBB applications 17488 and 7089')
     parser.add_argument('--tensors', help='Path to folder containing tensors, or where tensors will be written.')
     parser.add_argument('--output_folder', default='./recipes_output/', help='Path to output folder for recipes.py runs.')
@@ -164,16 +167,26 @@ def parse_args():
     )
     parser.add_argument('--bottleneck_type', type=str, default=list(BOTTLENECK_STR_TO_ENUM)[0], choices=list(BOTTLENECK_STR_TO_ENUM))
     parser.add_argument('--hidden_layer', default='embed', help='Name of a hidden layer for inspections.')
-    parser.add_argument('--variational', default=False, action='store_true', help='Make the embed layer variational. No U-connections.')
+    parser.add_argument('--language_layer', default='ecg_rest_text', help='Name of TensorMap for learning language models (eg train_char_model).')
+    parser.add_argument('--language_prefix', default='ukb_ecg_rest', help='Path prefix for a TensorMap to learn language models (eg train_char_model)')
 
     # Training and Hyper-Parameter Optimization Parameters
     parser.add_argument('--epochs', default=12, type=int, help='Number of training epochs.')
     parser.add_argument('--batch_size', default=16, type=int, help='Mini batch size for stochastic gradient descent algorithms.')
-    parser.add_argument('--valid_ratio', default=0.2, type=float, help='Rate of training tensors to save for validation must be in [0.0, 1.0].')
-    parser.add_argument('--test_ratio', default=0.1, type=float, help='Rate of training tensors to save for testing [0.0, 1.0].')
+    parser.add_argument('--train_csv', help='Path to CSV with Sample IDs to reserve for training.')
+    parser.add_argument('--valid_csv', help='Path to CSV with Sample IDs to reserve for validation. Takes precedence over valid_ratio.')
+    parser.add_argument('--test_csv', help='Path to CSV with Sample IDs to reserve for testing. Takes precedence over test_ratio.')
     parser.add_argument(
-        '--test_modulo', default=0, type=int,
-        help='Sample IDs modulo this number will be reserved for testing. Set to 1 to only reserve test_ratio for testing.',
+        '--valid_ratio', default=0.2, type=float,
+        help='Rate of training tensors to save for validation must be in [0.0, 1.0]. '
+             'If any of train/valid/test csv is specified, split by ratio is applied on the remaining tensors after reserving tensors given by csvs. '
+             'If not specified, default 0.2 is used. If default ratios are used with train_csv, some tensors may be ignored because ratios do not sum to 1.',
+    )
+    parser.add_argument(
+        '--test_ratio', default=0.1, type=float,
+        help='Rate of training tensors to save for testing must be in [0.0, 1.0]. '
+             'If any of train/valid/test csv is specified, split by ratio is applied on the remaining tensors after reserving tensors given by csvs. '
+             'If not specified, default 0.1 is used. If default ratios are used with train_csv, some tensors may be ignored because ratios do not sum to 1.',
     )
     parser.add_argument('--test_steps', default=32, type=int, help='Number of batches to use for testing.')
     parser.add_argument('--training_steps', default=400, type=int, help='Number of training batches to examine in an epoch.')
@@ -204,13 +217,63 @@ def parse_args():
     parser.add_argument('--random_seed', default=12878, type=int, help='Random seed to use throughout run.  Always use np.random.')
     parser.add_argument('--write_pngs', default=False, action='store_true', help='Write pngs of slices.')
     parser.add_argument('--debug', default=False, action='store_true', help='Run in debug mode.')
+    parser.add_argument('--eager', default=False, action='store_true', help='Run tensorflow functions in eager execution mode (helpful for debugging).')
     parser.add_argument('--inspect_model', default=False, action='store_true', help='Plot model architecture, measure inference and training speeds.')
     parser.add_argument('--inspect_show_labels', default=True, action='store_true', help='Plot model architecture with labels for each layer.')
     parser.add_argument('--alpha', default=0.5, type=float, help='Alpha transparency for t-SNE plots must in [0.0-1.0].')
+    parser.add_argument('--plot_mode', default='clinical', choices=['clinical', 'full'], help='ECG view to plot for partners ECGs.')
 
     # Training optimization options
     parser.add_argument('--num_workers', default=multiprocessing.cpu_count(), type=int, help="Number of workers to use for every tensor generator.")
     parser.add_argument('--cache_size', default=3.5e9/multiprocessing.cpu_count(), type=float, help="Tensor map cache size per worker.")
+
+    # Cross reference arguments
+    parser.add_argument(
+        '--tensors_name', default='Tensors',
+        help='Name of dataset at tensors, e.g. ECG. '
+             'Adds contextual detail to summary CSV and plots.',
+    )
+    parser.add_argument(
+        '--join_tensors', default=['partners_ecg_patientid_clean'], nargs='+',
+        help='TensorMap or column name in csv of value in tensors used in join with reference. '
+             'Can be more than 1 join value.',
+    )
+    parser.add_argument(
+        '--time_tensor', default='partners_ecg_datetime',
+        help='TensorMap or column name in csv of value in tensors to perform time cross-ref on. '
+             'Time cross referencing is optional.',
+    )
+    parser.add_argument(
+        '--reference_tensors',
+        help='Either a csv or directory of hd5 containing a reference dataset.',
+    )
+    parser.add_argument(
+        '--reference_name', default='Reference',
+        help='Name of dataset at reference, e.g. STS. '
+             'Adds contextual detail to summary CSV and plots.',
+    )
+    parser.add_argument(
+        '--reference_join_tensors', nargs='+',
+        help='TensorMap or column name in csv of value in reference used in join in tensors. '
+             'Can be more than 1 join value.',
+    )
+    parser.add_argument(
+        '--reference_start_time_tensor', nargs='+',
+        help='TensorMap or column name in csv of start of time window in reference. '
+             'An integer can be provided as a second argument to specify an offset to the start time. '
+             'e.g. tStart -30',
+    )
+    parser.add_argument(
+        '--reference_end_time_tensor', nargs='+',
+        help='TensorMap or column name in csv of end of time window in reference. '
+             'An integer can be provided as a second argument to specify an offset to the end time. '
+             'e.g. tEnd 30',
+    )
+    parser.add_argument(
+        '--reference_label',
+        help='TensorMap or column name of value in csv to report distribution on, e.g. mortality. '
+             'Label distribution reporting is optional.',
+    )
 
     args = parser.parse_args()
     _process_args(args)
@@ -225,6 +288,10 @@ def _get_tmap(name: str, needed_tensor_maps: List[str]) -> TensorMap:
         return TMAPS[name]
 
     TMAPS.update(build_partners_tensor_maps(needed_tensor_maps))
+    if name in TMAPS:
+        return TMAPS[name]
+
+    TMAPS.update(build_cardiac_surgery_tensor_maps(needed_tensor_maps))
     if name in TMAPS:
         return TMAPS[name]
 
@@ -275,7 +342,7 @@ def _process_args(args):
             f.write(k + ' = ' + str(v) + '\n')
     load_config(args.logging_level, os.path.join(args.output_folder, args.id), 'log_' + now_string, args.min_sample_id)
     args.u_connect = _process_u_connect_args(args.u_connect)
-    needed_tensor_maps = args.input_tensors + args.output_tensors + [args.sample_weight] if args.sample_weight else []
+    needed_tensor_maps = args.input_tensors + args.output_tensors + [args.sample_weight] if args.sample_weight else args.input_tensors + args.output_tensors
     args.tensor_maps_in = [_get_tmap(it, needed_tensor_maps) for it in args.input_tensors]
     args.sample_weight = _get_tmap(args.sample_weight, needed_tensor_maps) if args.sample_weight else None
     if args.sample_weight:
@@ -297,6 +364,8 @@ def _process_args(args):
     args.tensor_maps_out = parent_sort(args.tensor_maps_out)
 
     args.bottleneck_type = BOTTLENECK_STR_TO_ENUM[args.bottleneck_type]
+    if args.bottleneck_type == BottleneckType.NoBottleNeck:
+        check_no_bottleneck(args.u_connect, args.tensor_maps_out)
 
     if args.learning_rate_schedule is not None and args.patience < args.epochs:
         raise ValueError(f'learning_rate_schedule is not compatible with ReduceLROnPlateau. Set patience > epochs.')
@@ -305,3 +374,7 @@ def _process_args(args):
 
     logging.info(f"Command Line was: {command_line}")
     logging.info(f"Total TensorMaps: {len(TMAPS)} Arguments are {args}")
+
+    if args.eager:
+        import tensorflow as tf
+        tf.config.experimental_run_functions_eagerly(True)
