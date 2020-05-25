@@ -16,7 +16,7 @@ from typing import Dict, List, Tuple, Generator, Optional, DefaultDict
 import h5py
 import numpy as np
 import pandas as pd
-import multiprocess
+import multiprocessing
 from tensorflow.keras.models import Model
 
 import matplotlib
@@ -709,7 +709,7 @@ def _hd5_to_disk(tmaps, path, gen_name, tot, output_folder, id):
         count.value += 1
 
     # each worker should write to it's own file
-    pid = multiprocess.current_process().pid
+    pid = multiprocessing.current_process().pid
     fpath = os.path.join(output_folder, id, f'tensors_all_union_{pid}.csv')
     write_header = not os.path.isfile(fpath)
 
@@ -780,11 +780,11 @@ def _tensors_to_df(args):
     generators = test_train_valid_tensor_generators(**args.__dict__)
     tmaps = [tm for tm in args.tensor_maps_in]
     global count # TODO figure out how to not use global
-    count = multiprocess.Value('l', 1)
+    count = multiprocessing.Value('l', 1)
     paths = [(path, gen.name) for gen in generators for worker_paths in gen.path_iters for path in worker_paths.paths]
     num_hd5 = len(paths)
     chunksize = num_hd5 // args.num_workers
-    with multiprocess.Pool(processes=args.num_workers) as pool:
+    with multiprocessing.Pool(processes=args.num_workers) as pool:
         pool.starmap(
             _hd5_to_disk,
             [(tmaps, path, gen_name, num_hd5, args.output_folder, args.id) for path, gen_name in paths],
