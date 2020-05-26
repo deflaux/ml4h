@@ -519,7 +519,6 @@ def hyperparameter_optimizer(space):
     def loss_from_multimodal_multitask(x):
         model = None
         nonlocal i
-        i += 1
         try:
             model, tmaps_in = _pretest_model_from_space(x)
             model, history = _train_model(model, tmaps_in, PRETEST_OUTPUT_TMAPS, 'hyperopt_model', batch_size)
@@ -542,6 +541,7 @@ def hyperparameter_optimizer(space):
             logging.exception('Skipping this trial.')
             return fail
         finally:
+            i += 1
             del model
             gc.collect()
             plt.close('all')
