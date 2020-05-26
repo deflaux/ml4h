@@ -10,7 +10,7 @@ from typing import Dict, List, Callable, Union, Tuple
 from ml4cvd.tensor_maps_by_hand import TMAPS
 from ml4cvd.defines import ECG_REST_AMP_LEADS, PARTNERS_DATE_FORMAT, STOP_CHAR, PARTNERS_CHAR_2_IDX, PARTNERS_DATETIME_FORMAT
 from ml4cvd.TensorMap import TensorMap, str2date, Interpretation, make_range_validator, decompress_data, TimeSeriesOrder
-from ml4cvd.normalizer import Standardize
+from ml4cvd.normalizer import Standardize, ZeroMeanStd1
 
 
 YEAR_DAYS = 365.26
@@ -137,6 +137,18 @@ def voltage_full_validator(tm: TensorMap, tensor: np.ndarray, hd5: h5py.File):
 TMAPS['partners_ecg_5000_only'] = partners_ecg_5k_only = TensorMap(
     'ecg_rest_5000', shape=(4992, 12), path_prefix=PARTNERS_PREFIX, tensor_from_file=voltage_from_file_no_resample,
     normalization=Standardize(0, 1000), channel_map=ECG_REST_AMP_LEADS, validator=voltage_full_validator,
+)
+
+
+TMAPS['partners_ecg_5000_only_lead_I'] = partners_ecg_5k_only = TensorMap(
+    'ecg_rest_5000', shape=(4992, 1), path_prefix=PARTNERS_PREFIX, tensor_from_file=voltage_from_file_no_resample,
+    normalization=Standardize(0, 1000), channel_map={'I': 0}, validator=voltage_full_validator, metrics=['mae', 'mse'],
+)
+
+
+TMAPS['partners_ecg_5000_only_lead_I_zero_mean_std1'] = partners_ecg_5k_only = TensorMap(
+    'ecg_rest_5000', shape=(4992, 1), path_prefix=PARTNERS_PREFIX, tensor_from_file=voltage_from_file_no_resample,
+    normalization=ZeroMeanStd1(), channel_map={'I': 0}, validator=voltage_full_validator, metrics=['mae', 'mse'],
 )
 
 
