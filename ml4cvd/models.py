@@ -960,7 +960,7 @@ def make_multimodal_multitask_model(
                     target_layer = m.get_layer(other_layer.name)
                     target_layer.set_weights(other_layer.get_weights())
                     loaded += 1
-                    if freeze:
+                    if freeze and 'output' not in target_layer.name:
                         target_layer.trainable = False
                 except (ValueError, KeyError):
                     logging.warning(f'Error loading layer {other_layer.name} from model: {model_layers}. Will still try to load other layers.')
