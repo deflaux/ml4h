@@ -61,7 +61,7 @@ TRANSFER_PRETEST_MODEL = False or not os.path.exists(REST_MODEL_PATH)
 TRANSFER_HR_ACHIEVED_MODEL = False or not os.path.exists(REST_HR_ACHIEVED_MODEL_PATH)
 INFER_TRANSFER_MODELS = False or not os.path.exists(TRANSFER_INFERENCE_FILE)
 
-HYPEROPT_MAX_TRIALS = 25
+HYPEROPT_MAX_TRIALS = 10
 HISTORY_PATH = os.path.join(OUTPUT_FOLDER, 'hyperopt_histories')
 TRIAL_PATH = os.path.join(HISTORY_PATH, 'trial_history.p')
 hr_tmaps, hrr_tmaps = _make_hr_tmaps(BIOSPPY_MEASUREMENTS_FILE)
@@ -446,7 +446,7 @@ def _rest_model_from_space(
         space, model_file: str, covariate_tmaps_in: List[TensorMap], tmaps_out: List[TensorMap],
         use_ecg: bool, transfer_model: bool,
 ):
-    rest_ecg_tmap = make_rest_ecg_tmap(int(np.exp(space['log_downsampling'] / np.log(2))), {'strip_I': 0})
+    rest_ecg_tmap = make_rest_ecg_tmap(4, {'strip_I': 0})
     tmaps_in = [rest_ecg_tmap] + covariate_tmaps_in if use_ecg else covariate_tmaps_in
     m = make_multimodal_multitask_model(
         tensor_maps_in=tmaps_in,

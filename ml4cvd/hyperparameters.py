@@ -349,7 +349,7 @@ def _model_label_from_losses_and_histories(i, all_losses, histories, trials, par
 
 
 def plot_trials(trials, histories, figure_path, param_lists={}):
-    all_losses = np.array(trials.losses())  # the losses we will put in the text
+    all_losses = np.array([loss if loss else MAX_LOSS for loss in trials.losses()])  # the losses we will put in the text
     real_losses = all_losses[all_losses != MAX_LOSS]
     cutoff = MAX_LOSS
     try:
