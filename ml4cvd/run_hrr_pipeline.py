@@ -9,7 +9,7 @@ import seaborn as sns
 import logging
 import csv
 import matplotlib.pyplot as plt
-from typing import Dict, Callable, List, Tuple, Any, Optional, Set
+from typing import Dict, Callable, List, Tuple, Any, Set
 from itertools import chain
 import hyperopt
 from hyperopt import hp, fmin, tpe, STATUS_OK, STATUS_FAIL
@@ -22,11 +22,11 @@ from ml4cvd.hyperparameters import plot_trials, MAX_LOSS
 from ml4cvd.tensor_generators import test_train_valid_tensor_generators, TensorGenerator, BATCH_INPUT_INDEX, BATCH_OUTPUT_INDEX, BATCH_PATHS_INDEX
 from ml4cvd.models import make_multimodal_multitask_model, BottleneckType, train_model_from_generators
 from ml4cvd.exercise_ecg_tensormaps import OUTPUT_FOLDER, USER, FIGURE_FOLDER, BIOSPPY_MEASUREMENTS_FILE
-from ml4cvd.exercise_ecg_tensormaps import RECOVERY_MODEL_PATH, TENSOR_FOLDER, RECOVERY_MODEL_ID, TEST_CSV, TEST_SET_LEN
-from ml4cvd.exercise_ecg_tensormaps import RECOVERY_INFERENCE_FILE, HR_MEASUREMENT_TIMES, df_hr_col, df_hrr_col, df_diff_col
-from ml4cvd.exercise_ecg_tensormaps import build_hr_biosppy_measurements_csv, plot_hr_from_biosppy_summary_stats, BIOSPPY_SENTINEL
-from ml4cvd.exercise_ecg_tensormaps import ecg_bike_recovery_downsampled8x, _make_hr_tmaps, plot_pretest_label_summary_stats
-from ml4cvd.exercise_ecg_tensormaps import plot_segment_prediction, build_pretest_training_labels, PRETEST_LABEL_FILE
+from ml4cvd.exercise_ecg_tensormaps import TENSOR_FOLDER, TEST_CSV
+from ml4cvd.exercise_ecg_tensormaps import HR_MEASUREMENT_TIMES, df_hr_col, df_hrr_col, df_diff_col
+from ml4cvd.exercise_ecg_tensormaps import build_hr_biosppy_measurements_csv, plot_hr_from_biosppy_summary_stats
+from ml4cvd.exercise_ecg_tensormaps import _make_hr_tmaps, plot_pretest_label_summary_stats, make_pretest_labels
+from ml4cvd.exercise_ecg_tensormaps import plot_segment_prediction, explore_pretest_tmaps, PRETEST_LABEL_FILE, PRETEST_EXPLORE_ID
 from ml4cvd.exercise_ecg_tensormaps import make_pretest_tmap, PRETEST_MODEL_ID, PRETEST_MODEL_PATH, PRETEST_75_ACHIEVED_INFERENCE_FILE
 from ml4cvd.exercise_ecg_tensormaps import BASELINE_MODEL_ID, BASELINE_MODEL_PATH, PRETEST_INFERENCE_FILE
 from ml4cvd.exercise_ecg_tensormaps import HR_ACHIEVED_MODEL_ID, HR_ACHIEVED_MODEL_PATH, bike_resting_hr, hr_achieved, hr_achieved_75
@@ -44,9 +44,8 @@ from ml4cvd.TensorMap import TensorMap
 
 SEED = 217
 MAKE_LABELS = False or not os.path.exists(BIOSPPY_MEASUREMENTS_FILE)
-TRAIN_RECOVERY_MODEL = False or not os.path.exists(RECOVERY_MODEL_PATH)
-INFER_RECOVERY_MODEL = False or not os.path.exists(RECOVERY_INFERENCE_FILE)
 MAKE_PRETEST_LABELS = False or not os.path.exists(PRETEST_LABEL_FILE)
+EXPLORE_PRETEST_TMAPS = False or not os.path.exists(os.path.join(OUTPUT_FOLDER, PRETEST_EXPLORE_ID))
 HYPEROPT_PRETEST_MODEL = False or not os.path.exists(HYPEROPT_BEST_FILE)
 TRAIN_BASELINE_MODEL = False or not os.path.exists(BASELINE_MODEL_PATH)
 TRAIN_PRETEST_MODEL = False or not os.path.exists(PRETEST_MODEL_PATH)
@@ -64,9 +63,6 @@ INFER_TRANSFER_MODELS = False or not os.path.exists(TRANSFER_INFERENCE_FILE)
 HYPEROPT_MAX_TRIALS = 10
 HISTORY_PATH = os.path.join(OUTPUT_FOLDER, 'hyperopt_histories')
 TRIAL_PATH = os.path.join(HISTORY_PATH, 'trial_history.p')
-hr_tmaps, hrr_tmaps = _make_hr_tmaps(BIOSPPY_MEASUREMENTS_FILE)
-RECOVERY_INPUT_TMAPS = [ecg_bike_recovery_downsampled8x]
-RECOVERY_OUTPUT_TMAPS = list(hr_tmaps.values()) + list(hrr_tmaps.values())
 VALIDATION_RATIO = .1
 PRETEST_BATCH_SIZE = 256
 
@@ -85,30 +81,6 @@ REST_BASELINE_INPUT_TMAPS = REST_COVARIATE_TMAPS + [rest_resting_hr]
 
 def history_path():
     return os.path.join(HISTORY_PATH, f'history_{int(time.time())}.p')
-
-
-def _get_recovery_model(use_model_file):
-    """builds model to get biosppy measurements from recovery"""
-    model = make_multimodal_multitask_model(
-        tensor_maps_in=RECOVERY_INPUT_TMAPS,
-        tensor_maps_out=RECOVERY_OUTPUT_TMAPS,
-        activation='swish',
-        learning_rate=1e-3,
-        bottleneck_type=BottleneckType.FlattenRestructure,
-        optimizer='radam',
-        dense_layers=[64, 64],
-        conv_layers=[32, 32, 32, 32, 32],  # lots of residual blocks with dilation
-        dense_blocks=[32, 32, 32],
-        block_size=3,
-        conv_normalize='batch_norm',
-        conv_x=16,
-        conv_dilate=True,
-        pool_x=4,
-        pool_type='max',
-        conv_type='conv',
-        model_file=RECOVERY_MODEL_PATH if use_model_file else None,
-    )
-    return model
 
 
 def _handle_inference_batch(
@@ -207,7 +179,7 @@ def _dist_plot(ax, truth, prediction, title):
 
 
 def _evaluate_model(m_id: str, inference_file: str):
-    logging.info('Plotting recovery model results.')
+    logging.info(f'Plotting {m_id} model results.')
     inference_results = pd.read_csv(inference_file, sep='\t', dtype={'sample_id': str})
     test_ids = pd.read_csv(TEST_CSV, names=['sample_id'], dtype={'sample_id': str})
     test_results = inference_results.merge(test_ids, on='sample_id')
@@ -233,12 +205,12 @@ def _evaluate_model(m_id: str, inference_file: str):
             continue
         pred = test_results[pred_col]
         actual = test_results[time_to_actual_hr_col(t)]
-        not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
+        not_na = ~np.isnan(pred) & ~np.isnan(actual)
         _scatter_plot(axes[0, i], actual[not_na], pred[not_na], f'HR at recovery time {t}')
     for i, t in enumerate(hrr_pred_times):
         pred = test_results[time_to_pred_hrr_col(t, m_id)]
         actual = test_results[time_to_actual_hrr_col(t)]
-        not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
+        not_na = ~np.isnan(pred) & ~np.isnan(actual)
         _scatter_plot(axes[1, i], actual[not_na], pred[not_na], f'HRR at recovery time {t}')
     plt.tight_layout()
     plt.savefig(os.path.join(figure_folder, 'model_correlations.png'))
@@ -254,12 +226,12 @@ def _evaluate_model(m_id: str, inference_file: str):
             continue
         pred = test_results[pred_col]
         actual = test_results[time_to_actual_hr_col(t)]
-        not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
+        not_na = ~np.isnan(pred) & ~np.isnan(actual)
         _dist_plot(axes[0, i], actual[not_na], pred[not_na], f'HR at recovery time {t}')
     for i, t in enumerate(hrr_pred_times):
         pred = test_results[time_to_pred_hrr_col(t, m_id)]
         actual = test_results[time_to_actual_hrr_col(t)]
-        not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL)
+        not_na = ~np.isnan(pred) & ~np.isnan(actual)
         _dist_plot(axes[1, i], actual[not_na], pred[not_na], f'HRR at recovery time {t}')
     plt.tight_layout()
     plt.savefig(os.path.join(figure_folder, 'distributions.png'))
@@ -278,7 +250,7 @@ def _evaluate_model(m_id: str, inference_file: str):
         pred = label_df[pred_col]
         actual = label_df[name+'_actual']
         diff = label_df[diff_name]
-        not_na = ~np.isnan(pred) & ~np.isnan(actual) & (actual != BIOSPPY_SENTINEL) & ~np.isnan(diff)
+        not_na = ~np.isnan(pred) & ~np.isnan(actual) & ~np.isnan(diff)
         mae = np.abs(pred - actual)
         label_df[name + '_mae'] = mae
         _scatter_plot(axes[i], mae[not_na], diff[not_na], f'HR vs. diff at recovery time {t}')
@@ -617,24 +589,11 @@ if __name__ == '__main__':
         logging.info('Making biosppy labels.')
         build_hr_biosppy_measurements_csv()
     plot_hr_from_biosppy_summary_stats()
-    if TRAIN_RECOVERY_MODEL:
-        logging.info('Training recovery model.')
-        _train_model(
-            model=_get_recovery_model(False), tmaps_in=RECOVERY_INPUT_TMAPS, tmaps_out=RECOVERY_OUTPUT_TMAPS, model_id=RECOVERY_MODEL_ID, batch_size=128,
-        )
-    if INFER_RECOVERY_MODEL:
-        logging.info('Running inference on recovery model.')
-        _infer_models(
-            models=[_get_recovery_model(True)],
-            model_ids=[RECOVERY_MODEL_ID],
-            input_tmaps=RECOVERY_INPUT_TMAPS,
-            output_tmaps=RECOVERY_OUTPUT_TMAPS,
-            inference_tsv=RECOVERY_INFERENCE_FILE,
-        )
-    _evaluate_model(RECOVERY_MODEL_ID, RECOVERY_INFERENCE_FILE)
     plt.close('all')
     if MAKE_PRETEST_LABELS:
-        build_pretest_training_labels()
+        make_pretest_labels()
+    if EXPLORE_PRETEST_TMAPS:
+        explore_pretest_tmaps()
     plot_pretest_label_summary_stats()
     if HYPEROPT_PRETEST_MODEL:
         logging.info('Hyperoptimizing pretest model.')

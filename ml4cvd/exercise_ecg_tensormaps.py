@@ -11,22 +11,25 @@ from typing import List, Union, Tuple, Dict
 from itertools import combinations
 from multiprocessing import Pool
 import matplotlib.pyplot as plt
+from types import SimpleNamespace
 
 from ml4cvd.defines import TENSOR_EXT, MODEL_EXT
 from ml4cvd.TensorMap import TensorMap, Interpretation, no_nans
 from ml4cvd.tensor_writer_ukbb import tensor_path, first_dataset_at_path
 from ml4cvd.normalizer import ZeroMeanStd1, Standardize
 from ml4cvd.tensor_from_file import _get_tensor_at_first_date, _all_dates, normalized_first_date
+from ml4cvd.explorations import explore
 
 
 PRETEST_DUR = 15  # DURs are measured in seconds
 EXERCISE_DUR = 360
 RECOVERY_DUR = 60
 SAMPLING_RATE = 500
-HR_MEASUREMENT_TIMES = 0, 10, 20, 30, 40, 50  # relative to recovery start
+HR_MEASUREMENT_TIMES = 0, 50  # relative to recovery start
 HR_SEGMENT_DUR = 10  # HR measurements in recovery coalesced across a segment of this length
 TREND_TRACE_DUR_DIFF = 2  # Sum of phase durations from UKBB is 2s longer than the raw traces
 LEAD_NAMES = 'lead_I', 'lead_2', 'lead_3'
+PRETEST_EXPLORE_ID = 'pretest_explore'
 
 TENSOR_FOLDER = '/mnt/disks/ecg-bike-tensors/2019-10-10/'
 USER = 'ndiamant'
@@ -39,9 +42,6 @@ BIOSPPY_MEASUREMENTS_FILE = os.path.join(OUTPUT_FOLDER, 'biosppy_hr_recovery_mea
 FIGURE_FOLDER = os.path.join(OUTPUT_FOLDER, 'figures')
 BIOSPPY_FIGURE_FOLDER = os.path.join(FIGURE_FOLDER, 'biosppy')
 PRETEST_LABEL_FIGURE_FOLDER = os.path.join(FIGURE_FOLDER, 'pretest_labels')
-RECOVERY_MODEL_ID = 'recovery_hr_model'
-RECOVERY_MODEL_PATH = os.path.join(OUTPUT_FOLDER, RECOVERY_MODEL_ID, RECOVERY_MODEL_ID + MODEL_EXT)
-RECOVERY_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, f'{RECOVERY_MODEL_ID}_inference.tsv')
 PRETEST_LABEL_FILE = os.path.join(OUTPUT_FOLDER, f'hr_pretest_training_data.csv')
 PRETEST_TRAINING_DUR = 10
 BASELINE_MODEL_ID = 'pretest_baseline_model'
@@ -117,14 +117,6 @@ def _get_trace_recovery_start(hd5: h5py.File) -> int:
     pretest_dur = _get_tensor_at_first_date(hd5, 'ecg_bike/continuous', 'pretest_duration')
     exercise_dur = _get_tensor_at_first_date(hd5, 'ecg_bike/continuous', 'exercise_duration')
     return int(SAMPLING_RATE * (pretest_dur + exercise_dur - HR_SEGMENT_DUR / 2 - TREND_TRACE_DUR_DIFF))
-
-
-def _make_recovery_ecg_tff(downsample_rate: int, leads: Union[List[int], slice], random_start=True):
-    def tff(tm: TensorMap, hd5: h5py.File, dependents=None):
-        shift = np.random.randint(-100, 0) if random_start else 0  # .2 second random shift as augmentation
-        recovery_start = _get_trace_recovery_start(hd5) + shift
-        return _get_downsampled_bike_ecg(tm.shape[0], hd5, recovery_start, downsample_rate, leads)
-    return tff
 
 
 # ECG transformations
@@ -383,20 +375,53 @@ def build_hr_biosppy_measurements_csv():
     df.to_csv(BIOSPPY_MEASUREMENTS_FILE, index=False)
 
 
-def build_pretest_training_labels():
-    biosppy_labels = pd.read_csv(BIOSPPY_MEASUREMENTS_FILE, dtype={'sample_id': str})
-    inferred_labels = pd.read_csv(RECOVERY_INFERENCE_FILE, dtype={'sample_id': str}, sep='\t')
-    df = biosppy_labels.merge(inferred_labels, on='sample_id')
+def make_pretest_labels():
+    biosppy_labels = pd.read_csv(BIOSPPY_MEASUREMENTS_FILE)
     new_df = pd.DataFrame()
-    new_df['sample_id'] = df['sample_id']
+    hr_0 = biosppy_labels[df_hr_col(HR_MEASUREMENT_TIMES[0])]
+    drop_idx = {'no ecg': biosppy_labels['error'].notnull()}
     for t in HR_MEASUREMENT_TIMES:
         hr_name = df_hr_col(t)
-        new_df[hr_name] = np.nanmean(df[[hr_name, time_to_pred_hr_col(t, RECOVERY_MODEL_ID)]], axis=1)  # Ensemble
-        hrr_name = df_hrr_col(t)
-        temp_name = 'temp_hrr'
-        df[temp_name] = df[df_hr_col(HR_MEASUREMENT_TIMES[0])] - df[hr_name]
-        new_df[hrr_name] = np.nanmean(df[[temp_name, time_to_pred_hrr_col(t, RECOVERY_MODEL_ID)]], axis=1)  # Ensemble
+        hr = biosppy_labels[hr_name]
+        new_df[hr_name] = hr
+        diff = biosppy_labels[df_diff_col(t)]
+        drop_idx[f'diff {t} too high'] = diff > diff.quantile(.95)
+        drop_idx[f'hr {t} outside center 95%'] = (hr > hr.quantile(.975)) | (hr < hr.quantile(1 - .975))
+        new_df[hr_name] = hr
+        if t != 0:
+            hrr = hr_0 - hr
+            hrr_name = df_hrr_col(t)
+            new_df[hrr_name] = hrr
+            drop_idx[f'hrr {t} outside center 95%'] = (hrr > hrr.quantile(.975)) | (hrr < hrr.quantile(1 - .975))
+            new_df[hrr_name] = hrr
+
+    print(f'Pretest labels starting at length {len(new_df)}.')
+    all_drop = False
+    for name, idx in drop_idx.items():
+        print(f'Due to filter {name}, dropping {(idx & ~all_drop).sum()} values')
+        all_drop |= idx
+    new_df = new_df[~all_drop]
+    assert new_df.notna().all()
+    print(f'There are {len(new_df)} pretest labels after filtering.')
     new_df.to_csv(PRETEST_LABEL_FILE, index=False)
+
+
+def explore_pretest_tmaps():
+    hr_tmaps, hrr_tmaps = _make_hr_tmaps(PRETEST_LABEL_FILE)
+    tmaps_in = [bmi, age, sex, hr_achieved, tmap_error_detect(make_pretest_tmap(0, [0, 1, 2]))] + list(hr_tmaps.values()) + list(hrr_tmaps.values())
+    args = SimpleNamespace(**{
+        'explore_export_errors': True,
+        'output_folder': OUTPUT_FOLDER,
+        'id': PRETEST_EXPLORE_ID,
+        'tensor_maps_in': tmaps_in,
+        'tensor_maps_out': [],
+        'tensors': TENSOR_FOLDER,
+        'batch_size': 1,
+        'num_workers': 4,
+        'cache_size': 0,
+        'tsv_style': '',
+    })
+    explore(args)
 
 
 # Inference
@@ -429,10 +454,8 @@ def time_to_actual_hrr_col(t: int):
 
 
 # Biosppy TensorMaps
-BIOSPPY_SENTINEL = -1000
-BIOSPPY_DIFF_CUTOFF = 5
-HR_NORMALIZE = Standardize(100, 15)
-HRR_NORMALIZE = Standardize(20, 10)
+HR_NORMALIZE = Standardize(0, 1)
+HRR_NORMALIZE = Standardize(0, 1)
 
 
 def _hr_file(file_name: str, t: int, hrr=False):
@@ -440,9 +463,6 @@ def _hr_file(file_name: str, t: int, hrr=False):
     try:
         df = pd.read_csv(file_name, dtype={'sample_id': int})
         df = df.set_index('sample_id')
-        if df_diff_col(HR_MEASUREMENT_TIMES[0]) not in df.columns:  # Hacky way to handle no diff case
-            for t2 in HR_MEASUREMENT_TIMES:
-                df[df_diff_col(t2)] = BIOSPPY_DIFF_CUTOFF - 1
     except FileNotFoundError as e:
         error = e
 
@@ -452,18 +472,12 @@ def _hr_file(file_name: str, t: int, hrr=False):
         sample_id = _sample_id_from_hd5(hd5)
         try:
             row = df.loc[sample_id]
-            hr, diff = row[df_hr_col(t)], row[df_diff_col(t)]
-            if diff > BIOSPPY_DIFF_CUTOFF:  # TODO: make diff analysis a validator
-                return np.array([BIOSPPY_SENTINEL])
+            hr = row[df_hr_col(t)]
             if hrr:
-                peak, peak_diff = row[df_hr_col(0)], row[df_diff_col(0)]
-                if peak_diff > BIOSPPY_DIFF_CUTOFF:
-                    return np.array([BIOSPPY_SENTINEL])
+                peak = row[df_hr_col(0)]
                 out = peak - hr
             else:
                 out = hr
-            if np.isnan(out):
-                out = BIOSPPY_SENTINEL
             return np.array([out])
         except KeyError:
             raise KeyError(f'Sample id not in {file_name} for TensorMap {tm.name}.')
@@ -476,7 +490,6 @@ def _make_hr_tmaps(file_name: str, parents=True) -> Tuple[Dict[int, TensorMap], 
         biosppy_hr_tmaps[t] = TensorMap(
             df_hr_col(t), shape=(1,), metrics=[],
             interpretation=Interpretation.CONTINUOUS,
-            sentinel=HR_NORMALIZE.normalize(BIOSPPY_SENTINEL),
             tensor_from_file=_hr_file(file_name, t),
             normalization=HR_NORMALIZE,
         )
@@ -485,7 +498,6 @@ def _make_hr_tmaps(file_name: str, parents=True) -> Tuple[Dict[int, TensorMap], 
         biosppy_hrr_tmaps[t] = TensorMap(
             df_hrr_col(t), shape=(1,), metrics=[],
             interpretation=Interpretation.CONTINUOUS,
-            sentinel=HRR_NORMALIZE.normalize(BIOSPPY_SENTINEL),
             tensor_from_file=_hr_file(file_name, t, hrr=True),
             parents=[biosppy_hr_tmaps[t], biosppy_hr_tmaps[HR_MEASUREMENT_TIMES[0]]] if parents else None,
             normalization=HRR_NORMALIZE,
@@ -587,7 +599,6 @@ def rest_ecg_hr(tm: TensorMap, hd5: h5py.File, dependents=None):
     return np.array(rhr, dtype=np.float32).reshape(tm.shape)
 
 
-
 rest_resting_hr = TensorMap(
     'resting_hr', Interpretation.CONTINUOUS, tensor_from_file=rest_ecg_hr,
     normalization=Standardize(70, 10), validator=no_nans, shape=(1,),
@@ -601,8 +612,6 @@ def _make_hr_achieved_tensor_from_file(pretest=True):
     def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
         age_ = age_tff(age, hd5).copy()
         max_hr = max_hr_tff(tm, hd5).copy()
-        if max_hr == BIOSPPY_SENTINEL:
-            return np.array([BIOSPPY_SENTINEL])
         return max_hr / (220 - age_)
     return tensor_from_file
 
@@ -616,13 +625,11 @@ def make_constant_tensor_from_file(constant: float):
 hr_achieved = TensorMap(
     'hr_achieved', shape=(1,), metrics=[],
     interpretation=Interpretation.CONTINUOUS,
-    sentinel=BIOSPPY_SENTINEL,
     tensor_from_file=_make_hr_achieved_tensor_from_file(),
 )
 rest_hr_achieved = TensorMap(
     'hr_achieved', shape=(1,), metrics=[],
     interpretation=Interpretation.CONTINUOUS,
-    sentinel=BIOSPPY_SENTINEL,
     tensor_from_file=_make_hr_achieved_tensor_from_file(pretest=False),
 )
 hr_achieved_75 = TensorMap(
@@ -633,14 +640,6 @@ hr_achieved_75 = TensorMap(
 
 
 # ECG TensorMaps
-ecg_bike_recovery_downsampled8x = TensorMap(
-    'recovery_ecg', shape=(3437, 3), interpretation=Interpretation.CONTINUOUS,
-    validator=no_nans, normalization=Standardize(0, 100),
-    tensor_from_file=_make_recovery_ecg_tff(8, [0, 1, 2]),
-    cacheable=False, augmentations=[_rand_scale_ecg, _rand_add_noise, _rand_offset_ecg],
-)
-
-
 def tmap_error_detect(tmap: TensorMap) -> TensorMap:
     """Modifies tm so it returns 1 unless previous tensor from file fails"""
     new_tm = copy.deepcopy(tmap)
