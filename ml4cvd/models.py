@@ -34,6 +34,10 @@ from ml4cvd.plots import plot_metric_history
 from ml4cvd.TensorMap import TensorMap, Interpretation
 from ml4cvd.optimizers import get_optimizer, NON_KERAS_OPTIMIZERS
 from ml4cvd.defines import JOIN_CHAR, IMAGE_EXT, MODEL_EXT, ECG_CHAR_2_IDX, PARTNERS_CHAR_2_IDX, PARTNERS_READ_TEXT
+from ml4cvd.tensor_generators import big_batch_from_minibatch_generator
+import matplotlib
+matplotlib.use('Agg')  # Need this to write images from the GSA servers.  Order matters:
+import matplotlib.pyplot as plt  # First import matplotlib, then use Agg, then import plt
 
 CHANNEL_AXIS = -1  # Set to 1 for Theano backend
 LANGUAGE_MODEL_SUFFIX = '_next_character'
@@ -482,7 +486,7 @@ class VariationalDiagNormal(Layer):
         """mu and sigma must be shape (None, latent_size)"""
         approx_posterior = tfd.MultivariateNormalDiag(loc=mu, scale_diag=tf.math.exp(log_sigma))
         kl = tf.reduce_mean(tfd.kl_divergence(approx_posterior, self.prior))
-        self.add_loss(kl)
+        self.add_loss(kl * 1e-5)
         self.add_metric(kl, 'mean', name='KL_divergence')
         return approx_posterior.sample()
 
@@ -1052,6 +1056,19 @@ def train_model_from_generators(
         validation_steps=validation_steps, validation_data=generate_valid,
         callbacks=_get_callbacks(patience, model_file),
     )
+    out_path = os.path.join(output_folder, run_id + '/')
+    test_data, test_labels = big_batch_from_minibatch_generator(generate_valid, 10)
+    k = list(test_data.keys())[0]
+    actual = test_data[k][:1]
+    pred = model.predict(actual)
+    plt.figure(figsize=(20, 20))
+    recon_cor = np.corrcoef(test_data[k].flatten(), model.predict(test_data).flatten())[0, 1]
+    plt.subplot(2, 1, 1)
+    plt.title(f'Reconstruction corr coef {recon_cor:.3f}')
+    plt.plot(actual[0])
+    plt.subplot(2, 1, 2)
+    plt.plot(pred[0])
+    plt.savefig(os.path.join(out_path, 'reconstruction.png'))
     generate_train.kill_workers()
     generate_valid.kill_workers()
 

@@ -6,11 +6,13 @@ import datetime
 import numpy as np
 from collections import defaultdict
 from typing import Dict, List, Callable, Union, Tuple
+import biosppy
 
 from ml4cvd.tensor_maps_by_hand import TMAPS
 from ml4cvd.defines import ECG_REST_AMP_LEADS, PARTNERS_DATE_FORMAT, STOP_CHAR, PARTNERS_CHAR_2_IDX, PARTNERS_DATETIME_FORMAT
 from ml4cvd.TensorMap import TensorMap, str2date, Interpretation, make_range_validator, decompress_data, TimeSeriesOrder
-from ml4cvd.normalizer import Standardize, ZeroMeanStd1
+from ml4cvd.normalizer import Standardize, ZeroMeanStd1, Normalizer
+from ml4cvd.defines import EPS
 
 
 YEAR_DAYS = 365.26
@@ -114,6 +116,23 @@ def voltage_from_file_no_resample(tm, hd5, dependents=None):
     return tensor
 
 
+def _hrv(tm, hd5, dependents=None):
+    """std of rr-interval lead I. Assumes 5k samples at 500Hz"""
+    ecg_dates = _get_ecg_dates(tm, hd5)
+    dynamic, shape = _is_dynamic_shape(tm, len(ecg_dates))
+    tensor = np.zeros(shape, dtype=np.float32)
+    downsample = 4
+    sample_rate = 500 // downsample
+    for i, ecg_date in enumerate(ecg_dates):
+        path = _make_hd5_path(tm, ecg_date, 'I')
+        voltage = decompress_data(data_compressed=hd5[path][()], dtype=hd5[path].attrs['dtype'])
+        if len(voltage) < 5000:
+            raise ValueError(f'Voltage is not 5000 samples for HRV.')
+        rpeaks = biosppy.ecg.ecg(voltage, sampling_rate=sample_rate, show=False)[2]
+        tensor[i] = np.std(np.diff(rpeaks) / sample_rate)
+    return tensor
+
+
 def _find_max_zero_run(x: np.ndarray):
     assert x.ndim == 1
     run_ends = np.flatnonzero(np.diff(x, append=np.nan))
@@ -144,6 +163,30 @@ TMAPS['partners_ecg_5000_only_lead_I'] = partners_ecg_5k_only = TensorMap(
     'ecg_rest_5000', shape=(4992, 1), path_prefix=PARTNERS_PREFIX, tensor_from_file=voltage_from_file_no_resample,
     normalization=Standardize(0, 1000), channel_map={'I': 0}, validator=voltage_full_validator, metrics=['mae', 'mse'],
 )
+
+
+TMAPS['partners_ecg_hrv'] = TensorMap(
+    'hrv', shape=(1,), path_prefix=PARTNERS_PREFIX, tensor_from_file=_hrv,
+)
+
+
+class ZeroMeanStd1Scale(Normalizer):
+
+    def __init__(self, scale: float):
+        self.scale = scale
+
+    def normalize(self, tensor: np.ndarray) -> np.ndarray:
+        tensor -= np.mean(tensor)
+        tensor /= np.std(tensor) + EPS
+        return tensor * self.scale
+
+
+for scale in [10, 1, 1e-1, 1e-2]:
+    TMAPS[f'partners_ecg_5000_only_lead_I_zero_mean_std1_scale_{scale}'] = partners_ecg_5k_only = TensorMap(
+        'ecg_rest_5000', shape=(4992, 1), path_prefix=PARTNERS_PREFIX, tensor_from_file=voltage_from_file_no_resample,
+        normalization=ZeroMeanStd1Scale(scale), channel_map={'I': 0}, validator=voltage_full_validator, metrics=['mae', 'mse'],
+    )
+
 
 
 TMAPS['partners_ecg_5000_only_lead_I_zero_mean_std1'] = partners_ecg_5k_only = TensorMap(

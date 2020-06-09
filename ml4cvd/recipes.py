@@ -31,6 +31,10 @@ from ml4cvd.models import train_model_from_generators, get_model_inputs_outputs,
 from ml4cvd.TensorMap import TensorMap
 from ml4cvd.metrics import make_simclr_loss
 
+import matplotlib
+matplotlib.use('Agg')  # Need this to write images from the GSA servers.  Order matters:
+import matplotlib.pyplot as plt  # First import matplotlib, then use Agg, then import plt
+
 
 def run(args):
     start_time = timer()  # Keep track of elapsed execution time
@@ -148,8 +152,17 @@ def train_multimodal_multitask(args):
         args.epochs, args.patience, args.output_folder, args.id, args.inspect_model, args.inspect_show_labels,
     )
 
-    out_path = os.path.join(args.output_folder, args.id + '/')
-    test_data, test_labels, test_paths = big_batch_from_minibatch_generator(generate_test, args.test_steps)
+    #  out_path = os.path.join(args.output_folder, args.id + '/')
+    #  test_data, test_labels, test_paths = big_batch_from_minibatch_generator(generate_valid, args.test_steps)
+    #  k = list(test_data.keys())[0]
+    #  actual = test_data[k][:1]
+    #  pred = model.predict(actual)
+    #  plt.figure(figsize=(20, 20))
+    #  plt.subplot(2, 1, 1)
+    #  plt.plot(actual[0])
+    #  plt.subplot(2, 1, 2)
+    #  plt.plot(pred[0])
+    #  plt.savefig(os.path.join(out_path, 'reconstruction.png'))
     return _predict_and_evaluate(model, test_data, test_labels, args.tensor_maps_in, args.tensor_maps_out, args.batch_size, args.hidden_layer, out_path, test_paths, args.alpha)
 
 
