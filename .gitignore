@@ -3,6 +3,7 @@
 .idea/*
 *.png
 *.tsv
+*.csv
 *.linux
 *.log
 **/__pycache__/*
