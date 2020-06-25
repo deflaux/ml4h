@@ -717,7 +717,7 @@ def _hd5_to_disk(tmaps, path, gen_name, tot, output_folder, id):
                                     dict_of_tensor_dicts[i][f'{tm.name} {cm}'] = np.nan
                             else:
                                 dict_of_tensor_dicts[i][tm.name] = np.full(shape, np.nan)[0]
-                            error_type = type(e).__name__
+                            error_type = e
                         dict_of_tensor_dicts[i][f'error_type_{tm.name}'] = error_type
 
                 except (IndexError, KeyError, ValueError, OSError, RuntimeError) as e:
@@ -727,7 +727,7 @@ def _hd5_to_disk(tmaps, path, gen_name, tot, output_folder, id):
                             dict_of_tensor_dicts[0][f'{tm.name} {cm}'] = np.nan
                     else:
                         dict_of_tensor_dicts[0][tm.name] = np.full(shape, np.nan)[0]
-                    dict_of_tensor_dicts[0][f'error_type_{tm.name}'] = type(e).__name__
+                    dict_of_tensor_dicts[0][f'error_type_{tm.name}'] = str(e)
 
             for i in dict_of_tensor_dicts:
                 dict_of_tensor_dicts[i]['fpath'] = path

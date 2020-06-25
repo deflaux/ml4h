@@ -29,12 +29,12 @@ HR_MEASUREMENT_TIMES = 0, 50  # relative to recovery start
 HR_SEGMENT_DUR = 10  # HR measurements in recovery coalesced across a segment of this length
 TREND_TRACE_DUR_DIFF = 2  # Sum of phase durations from UKBB is 2s longer than the raw traces
 LEAD_NAMES = 'lead_I', 'lead_2', 'lead_3'
-PRETEST_EXPLORE_ID = 'pretest_explore'
 
 TENSOR_FOLDER = '/mnt/disks/ecg-bike-tensors/2019-10-10/'
 USER = 'ndiamant'
 OUTPUT_FOLDER = f'/home/{USER}/ml/hrr_results'
-EXPLORE_OUTPUT_FOLDER = os.path.join(OUTPUT_FOLDER, 'explore_results')
+PRETEST_EXPLORE_ID = 'pretest_explore'
+EXPLORE_OUTPUT_FOLDER = os.path.join(OUTPUT_FOLDER, PRETEST_EXPLORE_ID)
 COVARIATE_FILE = os.path.join(OUTPUT_FOLDER, 'covariates.tsv')
 TEST_CSV = os.path.join(OUTPUT_FOLDER, 'test_ids.csv')
 TEST_SET_LEN = 10000
@@ -380,6 +380,7 @@ def make_pretest_labels():
     new_df = pd.DataFrame()
     hr_0 = biosppy_labels[df_hr_col(HR_MEASUREMENT_TIMES[0])]
     drop_idx = {'no ecg': biosppy_labels['error'].notnull()}
+    new_df['sample_id'] = biosppy_labels['sample_id']
     for t in HR_MEASUREMENT_TIMES:
         hr_name = df_hr_col(t)
         hr = biosppy_labels[hr_name]
@@ -395,20 +396,20 @@ def make_pretest_labels():
             drop_idx[f'hrr {t} outside center 95%'] = (hrr > hrr.quantile(.975)) | (hrr < hrr.quantile(1 - .975))
             new_df[hrr_name] = hrr
 
-    print(f'Pretest labels starting at length {len(new_df)}.')
+    logging.info(f'Pretest labels starting at length {len(new_df)}.')
     all_drop = False
     for name, idx in drop_idx.items():
-        print(f'Due to filter {name}, dropping {(idx & ~all_drop).sum()} values')
+        logging.info(f'Due to filter {name}, dropping {(idx & ~all_drop).sum()} values')
         all_drop |= idx
     new_df = new_df[~all_drop]
-    assert new_df.notna().all()
-    print(f'There are {len(new_df)} pretest labels after filtering.')
+    assert new_df.notna().all().all()
+    logging.info(f'There are {len(new_df)} pretest labels after filtering.')
     new_df.to_csv(PRETEST_LABEL_FILE, index=False)
 
 
 def explore_pretest_tmaps():
     hr_tmaps, hrr_tmaps = _make_hr_tmaps(PRETEST_LABEL_FILE)
-    tmaps_in = [bmi, age, sex, hr_achieved, tmap_error_detect(make_pretest_tmap(0, [0, 1, 2]))] + list(hr_tmaps.values()) + list(hrr_tmaps.values())
+    tmaps_in = [bmi, age, sex, hr_achieved, bike_resting_hr, tmap_error_detect(make_pretest_tmap(1, [0, 1, 2]))] + list(hr_tmaps.values()) + list(hrr_tmaps.values())
     args = SimpleNamespace(**{
         'explore_export_errors': True,
         'output_folder': OUTPUT_FOLDER,
@@ -420,6 +421,10 @@ def explore_pretest_tmaps():
         'num_workers': 4,
         'cache_size': 0,
         'tsv_style': '',
+        'balance_csvs': [],
+        'test_ratio': .1,
+        'valid_ratio': .05,
+        'plot_hist': 'True',
     })
     explore(args)
 
@@ -454,8 +459,8 @@ def time_to_actual_hrr_col(t: int):
 
 
 # Biosppy TensorMaps
-HR_NORMALIZE = Standardize(0, 1)
-HRR_NORMALIZE = Standardize(0, 1)
+HR_NORMALIZE = Standardize(100, 20)
+HRR_NORMALIZE = Standardize(26, 8)
 
 
 def _hr_file(file_name: str, t: int, hrr=False):

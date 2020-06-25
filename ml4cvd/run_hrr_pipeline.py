@@ -22,7 +22,7 @@ from ml4cvd.hyperparameters import plot_trials, MAX_LOSS
 from ml4cvd.tensor_generators import test_train_valid_tensor_generators, TensorGenerator, BATCH_INPUT_INDEX, BATCH_OUTPUT_INDEX, BATCH_PATHS_INDEX
 from ml4cvd.models import make_multimodal_multitask_model, BottleneckType, train_model_from_generators
 from ml4cvd.exercise_ecg_tensormaps import OUTPUT_FOLDER, USER, FIGURE_FOLDER, BIOSPPY_MEASUREMENTS_FILE
-from ml4cvd.exercise_ecg_tensormaps import TENSOR_FOLDER, TEST_CSV
+from ml4cvd.exercise_ecg_tensormaps import TENSOR_FOLDER, TEST_CSV, EXPLORE_OUTPUT_FOLDER
 from ml4cvd.exercise_ecg_tensormaps import HR_MEASUREMENT_TIMES, df_hr_col, df_hrr_col, df_diff_col
 from ml4cvd.exercise_ecg_tensormaps import build_hr_biosppy_measurements_csv, plot_hr_from_biosppy_summary_stats
 from ml4cvd.exercise_ecg_tensormaps import _make_hr_tmaps, plot_pretest_label_summary_stats, make_pretest_labels
@@ -45,7 +45,7 @@ from ml4cvd.TensorMap import TensorMap
 SEED = 217
 MAKE_LABELS = False or not os.path.exists(BIOSPPY_MEASUREMENTS_FILE)
 MAKE_PRETEST_LABELS = False or not os.path.exists(PRETEST_LABEL_FILE)
-EXPLORE_PRETEST_TMAPS = False or not os.path.exists(os.path.join(OUTPUT_FOLDER, PRETEST_EXPLORE_ID))
+EXPLORE_PRETEST_TMAPS = False or not os.path.exists(EXPLORE_OUTPUT_FOLDER)
 HYPEROPT_PRETEST_MODEL = False or not os.path.exists(HYPEROPT_BEST_FILE)
 TRAIN_BASELINE_MODEL = False or not os.path.exists(BASELINE_MODEL_PATH)
 TRAIN_PRETEST_MODEL = False or not os.path.exists(PRETEST_MODEL_PATH)
@@ -364,7 +364,7 @@ def _train_model(
 
 def _pretest_model_from_space(space, use_model_file=False):
     pretest_tmap = make_pretest_tmap(downsample_rate=4, leads=[0])
-    tmaps_in = [pretest_tmap] + PRETEST_COVARIATE_TMAPS
+    tmaps_in = [pretest_tmap] #+ PRETEST_COVARIATE_TMAPS
     m = make_multimodal_multitask_model(
         tensor_maps_in=tmaps_in,
         tensor_maps_out=PRETEST_OUTPUT_TMAPS,
@@ -580,6 +580,7 @@ if __name__ == '__main__':
     os.makedirs(FIGURE_FOLDER, exist_ok=True)
     os.makedirs(BIOSPPY_FIGURE_FOLDER, exist_ok=True)
     os.makedirs(PRETEST_LABEL_FIGURE_FOLDER, exist_ok=True)
+    os.makedirs(EXPLORE_OUTPUT_FOLDER, exist_ok=True)
     os.makedirs(HYPEROPT_FIGURE_PATH, exist_ok=True)
     os.makedirs(HISTORY_PATH, exist_ok=True)
     make_rest_ids()
