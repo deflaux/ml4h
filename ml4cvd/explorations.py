@@ -14,6 +14,7 @@ from collections import defaultdict, Counter, OrderedDict
 from typing import Dict, List, Tuple, Generator, Optional, DefaultDict
 
 import h5py
+import scipy
 import numpy as np
 import pandas as pd
 import multiprocess
@@ -823,31 +824,12 @@ def explore(args):
     df.dropna().to_csv(fpath, index=False, sep=out_sep)
     logging.info(f"Saved dataframe of tensors (union and intersect) to {fpath}")
 
-    # Plots counts of categorical TMAPs over time
-    if args.time_tensor:
-        freq = args.time_frequency  # Monthly frequency
-        time_tensors = pd.to_datetime(df[args.time_tensor])
-        min_date = time_tensors.min()
-        max_date = time_tensors.max()
-        date_range = pd.date_range(min_date, max_date, freq=freq)
-        for tm in tmaps:
-            if tm.interpretation is Interpretation.CATEGORICAL:
-                prev_date = min_date
-                tm_counts = defaultdict(list)
-                for i, date in enumerate(date_range[1:]):
-                    sub_df = df[(time_tensors >= prev_date) & (time_tensors < date)]
-                    for cm in tm.channel_map:
-                        tm_counts[cm].append(np.sum(sub_df[f'{tm.name} {cm}']))
-                    prev_date = date
-                fpath = os.path.join(args.output_folder, args.id, f'{tm.name}_over_time.png')
-                plot_categorical_tmap_over_time(tm_counts, tm.name, date_range, fpath)
-
     # Check if any tmaps are categorical
     if Interpretation.CATEGORICAL in [tm.interpretation for tm in tmaps]:
-
+        categorical_tmaps = [tm for tm in tmaps if tm.interpretation is Interpretation.CATEGORICAL]
         # Iterate through 1) df, 2) df without NaN-containing rows (intersect)
         for df_cur, df_str in zip([df, df.dropna()], ["union", "intersect"]):
-            for tm in [tm for tm in tmaps if tm.interpretation is Interpretation.CATEGORICAL]:
+            for tm in categorical_tmaps:
                 counts = []
                 counts_missing = []
                 if tm.channel_map:
@@ -883,6 +865,42 @@ def explore(args):
                 df_stats = df_stats.round(2)
                 df_stats.to_csv(fpath)
                 logging.info(f"Saved summary stats of {Interpretation.CATEGORICAL} {tm.name} tmaps to {fpath}")
+
+        # Plot counts of categorical TMAPs over time
+        if args.time_tensor:
+            freq = args.time_frequency  # Monthly frequency
+            time_tensors = pd.to_datetime(df[args.time_tensor])
+            min_date = time_tensors.min()
+            max_date = time_tensors.max()
+            date_range = pd.date_range(min_date, max_date, freq=freq)
+            for tm in categorical_tmaps:
+                prev_date = min_date
+                tm_counts = defaultdict(list)
+                for i, date in enumerate(date_range[1:]):
+                    sub_df = df[(time_tensors >= prev_date) & (time_tensors < date)]
+                    for cm in tm.channel_map:
+                        tm_counts[cm].append(np.sum(sub_df[f'{tm.name} {cm}']))
+                    prev_date = date
+                fpath = os.path.join(args.output_folder, args.id, f'{tm.name}_over_time.png')
+                plot_categorical_tmap_over_time(tm_counts, tm.name, date_range, fpath)
+
+        # Chi-square test and Cramer's V
+        chi2_p_table = {}
+        chi2_cramer_table = {}
+        for tm1, tm2 in combinations(categorical_tmaps, 2):
+            keys1 = [f'{tm1.name} {cm}' for cm in tm.channel_map]
+            keys2 = [f'{tm2.name} {cm}' for cm in tm.channel_map]
+            sub_df = df[keys1+keys2].dropna()
+            sub_df[tm1.name] = sub_df[keys1].idxmax(axis=1)
+            sub_df[tm2.name] = sub_df[keys2].idxmax(axis=1)
+            contingency = pd.crosstab(sub_df[tm1.name], sub_df[tm2.name])
+            min_dof = min(contingency.values.shape) - 1
+            contingency_margins = pd.crosstab(sub_df[tm1.name], sub_df[tm2.name], margins=True)
+            chi2_stats = scipy.stats.chi2_contingency(contingency)
+            chi2_p_table[(tm1.name, tm2.name)] = chi2_stats[1]
+            chi2_cramer_table[(tm1.name, tm2.name)] = np.sqrt(chi2_stats[0]/contingency_margins.values[-1, -1]/min_dof)
+            contingency_expected = pd.DataFrame(chi2_stats[-1], index=contingency.index, columns=list(contingency.keys()))
+
 
     # Check if any tmaps are continuous
     if Interpretation.CONTINUOUS in [tm.interpretation for tm in tmaps]:
