@@ -29,7 +29,7 @@ from ml4cvd.TensorMap import TensorMap, Interpretation, decompress_data
 from ml4cvd.tensor_generators import TensorGenerator, test_train_valid_tensor_generators
 from ml4cvd.tensor_generators import BATCH_INPUT_INDEX, BATCH_OUTPUT_INDEX, BATCH_PATHS_INDEX
 from ml4cvd.plots import evaluate_predictions, subplot_rocs, subplot_scatters
-from ml4cvd.plots import plot_histograms_in_pdf, plot_heatmap, plot_cross_reference, plot_categorical_tmap_over_time
+from ml4cvd.plots import plot_histograms_in_pdf, plot_heatmap, plot_cross_reference, plot_categorical_tmap_over_time, plot_chi2_association
 from ml4cvd.defines import JOIN_CHAR, MRI_SEGMENTED_CHANNEL_MAP, CODING_VALUES_MISSING, CODING_VALUES_LESS_THAN_ONE
 from ml4cvd.defines import TENSOR_EXT, IMAGE_EXT, ECG_CHAR_2_IDX, ECG_IDX_2_CHAR, PARTNERS_CHAR_2_IDX, PARTNERS_IDX_2_CHAR, PARTNERS_READ_TEXT
 
@@ -888,8 +888,8 @@ def explore(args):
         chi2_p_table = {}
         chi2_cramer_table = {}
         for tm1, tm2 in combinations(categorical_tmaps, 2):
-            keys1 = [f'{tm1.name} {cm}' for cm in tm.channel_map]
-            keys2 = [f'{tm2.name} {cm}' for cm in tm.channel_map]
+            keys1 = [f'{tm1.name} {cm}' for cm in tm1.channel_map]
+            keys2 = [f'{tm2.name} {cm}' for cm in tm2.channel_map]
             sub_df = df[keys1+keys2].dropna()
             sub_df[tm1.name] = sub_df[keys1].idxmax(axis=1)
             sub_df[tm2.name] = sub_df[keys2].idxmax(axis=1)
@@ -900,7 +900,10 @@ def explore(args):
             chi2_p_table[(tm1.name, tm2.name)] = chi2_stats[1]
             chi2_cramer_table[(tm1.name, tm2.name)] = np.sqrt(chi2_stats[0]/contingency_margins.values[-1, -1]/min_dof)
             contingency_expected = pd.DataFrame(chi2_stats[-1], index=contingency.index, columns=list(contingency.keys()))
-
+            contingency_margins.to_csv(os.path.join(args.output_folder, args.id, f'contingency_{tm1.name}_{tm2.name}.{out_ext}'), sep=out_sep)
+            contingency_expected.to_csv(os.path.join(args.output_folder, args.id, f'contingency_expected_{tm1.name}_{tm2.name}.{out_ext}'), sep=out_sep)
+        fpath = os.path.join(args.output_folder, args.id, 'categorical_association.png')
+        plot_chi2_association(chi2_cramer_table, chi2_p_table, categorical_tmaps, fpath)
 
     # Check if any tmaps are continuous
     if Interpretation.CONTINUOUS in [tm.interpretation for tm in tmaps]:
