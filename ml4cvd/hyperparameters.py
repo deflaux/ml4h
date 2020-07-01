@@ -5,11 +5,12 @@ import gc
 import os
 import logging
 import numpy as np
+import pandas as pd
 from collections import Counter
 from timeit import default_timer as timer
 
 import hyperopt
-from hyperopt import fmin, tpe, hp
+from hyperopt import fmin, tpe, hp, STATUS_OK, STATUS_FAIL
 
 import matplotlib
 matplotlib.use('Agg') # Need this to write images from the GSA servers.  Order matters:
@@ -69,15 +70,16 @@ def hyperparameter_optimizer(args, space, param_lists={}):
     _, _, generate_test = test_train_valid_tensor_generators(**args.__dict__)
     test_data, test_labels = big_batch_from_minibatch_generator(generate_test, args.test_steps)
     generate_test.kill_workers()
-    histories = []
     fig_path = os.path.join(args.output_folder, args.id, 'plots')
+    if not os.path.exists(fig_path):  # TODO: cleaner way?
+        os.makedirs(fig_path)
     i = 0
+    fail = {'status': STATUS_FAIL}
 
     def loss_from_multimodal_multitask(x):
         model = None
         history = None
         nonlocal i
-        i += 1
         try:
             set_args_from_x(args, x)
             model = make_multimodal_multitask_model(**args.__dict__)
@@ -91,8 +93,11 @@ def hyperparameter_optimizer(args, space, param_lists={}):
                 args.batch_size, args.epochs, args.patience, args.output_folder, args.id,
                 args.inspect_model, args.inspect_show_labels, True, False,
             )
+            history_df = pd.DataFrame(history.history)
+            history_df['parameter_count'] = model.count_params()
             history.history['parameter_count'] = [model.count_params()]
-            histories.append(history.history)
+            history_df['iteration'] = i
+            history_df.to_csv(os.path.join(fig_path, f'history_{i}.csv'), index=False)
             title = f'trial_{i}'  # refer to loss_by_params.txt to find the params for this trial
             plot_metric_history(history, args.training_steps, title, fig_path)
             model.load_weights(os.path.join(args.output_folder, args.id, args.id + MODEL_EXT))
@@ -101,22 +106,32 @@ def hyperparameter_optimizer(args, space, param_lists={}):
             logging.info(f"Iteration {i} out of maximum {args.max_models}\nTest Loss: {loss_and_metrics[0]}")
             generate_train.kill_workers()
             generate_valid.kill_workers()
-            return loss_and_metrics[0]
-
+            loss = min(history.history['val_loss'])
+            return {'loss': loss, 'status': STATUS_OK}
         except ValueError:
             logging.exception('ValueError trying to make a model for hyperparameter optimization. Returning max loss.')
-            return MAX_LOSS
+            return fail
         except:
             logging.exception('Error trying hyperparameter optimization. Returning max loss.')
-            return MAX_LOSS
+            return fail
         finally:
             del model
             gc.collect()
-            if history is None:
-                histories.append({'loss': [MAX_LOSS], 'val_loss': [MAX_LOSS], 'parameter_count': [0]})
+            i += 1
 
-    trials = hyperopt.Trials()
-    fmin(loss_from_multimodal_multitask, space=space, algo=tpe.suggest, max_evals=args.max_models, trials=trials)
+    # if args.trial_path is not None and os.path.exists(args.trial_path):
+    #     with open(args.trial_path, 'rb') as f:
+    #         trials = pickle.load(f)
+
+    trials = hyperopt.Trials()  # TODO: load this from pickle using path to existing Trials object
+    for optimization_step in range(args.max_models):
+        fmin(loss_from_multimodal_multitask, space=space, algo=tpe.suggest, max_evals=len(trials.trials) + 1, trials=trials)
+        print('saving trials', len(trials.trials))
+        # save_trials(trials)  # persist trial object TODO: implement this using pickle
+
+    # TODO: histories should be loaded from the data frames we saved.
+    histories = []
+    # TODO: plot trials will have to take into account that some trials have STATUS_FAIL
     plot_trials(trials, histories, fig_path, param_lists)
     logging.info('Saved learning plot to:{}'.format(fig_path))
 
@@ -260,10 +275,11 @@ def optimize_mri_sax_architecture(args):
 
 
 def optimize_conv_x(args):
+    conv_x = [[2], [3]]
     space = {
-        'conv_x': hp.loguniform('conv_x', 1, 6),
+        'conv_x': hp.choice('conv_x', conv_x),
     }
-    hyperparameter_optimizer(args, space, {})
+    hyperparameter_optimizer(args, space, {'conv_x': conv_x})
 
 
 def optimize_conv_layers_multimodal_multitask(args):
