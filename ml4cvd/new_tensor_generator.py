@@ -19,7 +19,7 @@ class StateSetter(ABC):
 
 
 Batch = Dict[str, np.ndarray]
-BatchFunction = Callable[[Batch, Batch, List[int], 'kwargs'], Any]
+BatchFunction = Callable[[Batch, Batch, List[int]], Any]
 
 
 class TensorGetter(ABC):
@@ -33,6 +33,7 @@ class TensorGetter(ABC):
         pass
 
 
+# TODO: main thread batch, handle errors, different sample_id iterators
 class TensorGenerator:
 
     def __init__(
@@ -41,6 +42,7 @@ class TensorGenerator:
             batch_size: int, batch_function: BatchFunction,
             state_setters: List[StateSetter],
             return_ids: bool = False,
+            num_workers: int = 0,
     ):
         self.input_tensor_getters = input_tensor_getters
         self.output_tensor_getters = output_tensor_getters
@@ -50,6 +52,7 @@ class TensorGenerator:
         self.return_ids = return_ids
         self.state_setters = state_setters
         self._check_states()
+        self.num_workers = num_workers
 
     def _check_states(self):
         all_state_names = {state.get_name() for state in self.state_setters}
@@ -99,16 +102,19 @@ class HD5State(StateSetter):
 
 class TensorMapTensorGetter(TensorGetter):
 
-    def __init__(self, tensor_map: TensorMap):
+    def __init__(self, tensor_map: TensorMap, augment: bool):
         self.required_states = {HD5State.get_name()}
         self.required_state = HD5State.get_name()
         self.tensor_map = tensor_map
         self.name = tensor_map.name
+        self.augment = augment
 
     def get_tensor(self, evaluated_states: Dict[str, Any]) -> np.ndarray:
-        return self.tensor_map.tensor_from_file(
-            self.tensor_map, evaluated_states[self.required_state],
+        hd5 = evaluated_states[self.required_state]
+        tensor = self.tensor_map.tensor_from_file(
+            self.tensor_map, hd5,
         )
+        return self.tensor_map.postprocess_tensor(tensor, self.augment, hd5)
 
 
 def tensor_generator_from_tensor_maps(
@@ -116,14 +122,17 @@ def tensor_generator_from_tensor_maps(
         tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
         batch_size: int, batch_function: BatchFunction,
         return_ids: bool = False,
+        num_workers: int = 0,
+        augment: bool = False,
 ) -> TensorGenerator:
     """For backwards compatibility."""
     sample_id_to_path = {i: path for i, path in enumerate(hd5_paths)}
     hd5_state = HD5State(sample_id_to_path)
-    input_tensor_getters = [TensorMapTensorGetter(tmap) for tmap in tensor_maps_in]
-    output_tensor_getters = [TensorMapTensorGetter(tmap) for tmap in tensor_maps_out]
+    input_tensor_getters = [TensorMapTensorGetter(tmap, augment) for tmap in tensor_maps_in]
+    output_tensor_getters = [TensorMapTensorGetter(tmap, augment) for tmap in tensor_maps_out]
     return TensorGenerator(
         input_tensor_getters=input_tensor_getters, output_tensor_getters=output_tensor_getters,
         sample_ids=list(sample_id_to_path), state_setters=[hd5_state],
         batch_size=batch_size, batch_function=batch_function, return_ids=return_ids,
+        num_workers=num_workers,
     )
