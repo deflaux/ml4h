@@ -1653,6 +1653,10 @@ TMAPS['lax_4ch_diastole_slice0_224_3d'] = TensorMap(
     'lax_4ch_diastole_slice0_224_3d', Interpretation.CONTINUOUS, shape=(224, 160, 1),
     normalization={'zero_mean_std1': True}, tensor_from_file=_slice_tensor('ukb_cardiac_mri/cine_segmented_lax_4ch/instance_0', 0),
 )
+TMAPS['lax_4ch_diastole_slice0_128_3d'] = TensorMap(
+    'lax_4ch_diastole_slice0_128_3d', Interpretation.CONTINUOUS, shape=(128, 128, 1),
+    normalization={'zero_mean_std1': True}, tensor_from_file=_slice_tensor('ukb_cardiac_mri/cine_segmented_lax_4ch/instance_0', 0),
+)
 TMAPS['lax_3ch_diastole_slice0_3d'] = TensorMap(
     'lax_3ch_diastole_slice0_3d', Interpretation.CONTINUOUS, shape=(200, 160, 1), loss='logcosh',
     normalization={'zero_mean_std1': True}, tensor_from_file=_slice_tensor('ukb_cardiac_mri/cine_segmented_lax_3ch/instance_0', 0),
