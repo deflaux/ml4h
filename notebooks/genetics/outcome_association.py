@@ -1,11 +1,38 @@
 # %%
 import numpy as np
 import pandas as pd
+%load_ext google.cloud.bigquery
 
-covariates = pd.read_csv('bq_phenotype.tsv', sep='\t')
-creatinine = pd.read_csv('bq_creatinine.tsv', sep='\t')
-covariates = pd.concat([covariates, creatinine])
-diseases = pd.read_csv('bq_disease.tsv', sep='\t')
+# %% 
+## %%bigquery covariates
+# select sample_id, FieldID, instance, value from `ukbb7089_202006.phenotype` 
+# where FieldID = 21001 -- bmi
+# or FieldID = 21003 -- age at assessment
+# or FieldID = 22001 -- genetic sex
+# or FieldID = 31 -- sex
+# or FieldID = 30690 -- cholesterol
+# or FieldID = 30760 -- HDL cholesterol
+# or FieldID = 20116 -- smoking
+# or FieldID = 4079 -- diastolic bp
+# or FieldID = 4080 -- systolic bp
+# or FieldID = 95 -- pulse rate
+# or FieldID = 53 -- instance 0 date
+# or FieldID = 30700 -- creatinine
+# # %%
+# covariates.to_csv('bq_covariates.tsv', sep='\t')
+
+# %%
+# %%bigquery diseases
+# select disease, sample_id, incident_disease, prevalent_disease, censor_date from `ukbb7089_202006.disease` 
+# where has_disease > 0.5
+
+# # %%
+# diseases.to_csv('bq_diseases.tsv', sep='\t')
+
+# %%
+
+covariates = pd.read_csv('bq_covariates.tsv', sep='\t')
+diseases = pd.read_csv('bq_diseases.tsv', sep='\t')
 diseases['censor_date'] = pd.to_datetime(diseases['censor_date'])
 
 # %%
