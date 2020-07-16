@@ -96,11 +96,12 @@ def predictions_to_pngs(
                         ax.imshow(data[input_map.input_name()][i, :, :, 0], cmap='gray', vmin=vmin, vmax=vmax)
                     elif input_map.axes() == 2:
                         ax.imshow(data[input_map.input_name()][i, :, :], cmap='gray', vmin=vmin, vmax=vmax)
-                    corner, width, height = _2d_bbox_to_corner_and_size(labels[tm.output_name()][i])
-                    ax.add_patch(matplotlib.patches.Rectangle(corner, width, height, linewidth=1, edgecolor='g', facecolor='none'))
-                    y_corner, y_width, y_height = _2d_bbox_to_corner_and_size(y[i])
-                    ax.add_patch(matplotlib.patches.Rectangle(y_corner, y_width, y_height, linewidth=1, edgecolor='y', facecolor='none'))
-                    logging.info(f"True BBox: {corner}, {width}, {height} Predicted BBox: {y_corner}, {y_width}, {y_height} Vmin {vmin} Vmax{vmax}")
+                    if tm.shape[-1] == 4:
+                        corner, width, height = _2d_bbox_to_corner_and_size(labels[tm.output_name()][i])
+                        ax.add_patch(matplotlib.patches.Rectangle(corner, width, height, linewidth=1, edgecolor='g', facecolor='none'))
+                        y_corner, y_width, y_height = _2d_bbox_to_corner_and_size(y[i])
+                        ax.add_patch(matplotlib.patches.Rectangle(y_corner, y_width, y_height, linewidth=1, edgecolor='y', facecolor='none'))
+                        logging.info(f"True BBox: {corner}, {width}, {height} Predicted BBox: {y_corner}, {y_width}, {y_height} Vmin {vmin} Vmax{vmax}")
                 plt.savefig(f"{folder}{sample_id}_bbox_batch_{i:02d}{IMAGE_EXT}")
         elif len(tm.shape) == 3:
             for i in range(y.shape[0]):
