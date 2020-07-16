@@ -21,6 +21,13 @@ import pandas as pd
 # # %%
 # covariates.to_csv('bq_covariates.tsv', sep='\t')
 
+# # %%
+# %%bigquery race
+# select sample_id, FieldID, instance, value from `ukbb7089_202006.phenotype` 
+# where FieldID = 21000 -- race
+# # %%
+# race.to_csv('bq_race.tsv', sep='\t')
+
 # %%
 # %%bigquery diseases
 # select disease, sample_id, incident_disease, prevalent_disease, censor_date from `ukbb7089_202006.disease` 
@@ -30,29 +37,35 @@ import pandas as pd
 # diseases.to_csv('bq_diseases.tsv', sep='\t')
 
 # %%
-
 covariates = pd.read_csv('bq_covariates.tsv', sep='\t')
+race = pd.read_csv('bq_race.tsv', sep='\t')
+covariates = pd.concat([covariates, race])
 diseases = pd.read_csv('bq_diseases.tsv', sep='\t')
 diseases['censor_date'] = pd.to_datetime(diseases['censor_date'])
 
 # %%
-pretest = pd.read_csv('pretest_inference_no_covs.tsv', sep='\t')
+pretest = pd.read_csv('pretest_inference_60k.tsv', sep='\t')
+resting = pd.read_csv('exp_resting_hr.csv', sep=',')
+resting['sample_id'] = resting['fpath'].str.split('/').str[-1].str.replace('.hd5', '').apply(int)
+resting = resting[['sample_id', 'resting_hr']]
+pretest = pretest.merge(resting, on='sample_id')
 all_ecgs = pd.concat([pretest])
-
 # %%
-pheno_dic = {21001: ['bmi', float],
+pheno_dic = {
              21003: ['age', float],
-             22001: ['genetic sex', int],
-             31: ['sex', int],
+             31: ['male', int],
+             21000: ['nonwhite', int],
+             21001: ['bmi', float],
              30690: ['cholesterol', float],
              30760: ['HDL', float],
-             20116: ['smoking', int],
              4079: ['diastolic_bp', int],
              4080: ['systolic_bp', int],
+             20116: ['current_smoker', int],
              30700: ['creatinine', float],
              53: ['instance0_date', pd.to_datetime]
             }
 
+missing = []
 for pheno in pheno_dic:
     tmp_covariates = covariates[(covariates['FieldID']==pheno) &\
                                 (covariates['instance']==0)]
@@ -63,15 +76,21 @@ for pheno in pheno_dic:
     if (pheno == 4079) or (pheno == 4080):
         tmp_covariates = tmp_covariates[['sample_id', 'value']].groupby('sample_id').mean().reset_index(level=0)
     
-    all_ecgs = all_ecgs.merge(tmp_covariates[['sample_id', 'value']], left_on=['sample_id'], right_on=['sample_id'])
+    all_ecgs = all_ecgs.merge(tmp_covariates[['sample_id', 'value']], left_on=['sample_id'], right_on=['sample_id'], how='inner')
     all_ecgs[pheno_dic[pheno][0]] = all_ecgs['value']
     all_ecgs = all_ecgs.drop(columns=['value'])
-    print(pheno_dic[pheno][0], len(tmp_covariates), len(all_ecgs))
+    missing.append(all_ecgs[pheno_dic[pheno][0]].isna().sum())
+    print(all_ecgs[pheno_dic[pheno][0]].isna().sum())
+all_ecgs['nonwhite'] = (all_ecgs['nonwhite'] != 1001).apply(float)
+all_ecgs['current_smoker'] = (all_ecgs['current_smoker'] == 2).apply(float)
+all_ecgs
+missing = pd.DataFrame({'missing': missing})
+missing
 
 # %%
 def gfr(x):
-    k = 0.7 + 0.2*x['sex']
-    alpha = -0.329 - 0.082*x['sex']
+    k = 0.7 + 0.2*x['male']
+    alpha = -0.329 - 0.082*x['male']
     f1 = x['creatinine']/88.4/k
     f1[f1>1.0] = 1.0
     f2 = x['creatinine']/88.4/k
@@ -79,8 +98,8 @@ def gfr(x):
     
     gfr = 141.0 * f1**alpha \
           *f2**(-1.209) \
-          *0.993**x['age'] \
-          *(1.0+0.018*(1.0-x['sex']))
+          *0.993**x['male'] \
+          *(1.0+0.018*(1.0-x['male']))
         
     return gfr
 all_ecgs['gfr'] = gfr(all_ecgs)   
@@ -92,6 +111,14 @@ f, ax = plt.subplots()
 f.set_size_inches(16, 9)
 all_ecgs.hist(ax=ax)
 plt.tight_layout()
+
+# %% 
+# Phenotype plots
+import seaborn as sns
+f, ax = plt.subplots()
+ax.hexbin(all_ecgs['50_hrr_actual'], 
+          all_ecgs['pretest_model_50_hrr_predicted'])
+
 
 # %%
 disease_list = [
