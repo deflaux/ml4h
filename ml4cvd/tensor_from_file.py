@@ -17,7 +17,7 @@ from ml4cvd.metrics import weighted_crossentropy
 from ml4cvd.tensor_writer_ukbb import tensor_path
 from ml4cvd.normalizer import ZeroMeanStd1, Standardize
 from ml4cvd.TensorMap import TensorMap, no_nans, str2date, make_range_validator, Interpretation
-from ml4cvd.defines import StorageType, MRI_TO_SEGMENT, MRI_SEGMENTED, MRI_LAX_SEGMENTED, MRI_SEGMENTED_CHANNEL_MAP, MRI_FRAMES
+from ml4cvd.defines import StorageType, MRI_TO_SEGMENT, MRI_SEGMENTED, MRI_LAX_SEGMENTED, MRI_SEGMENTED_CHANNEL_MAP, MRI_FRAMES, MRI_LVOT_SEGMENTED_CHANNEL_MAP
 from ml4cvd.defines import MRI_PIXEL_WIDTH, MRI_PIXEL_HEIGHT, MRI_SLICE_THICKNESS, MRI_PATIENT_ORIENTATION, MRI_PATIENT_POSITION
 from ml4cvd.defines import MRI_LAX_3CH_SEGMENTED_CHANNEL_MAP, MRI_LAX_4CH_SEGMENTED_CHANNEL_MAP, MRI_SAX_SEGMENTED_CHANNEL_MAP, MRI_AO_SEGMENTED_CHANNEL_MAP
 from ml4cvd.defines import ECG_REST_LEADS, ECG_REST_MEDIAN_LEADS, ECG_REST_AMP_LEADS, ECG_SEGMENTED_CHANNEL_MAP, MRI_LIVER_SEGMENTED_CHANNEL_MAP, MRI_LAX_2CH_SEGMENTED_CHANNEL_MAP
@@ -1869,10 +1869,13 @@ TMAPS['sax_segmented_b6_192'] = TensorMap(
     tensor_from_file=_segmented_dicom_slices('cine_segmented_sax_b6_annotated_'),
     channel_map=MRI_SAX_SEGMENTED_CHANNEL_MAP,
 )
-
 TMAPS['cine_segmented_ao_dist'] = TensorMap(
     'cine_segmented_ao_dist', Interpretation.CATEGORICAL, shape=(160, 192, 100, len(MRI_AO_SEGMENTED_CHANNEL_MAP)),
     tensor_from_file=_segmented_dicom_slices('cine_segmented_ao_dist_annotated_'), channel_map=MRI_AO_SEGMENTED_CHANNEL_MAP,
+)
+TMAPS['cine_segmented_lvot'] = TensorMap(
+    'cine_segmented_lvot', Interpretation.CATEGORICAL, shape=(208, 160, 50, len(MRI_LVOT_SEGMENTED_CHANNEL_MAP)),
+    tensor_from_file=_segmented_dicom_slices('cine_segmented_lvot_annotated_'), channel_map=MRI_LVOT_SEGMENTED_CHANNEL_MAP,
 )
 TMAPS['liver_shmolli_segmented'] = TensorMap(
     'liver_shmolli_segmented', Interpretation.CATEGORICAL, shape=(288, 384, len(MRI_LIVER_SEGMENTED_CHANNEL_MAP)),
