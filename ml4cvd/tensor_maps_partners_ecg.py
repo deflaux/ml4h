@@ -1420,16 +1420,16 @@ def build_ecg_from_date(
             return _ecg_tensor_from_date(tm, hd5, target_date_time, population_normalize)
         elif target in ['age', 'bmi']:
             tensor = np.zeros(tm.shape, dtype=np.float32)
-            tensor[0] = patient_data[patient_key][target]
-            logging.debug(f'Returning {tensor} for {target} key {patient_key}')
+            tensor[0] = patient_data[mrn_int][target]
+            logging.debug(f'Returning {tensor} for {target} key {mrn_int}')
             return tensor
         elif target == 'sex':
             tensor = np.zeros(tm.shape, dtype=np.float32)
-            if patient_data[patient_key][target].lower() == 'female':
+            if patient_data[mrn_int][target].lower() == 'female':
                 tensor[0] = 1.0
-            elif patient_data[patient_key][target].lower() == 'male':
+            elif patient_data[mrn_int][target].lower() == 'male':
                 tensor[1] = 1.0
-            logging.debug(f'Returning {tensor} for {patient_data[patient_key][target]} key {patient_key}')
+            logging.debug(f'Returning {tensor} for {patient_data[mrn_int][target]} key {mrn_int}')
             return tensor
         else:
             raise ValueError(f'{tm.name} has no way to handle target {target}')
