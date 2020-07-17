@@ -68,6 +68,10 @@ MRI_AO_SEGMENTED_CHANNEL_MAP = {
     'background': 0, 'svc': 1, 'pulmonary_artery': 2, 'ascending_aortic_wall': 3, 'ascending_aorta': 4,
     'descending_aortic_wall': 5, 'descending_aorta': 6, 'thorax': 7, 'body': 8, 'breast_implant': 9,
 }
+MRI_LVOT_SEGMENTED_CHANNEL_MAP = {
+    'background': 0, 'body': 1, 'lungs': 2, 'RV_wall': 3, 'RV_cavity': 4, 'LV_wall': 5, 'LV_cavity': 6,
+    'aortic_root': 7, 'ascending_aorta': 8, 'pulmonary_artery': 9, 'ascending_aortic_wall': 10, 'LVOT': 11,
+}
 MRI_LIVER_SEGMENTED_CHANNEL_MAP = {'background': 0, 'liver': 1, 'inferior_vena_cava': 2, 'abdominal_aorta': 3, 'body': 4}
 
 CAD_ICDS = [
