@@ -1247,6 +1247,7 @@ def csv_field_tensor_from_file(
         tensor = np.zeros(tm.shape, dtype=np.float32)
         if tm.is_categorical():
             tensor[value_table[mrn_int]] = 1.0
+            logging.debug(f'Value table got {tensor} for {mrn_int} {tm.name} {value_table[mrn_int]}')
         elif tm.is_continuous():
             tensor[0] = value_table[mrn_int]
         else:
