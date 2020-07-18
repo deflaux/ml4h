@@ -325,7 +325,7 @@ def make_partners_ecg_tensor(key: str, fill: float = 0, channel_prefix: str = ''
         for i, ecg_date in enumerate(ecg_dates):
             path = _make_hd5_path(tm, ecg_date, key)
             try:
-                data = decompress_data(data_compressed=hd5[path][()], dtype='str')
+                data = decompress_data(data_compressed=hd5[path][()], dtype=hd5[path].attrs['dtype'])
                 if tm.interpretation == Interpretation.CATEGORICAL:
                     matched = False
                     data = f'{channel_prefix}{data}'
@@ -931,6 +931,29 @@ TMAPS[task] = TensorMap(
     shape=(None, 1),
     time_series_limit=0,
     validator=make_range_validator(-180, 180),
+)
+
+
+task = "partners_ecg_measuredamplitudepeak_r"
+TMAPS[task] = TensorMap(
+    task,
+    interpretation=Interpretation.CONTINUOUS,
+    path_prefix=PARTNERS_PREFIX,
+    loss='logcosh',
+    tensor_from_file=make_partners_ecg_tensor(key="measuredamplitudepeak_IE_R", fill=999),
+    shape=(None, 12),
+    time_series_limit=0,
+)
+
+
+task = "partners_ecg_acquisitiondevice"
+TMAPS[task] = TensorMap(
+    task,
+    interpretation=Interpretation.LANGUAGE,
+    path_prefix=PARTNERS_PREFIX,
+    tensor_from_file=make_partners_ecg_tensor(key="acquisitiondevice", fill=999),
+    shape=(None, 1),
+    time_series_limit=0,
 )
 
 
