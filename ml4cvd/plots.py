@@ -190,8 +190,6 @@ def plot_metric_history(history, training_steps: int, title: str, prefix='./figu
     logging.info(f"Saved learning curves at:{figure_path}")
 
 
-<<<<<<< HEAD
-=======
 def plot_rocs(predictions: Dict[str, np.ndarray], truth: np.ndarray, labels: Dict[str, int], title: str, prefix: str = './figures/'):
     """Plot Receiver Operating Characteristic (ROC) curves from a dictionary of predictions
 
@@ -341,7 +339,6 @@ def plot_prediction_calibration(
     plt.clf()
 
 
->>>>>>> master
 def plot_scatter(prediction, truth, title, prefix='./figures/', paths=None, top_k=3, alpha=0.5):
     margin = float((np.max(truth)-np.min(truth))/100)
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(SUBPLOT_SIZE, 2 * SUBPLOT_SIZE))
@@ -493,9 +490,6 @@ def subplot_comparison_scatters(
     logging.info(f"Saved scatter comparisons together at: {figure_path}")
 
 
-<<<<<<< HEAD
-def plot_survival(prediction, truth, title, days_window, prefix='./figures/', paths=None):
-=======
 def plot_survivorship(
     events: np.ndarray, days_follow_up: np.ndarray, predictions: np.ndarray,
     title: str, prefix: str = './figures/', days_window: int = 1825,
@@ -572,7 +566,6 @@ def plot_survival(
 
     :return: Dictionary mapping metric names to their floating point values
     """
->>>>>>> master
     c_index, concordant, discordant, tied_risk, tied_time = concordance_index(prediction, truth)
     logging.info(f"C-index:{c_index} concordant:{concordant} discordant:{discordant} tied_risk:{tied_risk} tied_time:{tied_time}")
     intervals = truth.shape[-1] // 2
@@ -594,14 +587,10 @@ def plot_survival(
     plt.plot(range(0, days_window, 1 + days_window // intervals), survivorship, marker='o', label='Survivorship')
     plt.xlabel('Follow up time (days)')
     plt.ylabel('Proportion Surviving')
-<<<<<<< HEAD
-    plt.title(f'{title} Enrolled: {truth.shape[0]}, Censored: {cumulative_censored[-1]}, Failed: {cumulative_sick[-1]}\n')
-=======
     plt.title(
         f'{title}\nEnrolled: {truth.shape[0]}, Censored: {cumulative_censored[-1]:.0f}, {100 * (cumulative_censored[-1] / truth.shape[0]):2.1f}%, '
         f'Events: {cumulative_sick[-1]:.0f}, {100 * (cumulative_sick[-1] / truth.shape[0]):2.1f}%\nMax follow up: {days_window} days, {days_window // 365} years.',
     )
->>>>>>> master
     plt.legend(loc="upper right")
 
     figure_path = os.path.join(prefix, 'proportional_hazards_' + title + IMAGE_EXT)
@@ -942,33 +931,6 @@ def _plot_partners_text(data: Dict[str, Union[np.ndarray, str, Dict]], fig: plt.
     fig.text(0.17 / w, 7.35 / h, f"Room: ", weight='bold')  # TODO room?
     fig.text(0.17 / w, 7.21 / h, f"Loc: {data['location']}", weight='bold')
 
-<<<<<<< HEAD
-    ax0.text(0.0, 0.75, f"{dob} ({age} yr)", weight='bold')  # TODO age units
-    gender = {value: key for key, value in data['gender'].items()}
-    ax0.text(0.0, 0.67, f"{gender[1]}".title(), weight='bold')
-    ax0.text(0.0, 0.51, f"Room: ", weight='bold')  # TODO room?
-    ax0.text(0.0, 0.43, f"Loc: {data['location']}", weight='bold')
-
-    ax0.text(0.15, 0.75, f"Vent. rate", weight='bold')
-    ax0.text(0.15, 0.67, f"PR interval", weight='bold')
-    ax0.text(0.15, 0.59, f"QRS duration", weight='bold')
-    ax0.text(0.15, 0.51, f"QT/QTc", weight='bold')
-    ax0.text(0.15, 0.43, f"P-R-T axes", weight='bold')
-
-    ax0.text(0.315, 0.75, f"{int(data['rate_md'])}", weight='bold', ha='right')
-    ax0.text(0.315, 0.67, f"{int(data['pr_md'])}", weight='bold', ha='right')
-    ax0.text(0.315, 0.59, f"{int(data['qrs_md'])}", weight='bold', ha='right')
-    ax0.text(0.315, 0.51, f"{int(data['qt_md'])}/{int(data['qtc_md'])}", weight='bold', ha='right')
-    ax0.text(0.315, 0.43, f"{int(data['paxis_md'])}   {int(data['raxis_md'])}", weight='bold', ha='right')
-
-    ax0.text(0.35, 0.75, f"BPM", weight='bold', ha='right')
-    ax0.text(0.35, 0.67, f"ms", weight='bold', ha='right')
-    ax0.text(0.35, 0.59, f"ms", weight='bold', ha='right')
-    ax0.text(0.35, 0.51, f"ms", weight='bold', ha='right')
-    ax0.text(0.35, 0.43, f"{int(data['taxis_md'])}", weight='bold', ha='right')
-
-    ax0.text(0.4, 0.43, f"{data['read_md_raw']}", wrap=True, weight='bold')
-=======
     fig.text(2.15 / w, 7.77 / h, f"Vent. rate", weight='bold')
     fig.text(2.15 / w, 7.63 / h, f"PR interval", weight='bold')
     fig.text(2.15 / w, 7.49 / h, f"QRS duration", weight='bold')
@@ -988,7 +950,6 @@ def _plot_partners_text(data: Dict[str, Union[np.ndarray, str, Dict]], fig: plt.
     fig.text(4.30 / w, 7.21 / h, f"{int(data['taxis_md'])}", weight='bold', ha='right')
 
     fig.text(4.75 / w, 7.21 / h, f"{data['read_md']}", wrap=True, weight='bold')
->>>>>>> master
 
     # TODO tensorize these values from XML
     fig.text(1.28 / w, 6.65 / h, f"Technician: {''}", weight='bold')
@@ -1214,21 +1175,12 @@ def _plot_partners_figure(
 
 def plot_partners_ecgs(args):
     plot_tensors = [
-<<<<<<< HEAD
-        'partners_ecg_patientid',   'partners_ecg_firstname', 'partners_ecg_lastname',
-        'partners_ecg_gender',      'partners_ecg_dob',       'partners_ecg_age',
-        'partners_ecg_datetime',    'partners_ecg_sitename',  'partners_ecg_location',
-        'partners_ecg_read_md_raw', 'partners_ecg_taxis_md',  'partners_ecg_rate_md',
-        'partners_ecg_pr_md',       'partners_ecg_qrs_md',    'partners_ecg_qt_md',
-        'partners_ecg_paxis_md',    'partners_ecg_raxis_md',  'partners_ecg_qtc_md',
-=======
         'partners_ecg_patientid', 'partners_ecg_firstname', 'partners_ecg_lastname',
         'partners_ecg_sex',       'partners_ecg_dob',       'partners_ecg_age',
         'partners_ecg_datetime',  'partners_ecg_sitename',  'partners_ecg_location',
         'partners_ecg_read_md',   'partners_ecg_taxis_md',  'partners_ecg_rate_md',
         'partners_ecg_pr_md',     'partners_ecg_qrs_md',    'partners_ecg_qt_md',
         'partners_ecg_paxis_md',  'partners_ecg_raxis_md',  'partners_ecg_qtc_md',
->>>>>>> master
     ]
     voltage_tensor = 'partners_ecg_2500_raw'
     from ml4cvd.tensor_maps_partners_ecg_labels import TMAPS
