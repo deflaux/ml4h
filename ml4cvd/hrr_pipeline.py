@@ -819,6 +819,43 @@ def _evaluate_models():
     plt.savefig(os.path.join(figure_folder, f'bootstrap_distributions.png'))
 
 
+def plot_training_curves():
+    _, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(20, 20), sharey=True)
+    for setting in MODEL_SETTINGS:
+        model_id = setting.model_id
+        model_losses = []
+        model_val_losses = []
+        for split_idx in range(K_SPLIT):
+            history = pd.read_csv(history_tsv(split_idx, model_id), sep='\t')
+            model_losses.append(history['loss'])
+            model_val_losses.append(history['val_loss'])
+        max_len = max(map(len, model_losses))
+        loss_array = np.full((K_SPLIT, max_len), np.nan)
+        val_loss_array = np.full((K_SPLIT, max_len), np.nan)
+        for loss, val_loss, split_idx, setting in zip(model_losses, model_val_losses, range(K_SPLIT), MODEL_SETTINGS):
+            loss_array[i, :len(loss)] = loss
+            val_loss_array[i, :len(loss)] = val_loss
+
+        epoch = list(range(max_len))
+        ax1.plot(epoch, loss_array.mean(axis=0), label=f'{setting.model_id} mean loss')
+        ax1.fill_between(
+            epoch, loss_array.min(axis=0), loss_array.max(axis=0),
+            label=f'{setting.model_id} min and max loss', alpha=.1,
+        )
+        ax2.plot(epoch, val_loss_array.mean(axis=0), label=f'{setting.model_id} mean validation loss')
+        ax2.fill_between(
+            epoch, val_loss_array.min(axis=0), val_loss_array.max(axis=0),
+            label=f'{setting.model_id} min and max validation loss', alpha=.1,
+        )
+    ax1.legend()
+    ax2.legend()
+    ax1.set_xlabel('Epoch')
+    ax2.set_xlabel('Epoch')
+    ax1.set_ylabel('Loss')
+    plt.tight_layout()
+    figure_folder = os.path.join(FIGURE_FOLDER, f'model_results')
+    plt.savefig(os.path.join(figure_folder, f'training_curves.png'))
+
 
 if __name__ == '__main__':
     """Always remakes figures"""
@@ -874,3 +911,4 @@ if __name__ == '__main__':
             logging.info(f'Running inference on split {i}.')
             _infer_models_split_idx(i)
     _evaluate_models()
+    plot_training_curves()
