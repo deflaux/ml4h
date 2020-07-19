@@ -840,6 +840,8 @@ def _should_error_detect(tm: TensorMap) -> bool:
             return tm.axes() > 2
         else:
             return tm.axes() > 1
+    if tm.is_language():
+        return False
     return True
 
 
@@ -915,7 +917,7 @@ def explore(args):
                 logging.info(f"Saved summary stats of {Interpretation.CATEGORICAL} {tm.name} tmaps to {fpath}")
 
         # Plot counts of categorical TMAPs over time
-        if args.time_tensor:
+        if args.time_tensor and (args.time_tensor in args.input_tensors):
             freq = args.time_frequency  # Monthly frequency
             time_tensors = pd.to_datetime(df[args.time_tensor])
             min_date = time_tensors.min()
