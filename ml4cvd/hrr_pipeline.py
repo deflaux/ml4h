@@ -12,7 +12,7 @@ from sklearn.model_selection import KFold, train_test_split
 from multiprocessing import Pool, cpu_count
 import matplotlib.pyplot as plt
 from tensorflow.keras import Model
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 import datetime
 import gc
 
@@ -739,6 +739,23 @@ def _dist_plot(ax, truth, prediction, title):
     ax.legend(loc="upper left")
 
 
+def bootstrap_compare_models(
+        model_ids: List[str], inference_result: pd.DataFrame,
+        num_bootstraps: int = 100, bootstrap_frac: float = .5,
+) -> pd.DataFrame:
+    performance = {'model': [], 'R2': []}
+    actual_col = time_to_actual_hrr_col(HRR_TIME)
+    pred_cols = {m_id: time_to_pred_hrr_col(HRR_TIME, m_id) for m_id in model_ids}
+    for _ in range(num_bootstraps):
+        df = inference_result.sample(frac=bootstrap_frac)
+        for m_id, pred_col in pred_cols.items():
+            pred = df[pred_col]
+            R2 = coefficient_of_determination(df[actual_col], pred)
+            performance['model'].append(m_id)
+            performance['R2'].append(R2)
+    return pd.DataFrame(performance)
+
+
 def _evaluate_models():
     inference_dfs = []
     for i in range(K_SPLIT):
@@ -760,14 +777,12 @@ def _evaluate_models():
         _scatter_plot(ax, actual, pred, f'HRR at recovery time {HRR_TIME}')
         plt.tight_layout()
         plt.savefig(os.path.join(figure_folder, f'{m_id}_model_correlations.png'))
-        plt.clf()
 
         # distributions of predicted and actual measurements
         _, ax = plt.subplots(figsize=(ax_size, ax_size))
         _dist_plot(ax, actual, pred, f'HRR at recovery time {HRR_TIME}')
         plt.tight_layout()
         plt.savefig(os.path.join(figure_folder, f'{m_id}_distributions.png'))
-        plt.clf()
 
         R2s = [
             coefficient_of_determination(
@@ -782,8 +797,27 @@ def _evaluate_models():
     R2_df = pd.concat(R2_dfs)
     plt.figure(figsize=(ax_size, ax_size))
     sns.boxplot(x='model', y='R2', data=R2_df)
-    plt.savefig(os.path.join(figure_folder, f'model_performance_comparison.png'))
-    plt.clf()
+    plt.savefig(os.path.join(figure_folder, f'model_performance_comparison_{K_SPLIT}_fold.png'))
+    plt.close('all')
+
+    model_ids = list(R2_df['model'])
+    logging.info('Beginning bootstrap performance evaluation.')
+    R2_df = bootstrap_compare_models(model_ids, inference_df)
+    plt.figure(figsize=(ax_size, ax_size))
+    sns.violinplot(x='model', y='R2', data=R2_df)
+    plt.savefig(os.path.join(figure_folder, f'bootstrap_violin.png'))
+    sns.violinplot(x='model', y='R2', data=R2_df)
+    plt.savefig(os.path.join(figure_folder, f'bootstrap_box.png'))
+    plt.close('all')
+
+    plt.figure(figsize=(ax_size, ax_size))
+    for m_id in model_ids:
+        R2 = R2_df[R2_df['model'] == m_id]
+        color = sns.distplot(R2, label=m_id)[0].get_color()
+        plt.axvline(R2.mean(), color=color, label=f'{m_id} mean ({R2.mean():.3f})', linestyle='--')
+    plt.legend(loc="upper right")
+    plt.savefig(os.path.join(figure_folder, f'bootstrap_distributions.png'))
+
 
 
 if __name__ == '__main__':
