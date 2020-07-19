@@ -830,7 +830,7 @@ def _evaluate_models():
 
 
 def plot_training_curves():
-    _, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(20, 20), sharey=True)
+    _, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(20, 10), sharey=True)
     for setting in MODEL_SETTINGS:
         model_id = setting.model_id
         model_losses = []
@@ -842,20 +842,20 @@ def plot_training_curves():
         max_len = max(map(len, model_losses))
         loss_array = np.full((K_SPLIT, max_len), np.nan)
         val_loss_array = np.full((K_SPLIT, max_len), np.nan)
-        for loss, val_loss, split_idx, setting in zip(model_losses, model_val_losses, range(K_SPLIT), MODEL_SETTINGS):
-            loss_array[i, :len(loss)] = loss
-            val_loss_array[i, :len(loss)] = val_loss
+        for loss, val_loss, split_idx in zip(model_losses, model_val_losses, range(K_SPLIT)):
+            loss_array[split_idx, :len(loss)] = loss
+            val_loss_array[split_idx, :len(loss)] = val_loss
 
         epoch = list(range(max_len))
         ax1.plot(epoch, loss_array.mean(axis=0), label=f'{setting.model_id} mean loss')
         ax1.fill_between(
             epoch, loss_array.min(axis=0), loss_array.max(axis=0),
-            label=f'{setting.model_id} min and max loss', alpha=.1,
+            label=f'{setting.model_id} min and max loss', alpha=.2,
         )
         ax2.plot(epoch, val_loss_array.mean(axis=0), label=f'{setting.model_id} mean validation loss')
         ax2.fill_between(
             epoch, val_loss_array.min(axis=0), val_loss_array.max(axis=0),
-            label=f'{setting.model_id} min and max validation loss', alpha=.1,
+            label=f'{setting.model_id} min and max validation loss', alpha=.2,
         )
     ax1.legend()
     ax2.legend()
