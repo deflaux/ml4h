@@ -11,6 +11,7 @@ from itertools import combinations
 from sklearn.model_selection import KFold, train_test_split
 from multiprocessing import Pool, cpu_count
 import matplotlib.pyplot as plt
+from matplotlib import cm
 from tensorflow.keras import Model
 from collections import namedtuple, defaultdict
 import datetime
@@ -40,7 +41,7 @@ LEAD_NAMES = 'lead_I', 'lead_2', 'lead_3'
 
 TENSOR_FOLDER = '/mnt/disks/ecg-bike-tensors/2019-10-10/'
 USER = 'ndiamant'
-OUTPUT_FOLDER = f'/home/{USER}/ml/hrr_results'
+OUTPUT_FOLDER = f'/home/{USER}/ml/hrr_results_warp_dropout'
 TRAIN_CSV_NAME = 'train_ids.csv'
 VALID_CSV_NAME = 'valid_ids.csv'
 TEST_CSV_NAME = 'test_ids.csv'
@@ -61,7 +62,7 @@ VALIDATION_SPLIT = .1
 DROPOUT = True
 BATCH_NORM = True
 AUG_RATE = .5
-OVERWRITE_MODELS = True
+OVERWRITE_MODELS = False
 
 PRETEST_MODEL_LEADS = [0]
 SEED = 217
@@ -800,23 +801,32 @@ def _evaluate_models():
     plt.savefig(os.path.join(figure_folder, f'model_performance_comparison_{K_SPLIT}_fold.png'))
     plt.close('all')
 
-    model_ids = list(R2_df['model'])
+    model_ids = list(R2_df['model'].unique())
     logging.info('Beginning bootstrap performance evaluation.')
-    R2_df = bootstrap_compare_models(model_ids, inference_df)
+    R2_df = bootstrap_compare_models(model_ids, inference_df, num_bootstraps=10000, bootstrap_frac=.5)
+
     plt.figure(figsize=(ax_size, ax_size))
     sns.violinplot(x='model', y='R2', data=R2_df)
     plt.savefig(os.path.join(figure_folder, f'bootstrap_violin.png'))
-    sns.violinplot(x='model', y='R2', data=R2_df)
-    plt.savefig(os.path.join(figure_folder, f'bootstrap_box.png'))
-    plt.close('all')
 
     plt.figure(figsize=(ax_size, ax_size))
-    for m_id in model_ids:
-        R2 = R2_df[R2_df['model'] == m_id]
-        color = sns.distplot(R2, label=m_id)[0].get_color()
+    sns.boxplot(x='model', y='R2', data=R2_df)
+    plt.savefig(os.path.join(figure_folder, f'bootstrap_box.png'))
+
+    plt.figure(figsize=(ax_size, ax_size))
+    cmap = cm.get_cmap('rainbow')
+    final_model = MODEL_SETTINGS[-1].model_id
+    final_R2 = R2_df['R2'][R2_df['model'] == final_model].values
+    for i, m_id in enumerate(model_ids):
+        R2 = R2_df['R2'][R2_df['model'] == m_id].values
+        color = cmap(i / K_SPLIT)
+        sns.distplot(R2, color=color)
         plt.axvline(R2.mean(), color=color, label=f'{m_id} mean ({R2.mean():.3f})', linestyle='--')
+        logging.info(f'Probability {final_model} is not better than {m_id} (null hypothesis) is {(R2 >= final_R2).mean():.3%}.')
+    plt.xlabel('R2')
     plt.legend(loc="upper right")
     plt.savefig(os.path.join(figure_folder, f'bootstrap_distributions.png'))
+    plt.close('all')
 
 
 def plot_training_curves():
@@ -893,7 +903,7 @@ if __name__ == '__main__':
     plot_pretest_label_summary_stats()
     if MAKE_SPLIT_CSVS:
         build_csvs()
-    aug_demo_paths = np.random.choice(sorted(os.listdir(TENSOR_FOLDER)), 3)
+    aug_demo_paths = np.random.choice(sorted(os.listdir(TENSOR_FOLDER)), 1)
     for setting in MODEL_SETTINGS:
         for path in aug_demo_paths:
             path = os.path.join(TENSOR_FOLDER, path)
