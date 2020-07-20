@@ -22,6 +22,79 @@ YEAR_DAYS = 365.26
 INCIDENCE_CSV = '/media/erisone_snf13/lc_outcomes.csv'
 CARDIAC_SURGERY_OUTCOMES_CSV = '/data/sts-data/mgh-preop-ecg-outcome-labels.csv'
 PARTNERS_PREFIX = 'partners_ecg_rest'
+measurement_matrix_leads = {
+    'I': 0, 'II': 1, 'V1': 2, 'V2': 3, 'V3': 4, 'V4':5, 'V5': 6, 'V6': 7, 'III': 8, 'aVR': 9, 'aVL': 10, 'aVF': 11
+}
+# Measurement matrix TMAPS -- indices from MUSE XML dev manual, page 49 and following
+measurement_matrix_global_measures = {
+    'pon': 1,       # P-wave onset in median beat (in samples)
+    'poff': 2,      # P-wave offset in median beat
+    'qon': 3,       # Q-Onset in median beat
+    'qoff': 4,      # Q-Offset in median beat
+    'ton': 5,       # T-Onset in median beat
+    'toff': 6,      # T-Offset in median beat
+    'nqrs': 7,      # Number of QRS Complexes
+    'qrsdur': 8,    # QRS Duration
+    'qt': 9,        # QT Interval
+    'qtc': 10,      # QT Corrected
+    'print': 11,    # PR Interval
+    'vrate': 12,    # Ventricular Rate
+    'avgrr': 13,    # Average R-R Interval
+}
+measurement_matrix_lead_measures = {
+    'pona': 1,      # P Wave amplitude at P-onset
+    'pamp': 2,      # P wave amplitude
+    'pdur': 3,      # P wave duration
+    'bmpar': 4,     # P wave area
+    'bmpi': 5,      # P wave intrinsicoid (time from P onset to peak of P)
+    'ppamp': 6,     # P Prime amplitude
+    'ppdur': 7,     # P Prime duration
+    'bmppar': 8,    # P Prime area
+    'bmppi': 9,     # P Prime intrinsicoid (time from P onset to peak of P')
+    'qamp': 10,     # Q wave amplitude
+    'qdur': 11,     # Q wave duration
+    'bmqar': 12,    # Q wave area
+    'bmqi': 13,     # Q intrinsicoid (time from Q onset to peak of Q)
+    'ramp': 14,     # R amplitude
+    'rdur': 15,     # R duration
+    'bmrar': 16,    # R wave area
+    'bmri': 17,     # R intrinsicoid (time from R onset to peak of R)
+    'samp': 18,     # S amplitude
+    'sdur': 19,     # S duration
+    'bmsar': 20,    # S wave area
+    'bmsi': 21,     # S intrinsicoid (time from Q onset to peak of S)
+    'rpamp': 22,    # R Prime amplitude
+    'rpdur': 23,    # R Prime duration
+    'bmrpar': 24,   # R Prime wave area
+    'bmrpi': 25,    # R Prime intrinsicoid (time from Q onset to peak of R Prime)
+    'spamp': 26,    # S Prime Amplitude
+    'spdur': 27,    # S Prime Duration
+    'bmspar': 28,   # S Prime wave area
+    'bmspi': 29,    # S intriniscoid (time from Q onset to peak of S prime)
+    'stj': 30,      # STJ point, End of QRS Point Amplitude
+    'stm': 31,      # STM point, Middle of the ST Segment Amplitude
+    'ste': 32,      # STE point, End of ST Segment Amplitude
+    'mxsta': 33,    # Maximum of STJ, STM, STE Amplitudes
+    'mnsta': 34,    # Minimum of STJ and STM Amplitudes
+    'spta': 35,     # Special T-Wave amplitude
+    'qrsa': 36,     # Total QRS area
+    'qrsdef': 37,   # QRS Deflection
+    'maxra': 38,    # Maximum R Amplitude (R or R Prime)
+    'maxsa': 39,    # Maximum S Amplitude (S or S Prime)
+    'tamp': 40,     # T amplitude
+    'tdur': 41,     # T duration
+    'bmtar': 42,    # T wave area
+    'bmti': 43,     # T intriniscoid (time from STE to peak of T)
+    'tpamp': 44,    # T Prime amplitude
+    'tpdur': 45,    # T Prime duration
+    'bmtpar': 46,   # T Prime area
+    'bmtpi': 47,    # T Prime intriniscoid (time from STE to peak of T)
+    'tend': 48,     # T Amplitude at T offset
+    'parea': 49,    # P wave area, includes P and P Prime
+    'qrsar': 50,    # QRS area
+    'tarea': 51,    # T wave area, include T and T Prime
+    'qrsint': 52    # QRS intriniscoid (see following)
+}
 
 
 def _hd5_filename_to_mrn_int(filename: str) -> int:
@@ -1660,60 +1733,7 @@ def partners_channel_string_bias(hd5_key, synonyms={}, unspecified_key='unspecif
     return tensor_from_string
 
 
-bias_dic = {'acquisitionyear': {'2000': 0,
-                                '2001': 1,
-                                '1999': 2,
-                                '2002': 3,
-                                '2015': 4,
-                                '2016': 5,
-                                '2017': 6,
-                                '2012': 7,
-                                '2011': 8,
-                                '2014': 9,
-                                '2010': 10,
-                                '2003': 11,
-                                '2013': 12,
-                                '2007': 13,
-                                '2009': 14,
-                                '2008': 15,
-                                '2004': 16,
-                                '2006': 17,
-                                '2005': 18,
-                                '1998': 19,
-                                '2018': 20,
-                                '2019': 21,
-                                'unspecified': 22},
-            'acquisitionsoftwareversion': {'010A': 0,
-                                           '009A': 1,
-                                           '007A.2': 2,
-                                           '005A.1': 3,
-                                           '006A': 4,
-                                           '009C': 5,
-                                           '010B': 6,
-                                           '008A': 7,
-                                           '008B': 8,
-                                           '005A': 9,
-                                           '5.7': 10,
-                                           '6.7': 11,
-                                           '6.4': 12,
-                                           '7.2': 13,
-                                           '7.3': 14,
-                                           '009B.1': 15,
-                                           '5.4': 16,
-                                           '003A': 17,
-                                           '5.3': 18,
-                                           '1.0.2': 19,
-                                           'V6.5': 20,
-                                           '6.3': 21,
-                                           '6.8': 22,
-                                           '5.5': 23,
-                                           '008C': 24,
-                                           'V6.73': 25,
-                                           'V6.51': 26,
-                                           '010Bsp1': 27,
-                                           'V6.72': 28,
-                                           '010A.1': 29,
-                                           'unspecified': 30},
+bias_dic = {
             'acquisitiondevice': {'MAC': 0,
                                   'MAC55': 1,
                                   'MAC5K': 2,
@@ -1786,38 +1806,7 @@ bias_dic = {'acquisitionyear': {'2000': 0,
                              '101-BEACON HILL PRIMARY NR': 0,
                              '138-ED OBSERVATION UNIT': 0,
                              '147-DANVERS ACC CARDIOLOGY PRTCE': 1,
-                             'unspecified': 0},
-            'testreason': {'V72.81': 0,
-                           '786.50': 1,
-                           'NOBILL': 2,
-                           '401.9': 3,
-                           '00': 4,
-                           '785.1': 5,
-                           '57': 6,
-                           '786.09': 7,
-                           'V71.7': 8,
-                           '99': 9,
-                           '429.9': 10,
-                           '780.2': 11,
-                           '427.9': 12,
-                           '414.00': 13,
-                           'Arrhythmia~I49.9': 14,
-                           '1': 15,
-                           '780.4': 16,
-                           '427.31': 17,
-                           'Chest pain / anginal equivalent~R07.9,I20.8': 18,
-                           '410.90': 19,
-                           '789.00': 20,
-                           '786.59': 21,
-                           '15': 22,
-                           '11': 23,
-                           'EKG': 24,
-                           '6': 25,
-                           '411.1': 26,
-                           '428.0': 27,
-                           '414.04': 28,
-                           '2': 29,
-                           'unspecified': 30}}
+                             'unspecified': 0}}
 
 
 def _clean_variable_name(s):
@@ -2057,3 +2046,49 @@ for feature in partners_ecg_features_dic:
         tensor_from_file=make_partners_ecg_tensor(key=feature),
         shape=(1,)
     )
+
+
+def make_measurement_matrix_from_file(key: str, lead: str = None):
+    # First 18 words of measurement matrix are for global measurements, then each lead has 53*2 words
+    lead_start = 18
+    lead_words = 53 * 2
+
+    def measurement_matrix_from_file(tm: TensorMap, hd5: h5py.File, dependents: Dict = {}):        
+        ecg_dates = _get_ecg_dates(tm, hd5)
+        dynamic, shape = _is_dynamic_shape(tm, len(ecg_dates))
+        tensor = np.zeros(shape, dtype=float)
+        for i, ecg_date in enumerate(ecg_dates):
+            path = _make_hd5_path(tm, ecg_date, 'measurementmatrix')
+            matrix = decompress_data(data_compressed=hd5[path][()], dtype=hd5[path].attrs['dtype'])
+            if lead is None:
+                idx = measurement_matrix_global_measures[key]
+            else:
+                idx = lead_start + measurement_matrix_leads[lead] * lead_words + (measurement_matrix_lead_measures[key]-1)*2+1
+            tensor[i] = matrix[idx]
+        return tensor
+    return measurement_matrix_from_file
+
+
+for measurement in measurement_matrix_global_measures:
+    TMAPS[f'measurementmatrix_{measurement}'] = TensorMap(
+        f'measurementmatrix_{measurement}',
+        interpretation=Interpretation.CONTINUOUS,
+        shape=(None, 1),
+        path_prefix=PARTNERS_PREFIX,
+        loss='logcosh',
+        time_series_limit=0,
+        tensor_from_file=make_measurement_matrix_from_file(measurement)
+    )
+
+
+for lead in measurement_matrix_leads:
+    for measurement in measurement_matrix_lead_measures:
+        TMAPS[f'measurementmatrix_{lead}_{measurement}'] = TensorMap(
+              f'measurementmatrix_{lead}_{measurement}',
+              interpretation=Interpretation.CONTINUOUS,
+              shape=(None, 1),
+              path_prefix=PARTNERS_PREFIX,
+              loss='logcosh',
+              time_series_limit=0,
+              tensor_from_file=make_measurement_matrix_from_file(measurement, lead=lead)
+        )
