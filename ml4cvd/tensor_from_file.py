@@ -1994,7 +1994,7 @@ def sax_tensor(b_series_prefix):
             for b in range(tm.shape[-1]):
                 try:
                     tm_shape = (tm.shape[0], tm.shape[1])
-                    tensor[:, :, b] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{tm.path_prefix}/{b_series_prefix}_frame_b{b}/instance_0'], dtype=np.float32))
+                    tensor[:, :, b] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{tm.path_prefix}/{b_series_prefix}/{(50*b)+1}/instance_0'], dtype=np.float32))
                 except KeyError:
                     missing += 1
                     tensor[:, :, b] = 0
@@ -2002,9 +2002,9 @@ def sax_tensor(b_series_prefix):
             for b in range(tm.shape[-2]):
                 try:
                     tm_shape = (tm.shape[0], tm.shape[1])
-                    tensor[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{tm.path_prefix}/{b_series_prefix}_frame_b{b}/instance_0'], dtype=np.float32))
-                    index_tensor = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{tm.path_prefix}/{b_series_prefix}_mask_b{b}/instance_0'], dtype=np.float32))
+                    tensor[:, :, b, 0] = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{tm.path_prefix}/{b_series_prefix}/{(50*b)+1}/instance_0'], dtype=np.float32))
                     if tm.dependent_map is not None:
+                        index_tensor = _pad_or_crop_array_to_shape(tm_shape, np.array(hd5[f'{tm.path_prefix}/{b_series_prefix}_mask_b{b}/instance_0'], dtype=np.float32))
                         dependents[tm.dependent_map][:, :, b, :] = to_categorical(index_tensor, tm.dependent_map.shape[-1])
                 except KeyError:
                     missing += 1
@@ -2028,8 +2028,7 @@ TMAPS['sax_all_diastole_segmented_weighted'] = TensorMap(
 )
 
 TMAPS['sax_all_diastole'] = TensorMap(
-    'sax_all_diastole', shape=(256, 256, 13, 1), tensor_from_file=sax_tensor('diastole'), path_prefix='ukb_cardiac_mri',
-    dependent_map=TMAPS['sax_all_diastole_segmented'],
+    'sax_all_diastole', shape=(256, 256, 13, 1), tensor_from_file=sax_tensor('cine_segmented_sax_inlinevf'), path_prefix='ukb_cardiac_mri',
 )
 TMAPS['sax_all_diastole_weighted'] = TensorMap(
     'sax_all_diastole', shape=(256, 256, 13, 1), tensor_from_file=sax_tensor('diastole'), path_prefix='ukb_cardiac_mri',
