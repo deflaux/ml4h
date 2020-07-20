@@ -40,7 +40,7 @@ TREND_TRACE_DUR_DIFF = 2  # Sum of phase durations from UKBB is 2s longer than t
 LEAD_NAMES = 'lead_I', 'lead_2', 'lead_3'
 
 TENSOR_FOLDER = '/mnt/disks/ecg-bike-tensors/2019-10-10/'
-REST_TENSOR_FOLDER = '/mnt/disks/ecg-rest-38k-tensors'
+REST_TENSOR_FOLDER = '/mnt/disks/ecg-rest-38k-tensors/2020-03-14/'
 USER = 'ndiamant'
 OUTPUT_FOLDER = f'/home/{USER}/ml/hrr_results_warp_dropout'
 TRAIN_CSV_NAME = 'train_ids.csv'
@@ -69,7 +69,7 @@ OVERWRITE_MODELS = False
 PRETEST_MODEL_LEADS = [0]
 SEED = 217
 PRETEST_INFERENCE_NAME = 'pretest_model_inference.tsv'
-REST_INFERENCE_FILE = 'rest_model_inference.tsv'
+REST_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, 'rest_model_inference.tsv')
 K_SPLIT = 5
 
 
@@ -131,7 +131,7 @@ def _rest_ecg(
     tensor = np.zeros(shape, dtype=np.float32)
     for k, idx in channel_map.items():
         data = np.array(TensorMap.hd5_first_dataset_in_group(hd5, f'{path_prefix}/{k}/'))[:, np.newaxis]
-        tensor[:, channel_map[k]] = _downsample_ecg(data, downsample_rate)[0]
+        tensor[:, channel_map[k]] = _downsample_ecg(data, downsample_rate)[:, 0]
     return tensor
 
 
@@ -157,7 +157,7 @@ def _pretest_mean_std(sample_id: int) -> Dict[str, float]:
 def _rest_mean_std(sample_id: int) -> Dict[str, float]:
     if str(sample_id).endswith('000'):
         logging.info(f'Processing sample_id {sample_id}.')
-    with h5py.File(os.path.join(REST_TENSOR_FOLDER, sample_id + TENSOR_EXT), 'r') as hd5:
+    with h5py.File(os.path.join(REST_TENSOR_FOLDER, f'{sample_id}{TENSOR_EXT}'), 'r') as hd5:
         ecg = _rest_ecg(
             hd5, (SAMPLING_RATE * PRETEST_TRAINING_DUR, len(REST_CHANNEL_MAP)), REST_PREFIX,
             REST_CHANNEL_MAP, 1,
@@ -607,7 +607,7 @@ def _make_ecg_tmap(setting: ModelSetting, split_idx: int) -> TensorMap:
 
 def _make_rest_tmap(setting: ModelSetting) -> TensorMap:
     if not os.path.exists(REST_ECG_SUMMARY_STATS_CSV):
-        sample_ids = [_sample_id_from_path(path) for path in os.listdir(REST_TENSOR_FOLDER)]
+        sample_ids = [_sample_id_from_path(path) for path in os.listdir(REST_TENSOR_FOLDER) if path.endswith(TENSOR_EXT)]
         df = build_rest_summary_stats_df(sample_ids)
         df.to_csv(REST_ECG_SUMMARY_STATS_CSV, index=False)
     else:
@@ -791,12 +791,21 @@ def _dummy_tff(_, __, ___):
 
 def _infer_rest_models():
     logging.info('Beginning inference on rest ECGs')
-    tensor_paths = os.listdir(REST_TENSOR_FOLDER)
+    tensor_paths = [
+        os.path.join(REST_TENSOR_FOLDER, path)
+        for path in os.listdir(REST_TENSOR_FOLDER) if path.endswith(TENSOR_EXT)
+    ]
     setting = MODEL_SETTINGS[-1]
     models = [make_pretest_model(setting, split_idx, True) for split_idx in range(K_SPLIT)]
     model_ids = [setting.model_id]
     tmaps_in = [_make_rest_tmap(setting)]
-    tmaps_out = [TensorMap('dummy_hrr', shape=(1,), tensor_from_file=_dummy_tff)]
+    normalize = Standardize(*_get_hrr_summary_stats(PRETEST_LABEL_FILE))
+    tmaps_out = [
+        TensorMap(
+            df_hrr_col(HRR_TIME), shape=(1,), tensor_from_file=_dummy_tff,
+            normalization=normalize,
+        ),
+    ]
     _infer_models(
         models=models,
         model_ids=model_ids,
@@ -917,12 +926,13 @@ def _evaluate_models():
 
     plt.figure(figsize=(ax_size, ax_size))
     cmap = cm.get_cmap('rainbow')
-    for i, m_id in enumerate(model_ids):
+    for i, m_id in enumerate(model_ids[:-1]):
         R2 = R2_df['R2'][R2_df['model'] == m_id].values
         diff = R2 - final_R2
         color = cmap(i / K_SPLIT)
         sns.distplot(diff, color=color)
-        plt.axvline(R2.mean(), color=color, label=f'{m_id} R2 - {final_model} R2 mean ({diff.mean():.3f})', linestyle='--')
+        plt.axvline(diff.mean(), color=color, label=f'({m_id} R2 - {final_model} R2) mean ({diff.mean():.3f})', linestyle='--')
+    plt.axvline(0, c='k', linestyle='--')
     plt.xlabel('R2')
     plt.legend(loc="upper right")
     plt.savefig(os.path.join(figure_folder, f'bootstrap_diff_distributions.png'))
@@ -1024,4 +1034,5 @@ if __name__ == '__main__':
     _evaluate_models()
     plot_training_curves()
     if INFER_REST_MODELS:
+        # TODO: only infers from the last split's model
         _infer_rest_models()
