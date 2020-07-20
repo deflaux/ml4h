@@ -40,6 +40,7 @@ TREND_TRACE_DUR_DIFF = 2  # Sum of phase durations from UKBB is 2s longer than t
 LEAD_NAMES = 'lead_I', 'lead_2', 'lead_3'
 
 TENSOR_FOLDER = '/mnt/disks/ecg-bike-tensors/2019-10-10/'
+REST_TENSOR_FOLDER = '/mnt/disks/ecg-rest-38k-tensors'
 USER = 'ndiamant'
 OUTPUT_FOLDER = f'/home/{USER}/ml/hrr_results_warp_dropout'
 TRAIN_CSV_NAME = 'train_ids.csv'
@@ -52,6 +53,7 @@ BIOSPPY_FIGURE_FOLDER = os.path.join(FIGURE_FOLDER, 'biosppy')
 AUGMENTATION_FIGURE_FOLDER = os.path.join(FIGURE_FOLDER, 'augmentations')
 
 PRETEST_ECG_SUMMARY_STATS_CSV = os.path.join(OUTPUT_FOLDER, 'pretest_ecg_summary_stats.csv')
+REST_ECG_SUMMARY_STATS_CSV = os.path.join(OUTPUT_FOLDER, 'rest_ecg_summary_stats.csv')
 
 PRETEST_LABEL_FIGURE_FOLDER = os.path.join(FIGURE_FOLDER, 'pretest_labels')
 PRETEST_QUANTILE_CUTOFF = .99
@@ -67,6 +69,7 @@ OVERWRITE_MODELS = False
 PRETEST_MODEL_LEADS = [0]
 SEED = 217
 PRETEST_INFERENCE_NAME = 'pretest_model_inference.tsv'
+REST_INFERENCE_FILE = 'rest_model_inference.tsv'
 K_SPLIT = 5
 
 
@@ -116,8 +119,31 @@ def _get_trace_recovery_start(hd5: h5py.File) -> int:
     return int(SAMPLING_RATE * (pretest_dur + exercise_dur - HR_SEGMENT_DUR / 2 - TREND_TRACE_DUR_DIFF))
 
 
-PRETEST_MEAN_COL = 'pretest_mean'
-PRETEST_STD_COL = 'pretest_std'
+# Rest ECG
+REST_CHANNEL_MAP = {'strip_I': 0}
+REST_PREFIX = 'ukb_ecg_rest'
+
+
+def _rest_ecg(
+        hd5: h5py.File, shape: Tuple[int, ...], path_prefix: str, channel_map: Dict[str, int],
+        downsample_rate: float,
+) -> np.ndarray:
+    tensor = np.zeros(shape, dtype=np.float32)
+    for k, idx in channel_map.items():
+        data = np.array(TensorMap.hd5_first_dataset_in_group(hd5, f'{path_prefix}/{k}/'))[:, np.newaxis]
+        tensor[:, channel_map[k]] = _downsample_ecg(data, downsample_rate)[0]
+    return tensor
+
+
+def _make_downsampled_rest_tff(downsample_rate: float):
+    def tff(tm: TensorMap, hd5: h5py.File, dependents=None):
+        return _rest_ecg(hd5, tm.shape, tm.path_prefix, tm.channel_map, downsample_rate)
+    return tff
+
+
+# ECG summary stats
+ECG_MEAN_COL = 'ecg_mean'
+ECG_STD_COL = 'ecg_std'
 
 
 def _pretest_mean_std(sample_id: int) -> Dict[str, float]:
@@ -125,7 +151,18 @@ def _pretest_mean_std(sample_id: int) -> Dict[str, float]:
         logging.info(f'Processing sample_id {sample_id}.')
     with h5py.File(_path_from_sample_id(str(sample_id)), 'r') as hd5:
         pretest = _get_bike_ecg(hd5, 0, PRETEST_DUR * SAMPLING_RATE, PRETEST_MODEL_LEADS)
-        return {'sample_id': sample_id, PRETEST_MEAN_COL: pretest.mean(), PRETEST_STD_COL: pretest.std()}
+        return {'sample_id': sample_id, ECG_MEAN_COL: pretest.mean(), ECG_STD_COL: pretest.std()}
+
+
+def _rest_mean_std(sample_id: int) -> Dict[str, float]:
+    if str(sample_id).endswith('000'):
+        logging.info(f'Processing sample_id {sample_id}.')
+    with h5py.File(os.path.join(REST_TENSOR_FOLDER, sample_id + TENSOR_EXT), 'r') as hd5:
+        ecg = _rest_ecg(
+            hd5, (SAMPLING_RATE * PRETEST_TRAINING_DUR, len(REST_CHANNEL_MAP)), REST_PREFIX,
+            REST_CHANNEL_MAP, 1,
+        )
+        return {'sample_id': sample_id, ECG_MEAN_COL: ecg.mean(), ECG_STD_COL: ecg.std()}
 
 
 # ECG transformations
@@ -370,7 +407,7 @@ def build_hr_biosppy_measurements_csv():
     df.to_csv(BIOSPPY_MEASUREMENTS_FILE, index=False)
 
 
-def build_pretest_summary_stats_csv(sample_ids: List[int]) -> pd.DataFrame:
+def build_pretest_summary_stats_df(sample_ids: List[int]) -> pd.DataFrame:
     pool = Pool()
     logging.info('Beginning to get pretest ecg means and stds.')
     now = time.time()
@@ -378,6 +415,17 @@ def build_pretest_summary_stats_csv(sample_ids: List[int]) -> pd.DataFrame:
     df = pd.DataFrame(measures)
     delta_t = time.time() - now
     logging.info(f'Getting pretest ecg means and stds took {delta_t // 60} minutes at {delta_t / len(sample_ids):.2f}s per path.')
+    return df
+
+
+def build_rest_summary_stats_df(sample_ids: List[int]) -> pd.DataFrame:
+    pool = Pool()
+    logging.info('Beginning to get rest ecg means and stds.')
+    now = time.time()
+    measures = pool.map(_rest_mean_std, sample_ids)
+    df = pd.DataFrame(measures)
+    delta_t = time.time() - now
+    logging.info(f'Getting rest ecg means and stds took {delta_t // 60} minutes at {delta_t / len(sample_ids):.2f}s per path.')
     return df
 
 
@@ -417,18 +465,18 @@ def make_pretest_labels(make_ecg_summary_stats: bool):
     logging.info(f'There are {len(new_df)} pretest labels after filtering hr measures.')
 
     if make_ecg_summary_stats:
-        pretest_df = build_pretest_summary_stats_csv(new_df['sample_id'])
+        pretest_df = build_pretest_summary_stats_df(new_df['sample_id'])
         pretest_df.to_csv(PRETEST_ECG_SUMMARY_STATS_CSV, index=False)
     else:
         pretest_df = pd.read_csv(PRETEST_ECG_SUMMARY_STATS_CSV)
     new_df = new_df.merge(pretest_df, on='sample_id')
 
-    mean_low, mean_high = np.quantile(new_df[PRETEST_MEAN_COL], [double_sided_quantile, 1 - double_sided_quantile])
-    mean_drop = (new_df[PRETEST_MEAN_COL] < mean_high) & (new_df[PRETEST_MEAN_COL] > mean_low)
+    mean_low, mean_high = np.quantile(new_df[ECG_MEAN_COL], [double_sided_quantile, 1 - double_sided_quantile])
+    mean_drop = (new_df[ECG_MEAN_COL] < mean_high) & (new_df[ECG_MEAN_COL] > mean_low)
     logging.info(f'Due to pretest mean outside center {PRETEST_QUANTILE_CUTOFF:.2%}, dropping {(~mean_drop).sum()}.')
     new_df = new_df[mean_drop]
-    std_low, std_high = np.quantile(new_df[PRETEST_STD_COL], [double_sided_quantile, 1 - double_sided_quantile])
-    std_drop = (new_df[PRETEST_STD_COL] < std_high) & (new_df[PRETEST_STD_COL] > std_low)
+    std_low, std_high = np.quantile(new_df[ECG_STD_COL], [double_sided_quantile, 1 - double_sided_quantile])
+    std_drop = (new_df[ECG_STD_COL] < std_high) & (new_df[ECG_STD_COL] > std_low)
     logging.info(f'Due to pretest std outside center {PRETEST_QUANTILE_CUTOFF:.2%}, dropping {(~std_drop).sum()}.')
     new_df = new_df[std_drop]
     logging.info(f'There are {len(new_df)} pretest labels after filtering ecg ranges.')
@@ -499,8 +547,8 @@ def _get_hrr_summary_stats(id_csv: str) -> Tuple[float, float]:
 def _get_pretest_summary_stats(id_csv: str) -> Tuple[float, float]:
     df = pd.read_csv(PRETEST_LABEL_FILE)
     ids = pd.read_csv(id_csv)
-    mean = df[PRETEST_MEAN_COL][df['sample_id'].isin(ids['sample_id'])].mean()
-    std = df[PRETEST_STD_COL][df['sample_id'].isin(ids['sample_id'])].mean()
+    mean = df[ECG_MEAN_COL][df['sample_id'].isin(ids['sample_id'])].mean()
+    std = df[ECG_STD_COL][df['sample_id'].isin(ids['sample_id'])].mean()
     return mean, std
 
 
@@ -554,6 +602,25 @@ def _make_ecg_tmap(setting: ModelSetting, split_idx: int) -> TensorMap:
         validator=no_nans, normalization=normalizer,
         tensor_from_file=_make_pretest_ecg_tff(setting.downsample_rate, PRETEST_MODEL_LEADS, random_start=setting.shift),
         cacheable=False, augmentations=augmentations,
+    )
+
+
+def _make_rest_tmap(setting: ModelSetting) -> TensorMap:
+    if not os.path.exists(REST_ECG_SUMMARY_STATS_CSV):
+        sample_ids = [_sample_id_from_path(path) for path in os.listdir(REST_TENSOR_FOLDER)]
+        df = build_rest_summary_stats_df(sample_ids)
+        df.to_csv(REST_ECG_SUMMARY_STATS_CSV, index=False)
+    else:
+        df = pd.read_csv(REST_ECG_SUMMARY_STATS_CSV)
+    normalizer = Standardize(df[ECG_MEAN_COL].mean(), df[ECG_STD_COL].mean())
+    return TensorMap(
+        f'pretest_ecg_downsample_{setting.downsample_rate}',
+        shape=(int(PRETEST_TRAINING_DUR * SAMPLING_RATE // setting.downsample_rate), len(PRETEST_MODEL_LEADS)),
+        interpretation=Interpretation.CONTINUOUS,
+        validator=no_nans, normalization=normalizer,
+        tensor_from_file=_make_downsampled_rest_tff(setting.downsample_rate),
+        cacheable=False, channel_map=REST_CHANNEL_MAP,
+        path_prefix=REST_PREFIX,
     )
 
 
@@ -718,6 +785,27 @@ def _infer_models_split_idx(split_idx: int):
     )
 
 
+def _dummy_tff(_, __, ___):
+    return np.zeros(1)
+
+
+def _infer_rest_models():
+    logging.info('Beginning inference on rest ECGs')
+    tensor_paths = os.listdir(REST_TENSOR_FOLDER)
+    setting = MODEL_SETTINGS[-1]
+    models = [make_pretest_model(setting, split_idx, True) for split_idx in range(K_SPLIT)]
+    model_ids = [setting.model_id]
+    tmaps_in = [_make_rest_tmap(setting)]
+    tmaps_out = [TensorMap('dummy_hrr', shape=(1,), tensor_from_file=_dummy_tff)]
+    _infer_models(
+        models=models,
+        model_ids=model_ids,
+        tensor_maps_in=tmaps_in,
+        tensor_maps_out=tmaps_out,
+        inference_tsv=REST_INFERENCE_FILE, num_workers=8, batch_size=128, tensor_paths=tensor_paths,
+    )
+
+
 # result plotting
 def _scatter_plot(ax, truth, prediction, title):
     ax.plot([np.min(truth), np.max(truth)], [np.min(truth), np.max(truth)], linewidth=2)
@@ -748,7 +836,7 @@ def bootstrap_compare_models(
     actual_col = time_to_actual_hrr_col(HRR_TIME)
     pred_cols = {m_id: time_to_pred_hrr_col(HRR_TIME, m_id) for m_id in model_ids}
     for _ in range(num_bootstraps):
-        df = inference_result.sample(frac=bootstrap_frac)
+        df = inference_result.sample(frac=bootstrap_frac, replace=True)
         for m_id, pred_col in pred_cols.items():
             pred = df[pred_col]
             R2 = coefficient_of_determination(df[actual_col], pred)
@@ -803,7 +891,7 @@ def _evaluate_models():
 
     model_ids = list(R2_df['model'].unique())
     logging.info('Beginning bootstrap performance evaluation.')
-    R2_df = bootstrap_compare_models(model_ids, inference_df, num_bootstraps=10000, bootstrap_frac=.5)
+    R2_df = bootstrap_compare_models(model_ids, inference_df, num_bootstraps=5000, bootstrap_frac=1)
 
     plt.figure(figsize=(ax_size, ax_size))
     sns.violinplot(x='model', y='R2', data=R2_df)
@@ -826,6 +914,18 @@ def _evaluate_models():
     plt.xlabel('R2')
     plt.legend(loc="upper right")
     plt.savefig(os.path.join(figure_folder, f'bootstrap_distributions.png'))
+
+    plt.figure(figsize=(ax_size, ax_size))
+    cmap = cm.get_cmap('rainbow')
+    for i, m_id in enumerate(model_ids):
+        R2 = R2_df['R2'][R2_df['model'] == m_id].values
+        diff = R2 - final_R2
+        color = cmap(i / K_SPLIT)
+        sns.distplot(diff, color=color)
+        plt.axvline(R2.mean(), color=color, label=f'{m_id} R2 - {final_model} R2 mean ({diff.mean():.3f})', linestyle='--')
+    plt.xlabel('R2')
+    plt.legend(loc="upper right")
+    plt.savefig(os.path.join(figure_folder, f'bootstrap_diff_distributions.png'))
     plt.close('all')
 
 
@@ -893,6 +993,7 @@ if __name__ == '__main__':
             False or TRAIN_PRETEST_MODELS
             or not all(os.path.exists(_inference_file(split_idx)) for split_idx in range(K_SPLIT))
     )
+    INFER_REST_MODELS = False or not os.path.exists(REST_INFERENCE_FILE)
 
     if MAKE_LABELS:
         logging.info('Making biosppy labels.')
@@ -922,3 +1023,5 @@ if __name__ == '__main__':
             _infer_models_split_idx(i)
     _evaluate_models()
     plot_training_curves()
+    if INFER_REST_MODELS:
+        _infer_rest_models()

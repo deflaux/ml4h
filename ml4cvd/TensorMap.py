@@ -300,14 +300,15 @@ class TensorMap(object):
         else:
             return f'/{self.path_prefix}/{self.name}/'
 
-    def hd5_first_dataset_in_group(self, hd5, key_prefix):
+    @staticmethod
+    def hd5_first_dataset_in_group(hd5: h5py.File, key_prefix: str):
         if key_prefix not in hd5:
             raise ValueError(f'Could not find key:{key_prefix} in hd5.')
         data = hd5[key_prefix]
         if isinstance(data, h5py.Dataset):
             return data
         deeper_key_prefix = f'{key_prefix}{min(hd5[key_prefix])}/'
-        return self.hd5_first_dataset_in_group(hd5, deeper_key_prefix)
+        return TensorMap.hd5_first_dataset_in_group(hd5, deeper_key_prefix)
 
     def normalize(self, np_tensor):
         if self.normalization is None:
