@@ -1482,7 +1482,7 @@ def tensor_from_wide(
         patient_data = defaultdict(dict)
         for row in reader:
             try:
-                patient_key = int(row[patient_index])
+                patient_key = int(float(row[patient_index]))
                 patient_data[patient_key] = {
                     'age': _to_float_or_none(row[age_index]), 'bmi': _to_float_or_none(row[bmi_index]), 'sex': row[sex_index],
                     'hf_age': _to_float_or_none(row[hf_index]), 'end_age': _to_float_or_none(row[end_index]),
