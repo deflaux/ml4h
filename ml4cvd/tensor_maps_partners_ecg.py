@@ -1885,16 +1885,16 @@ def build_partners_tensor_maps(needed_tensor_maps: List[str]) -> Dict[str, Tenso
             name2tensormap[needed_name] = TensorMap('sex_from_wide', Interpretation.CATEGORICAL, annotation_units=2, tensor_from_file=csv_tff,
                                                     channel_map={'female': 0, 'male': 1})
         elif needed_name == 'age_from_wide_csv':
-            csv_tff = build_ecg_from_date(wide_csv, target='age')
+            csv_tff = tensor_from_wide(wide_csv, target='age')
             name2tensormap[needed_name] = TensorMap('age_from_wide', Interpretation.CONTINUOUS, shape=(1,),
                                                     tensor_from_file=csv_tff, channel_map={'age': 0},
                                                     normalization={'mean': 63.35798891483556, 'std': 7.554638350423902})
         elif needed_name == 'bmi_from_wide_csv':
-            csv_tff = csv_tff = build_ecg_from_date(wide_csv, target='bmi')
+            csv_tff = csv_tff = tensor_from_wide(wide_csv, target='bmi')
             name2tensormap[needed_name] = TensorMap('bmi_from_wide', Interpretation.CONTINUOUS, shape=(1,), channel_map={'bmi': 0},
                                                     annotation_units=1,  normalization={'mean': 27.3397, 'std': 4.77216}, tensor_from_file=csv_tff)
         elif needed_name == 'ecg_2500_from_wide_csv':
-            tff = build_ecg_from_date(wide_csv, target='ecg')
+            tff = tensor_from_wide(wide_csv, target='ecg')
             name2tensormap[f'incident_cox_heart_failure'] = TensorMap(f'incident_cox_heart_failure', Interpretation.TIME_TO_EVENT, cacheable=False)
             name2tensormap[needed_name] = TensorMap('ecg_rest_raw', shape=(2500, 12), path_prefix=PARTNERS_PREFIX, tensor_from_file=tff,
                                                     dependent_map=name2tensormap[f'incident_cox_heart_failure'], channel_map=ECG_REST_UKB_LEADS)
