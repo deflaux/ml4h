@@ -1699,6 +1699,10 @@ def _pad_crop_tensor(tm, hd5, dependents={}):
     return _pad_or_crop_array_to_shape(tm.shape, np.array(tm.hd5_first_dataset_in_group(hd5, tm.hd5_key_guess()), dtype=np.float32))
 
 
+TMAPS['flow_250_tp_aov_bh_epat'] = TensorMap(
+    'flow_250_tp_aov_bh_epat@c', Interpretation.CONTINUOUS, shape=(192, 192, 30), path_prefix='ukb_cardiac_mri',
+    tensor_from_file=_pad_crop_tensor, normalization=ZeroMeanStd1(),
+)
 TMAPS['cine_lax_2ch_192_16'] = TensorMap(
     'cine_segmented_lax_2ch', Interpretation.CONTINUOUS, shape=(192, 160, 16), path_prefix='ukb_cardiac_mri',
     tensor_from_file=_pad_crop_tensor, normalization=ZeroMeanStd1(),
@@ -1881,6 +1885,10 @@ TMAPS['cine_segmented_lvot'] = TensorMap(
     'cine_segmented_lvot', Interpretation.CATEGORICAL, shape=(208, 160, 50, len(MRI_LVOT_SEGMENTED_CHANNEL_MAP)),
     tensor_from_file=_segmented_dicom_slices('cine_segmented_lvot_annotated_'), channel_map=MRI_LVOT_SEGMENTED_CHANNEL_MAP,
 )
+
+
+
+
 TMAPS['liver_shmolli_segmented'] = TensorMap(
     'liver_shmolli_segmented', Interpretation.CATEGORICAL, shape=(288, 384, len(MRI_LIVER_SEGMENTED_CHANNEL_MAP)),
     tensor_from_file=_segmented_dicom_slices('liver_shmolli_segmented_annotated_', path_prefix='ukb_liver_mri'),
