@@ -1186,9 +1186,9 @@ def _ecg_tensor_from_date(tm: TensorMap, hd5: h5py.File, ecg_date: str, populati
 def _date_from_dates(ecg_dates, target_date=None, earliest_date=None):
     if target_date:
         if target_date and earliest_date:
-            incident_dates = [d for d in ecg_dates if earliest_date < datetime.datetime.strptime(d, PARTNERS_DATETIME_FORMAT).date() < target_date]
+            incident_dates = [d for d in ecg_dates if earliest_date < datetime.datetime.strptime(d, PARTNERS_DATETIME_FORMAT) < target_date]
         else:
-            incident_dates = [d for d in ecg_dates if datetime.datetime.strptime(d, PARTNERS_DATETIME_FORMAT).date() < target_date]
+            incident_dates = [d for d in ecg_dates if datetime.datetime.strptime(d, PARTNERS_DATETIME_FORMAT) < target_date]
         if len(incident_dates) == 0:
             raise ValueError('No ECGs prior to target were found.')
         return np.random.choice(incident_dates)
