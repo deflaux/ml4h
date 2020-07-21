@@ -1375,7 +1375,7 @@ def build_legacy_ecg(
 
 def build_ecg_from_date(
     file_name: str, patient_column: str = 'mrn', age_column: str = 'age_at_ecg', bmi_column: str = 'unified_bmi', sex_column: str = 'sex',
-    ecg_date_column: str = 'partners_ecg_date', delimiter: str = ',', population_normalize: int = 2000, target: str = 'ecg'
+    ecg_date_column: str = 'partners_ecg_date', mri_date_column: str = 'Report_Date_Time', delimiter: str = ',', population_normalize: int = 2000, target: str = 'ecg'
 ) -> Callable:
     """Build a tensor_from_file function for ECGs in the legacy cohort.
 
@@ -1392,12 +1392,15 @@ def build_ecg_from_date(
         sex_index = header.index(sex_column)
         patient_index = header.index(patient_column)
         ecg_date_index = header.index(ecg_date_column)
+        mri_date_index = header.index(mri_date_column)
         patient_data = defaultdict(dict)
         for row in reader:
             try:
                 patient_key = int(row[patient_index])
+                mri_date = datetime.datetime.strptime(row[mri_date_index].split(' ')[0], '%m/%d/%Y').date()
                 patient_data[patient_key] = {
-                    'age': float(row[age_index]), 'bmi': float(row[bmi_index]), 'sex': row[sex_index], 'ecg_date': row[ecg_date_index]
+                    'age': float(row[age_index]), 'bmi': float(row[bmi_index]), 'sex': row[sex_index],
+                    'ecg_date': row[ecg_date_index], 'mri_date': mri_date
                 }
 
             except ValueError as e:
@@ -1411,11 +1414,16 @@ def build_ecg_from_date(
 
         if target == 'ecg':
             ecg_dates = list(hd5[tm.path_prefix])
-            target_date = datetime.datetime.strptime(patient_data[mrn_int]['ecg_date'], CARDIAC_SURGERY_DATE_FORMAT).date()
+            ecg_target_date = datetime.datetime.strptime(patient_data[mrn_int]['ecg_date'], CARDIAC_SURGERY_DATE_FORMAT).date()
             target_date_time = None
+            min_day_diff = 9e9
             for d in ecg_dates:
-                if datetime.datetime.strptime(d, PARTNERS_DATETIME_FORMAT).date() == target_date:
+                ecg_dt = datetime.datetime.strptime(d, PARTNERS_DATETIME_FORMAT).date()
+                day_diff = (patient_data[mrn_int]['mri_date'] - ecg_dt).days()
+                if abs(day_diff) < min_day_diff:
                     target_date_time = d
+                    min_day_diff = abs(day_diff)
+            logging.debug(f"Ecg date was {ecg_target_date} mri date was {patient_data[mrn_int]['mri_date']} min diff found was {min_day_diff} and new target is {target_date_time}")
             if target_date_time is None:
                 raise ValueError(f' Could not find a matching date time.')
             return _ecg_tensor_from_date(tm, hd5, target_date_time, population_normalize)
