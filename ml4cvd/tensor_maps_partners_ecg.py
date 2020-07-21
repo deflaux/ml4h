@@ -1512,9 +1512,9 @@ def tensor_from_wide(
 
         if tm.dependent_map and tm.dependent_map.is_time_to_event():
             dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.float32)
-            if follow_up_days > tm.dependent_map.days_window:
-                has_disease = 0
-                follow_up_days = tm.days_window + 1
+            # if follow_up_days > tm.dependent_map.days_window:
+            #     has_disease = 0
+            #     follow_up_days = tm.days_window + 1
             dependents[tm.dependent_map][0] = has_disease
             dependents[tm.dependent_map][1] = follow_up_days
             logging.debug(f'Returning {dependents[tm.dependent_map]} for {patient_data[mrn_int]} key {mrn_int}')
@@ -1526,6 +1526,8 @@ def tensor_from_wide(
             return _ecg_tensor_from_date(tm, hd5, ecg_date_key, population_normalize)
         elif target in ['age', 'bmi']:
             tensor = np.zeros(tm.shape, dtype=np.float32)
+            if patient_data[mrn_int][target] is None:
+                raise ValueError(f'Missing target value {target}')
             tensor[0] = patient_data[mrn_int][target]
             return tensor
         elif target == 'sex':
