@@ -1500,20 +1500,23 @@ def tensor_from_wide(
 
         if patient_data[mrn_int]['hf_age'] is None:
             has_disease = 0
+            follow_up_days = (patient_data[mrn_int]['end_age'] - patient_data[mrn_int]['age']) * YEAR_DAYS
         elif patient_data[mrn_int]['hf_age'] > patient_data[mrn_int]['age']:
             has_disease = 1
+            follow_up_days = (patient_data[mrn_int]['hf_age'] - patient_data[mrn_int]['age']) * YEAR_DAYS
         elif skip_prevalent and patient_data[mrn_int]['age'] > patient_data[mrn_int]['hf_age']:
             raise ValueError(f'{tm.name} skips prevalent cases.')
         else:
             has_disease = 1
+            follow_up_days = (patient_data[mrn_int]['hf_age'] - patient_data[mrn_int]['age']) * YEAR_DAYS
 
         if tm.dependent_map and tm.dependent_map.is_time_to_event():
             dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.float32)
+            if follow_up_days > tm.dependent_map.days_window:
+                has_disease = 0
+                follow_up_days = tm.days_window + 1
             dependents[tm.dependent_map][0] = has_disease
-            if has_disease:
-                dependents[tm.dependent_map][1] = (patient_data[mrn_int]['hf_age'] - patient_data[mrn_int]['age']) * YEAR_DAYS
-            else:
-                dependents[tm.dependent_map][1] = (patient_data[mrn_int]['end_age'] - patient_data[mrn_int]['age']) * YEAR_DAYS
+            dependents[tm.dependent_map][1] = follow_up_days
             logging.debug(f'Returning {dependents[tm.dependent_map]} for {patient_data[mrn_int]} key {mrn_int}')
 
         if target == 'ecg':
