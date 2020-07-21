@@ -1427,7 +1427,7 @@ def build_ecg_from_date(
             if ecg_target_date != datetime.datetime.strptime(target_date_time, PARTNERS_DATETIME_FORMAT).date():
                 logging.debug(f"Ecg date was {ecg_target_date} mri date was {patient_data[mrn_int]['mri_date']} min diff found was {min_hour_diff/24} and new target is {target_date_time}")
             if hour_diff//24 > 365:
-                logging.warning(f"BIG DIFFFF! Ecg date was {ecg_target_date} mri date was {patient_data[mrn_int]['mri_date']} min diff found was {min_hour_diff/24} and new target is {target_date_time}")
+                logging.warning(f"BIG DIFFFF! {hd5.filename} \n\t\tEcg date was {ecg_target_date} mri date was {patient_data[mrn_int]['mri_date']} min diff found was {min_hour_diff/24} and new target is {target_date_time}")
             if target_date_time is None:
                 raise ValueError(f' Could not find a matching date time.')
             return _ecg_tensor_from_date(tm, hd5, target_date_time, population_normalize)
