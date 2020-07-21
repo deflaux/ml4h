@@ -1419,7 +1419,7 @@ def build_ecg_from_date(
             min_day_diff = 9e9
             for d in ecg_dates:
                 ecg_dt = datetime.datetime.strptime(d, PARTNERS_DATETIME_FORMAT)
-                day_diff = (patient_data[mrn_int]['mri_date'] - ecg_dt).days()
+                day_diff = (patient_data[mrn_int]['mri_date'] - ecg_dt).days
                 if abs(day_diff) < min_day_diff:
                     target_date_time = d
                     min_day_diff = abs(day_diff)
