@@ -1397,7 +1397,7 @@ def build_ecg_from_date(
         for row in reader:
             try:
                 patient_key = int(row[patient_index])
-                mri_date = datetime.datetime.strptime(row[mri_date_index].split(' ')[0], '%m/%d/%Y').date()
+                mri_date = datetime.datetime.strptime(row[mri_date_index].split(' ')[0], '%m/%d/%Y')
                 patient_data[patient_key] = {
                     'age': float(row[age_index]), 'bmi': float(row[bmi_index]), 'sex': row[sex_index],
                     'ecg_date': row[ecg_date_index], 'mri_date': mri_date
@@ -1418,7 +1418,7 @@ def build_ecg_from_date(
             target_date_time = None
             min_day_diff = 9e9
             for d in ecg_dates:
-                ecg_dt = datetime.datetime.strptime(d, PARTNERS_DATETIME_FORMAT).date()
+                ecg_dt = datetime.datetime.strptime(d, PARTNERS_DATETIME_FORMAT)
                 day_diff = (patient_data[mrn_int]['mri_date'] - ecg_dt).days()
                 if abs(day_diff) < min_day_diff:
                     target_date_time = d
