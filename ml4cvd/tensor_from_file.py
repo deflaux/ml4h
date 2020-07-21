@@ -1719,7 +1719,7 @@ TMAPS['flow_250_tp_aov_bh_epat'] = TensorMap(
 )
 TMAPS['flow_250_tp_aov_bh_epat_4d'] = TensorMap(
     'flow_250_tp_aov_bh_epat', Interpretation.CONTINUOUS, shape=(192, 192, 30, 1), path_prefix='ukb_cardiac_mri',
-    tensor_from_file=_slice_subset_tensor('flow_250_tp_aov_bh_epat@c', 0, 30, pad_shape=(192, 192, 30)),
+    tensor_from_file=_slice_subset_tensor('flow_250_tp_aov_bh_epat@c', 0, 30, pad_shape=(192, 192, 30, 1)),
     normalization=ZeroMeanStd1(),
 )
 TMAPS['cine_lax_2ch_192_16_3'] = TensorMap(
