@@ -1497,7 +1497,9 @@ def tensor_from_wide(
         mrn_int = _hd5_filename_to_mrn_int(hd5.filename)
         if mrn_int not in patient_data:
             raise KeyError(f'{tm.name} mrn not in legacy csv.')
-
+        if patient_data[mrn_int]['end_age'] is None or patient_data[mrn_int]['age'] is None:
+            raise ValueError(f'{tm.name} could not find ages.')
+        
         if patient_data[mrn_int]['hf_age'] is None:
             has_disease = 0
             follow_up_days = (patient_data[mrn_int]['end_age'] - patient_data[mrn_int]['age']) * YEAR_DAYS
