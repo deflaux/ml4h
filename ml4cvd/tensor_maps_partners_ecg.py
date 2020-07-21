@@ -1397,7 +1397,7 @@ def build_ecg_from_date(
         for row in reader:
             try:
                 patient_key = int(row[patient_index])
-                mri_date = datetime.datetime.strptime(row[mri_date_index].split(' ')[0], '%m/%d/%Y')
+                mri_date = datetime.datetime.strptime(row[mri_date_index], '%m/%d/%Y %I:%M:%S %p')
                 patient_data[patient_key] = {
                     'age': float(row[age_index]), 'bmi': float(row[bmi_index]), 'sex': row[sex_index],
                     'ecg_date': row[ecg_date_index], 'mri_date': mri_date
