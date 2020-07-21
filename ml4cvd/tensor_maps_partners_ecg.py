@@ -1416,21 +1416,25 @@ def build_ecg_from_date(
             ecg_dates = list(hd5[tm.path_prefix])
             ecg_target_date = datetime.datetime.strptime(patient_data[mrn_int]['ecg_date'], CARDIAC_SURGERY_DATE_FORMAT).date()
             target_date_time = None
-            min_day_diff = 9e9
+            min_hour_diff = 9e9
             for d in ecg_dates:
                 ecg_dt = datetime.datetime.strptime(d, PARTNERS_DATETIME_FORMAT)
-                day_diff = (patient_data[mrn_int]['mri_date'] - ecg_dt).days
-                if abs(day_diff) < min_day_diff:
+                hour_diff = (patient_data[mrn_int]['mri_date'] - ecg_dt).days * 24
+                hour_diff += (patient_data[mrn_int]['mri_date'] - ecg_dt).seconds // 3600
+                if abs(hour_diff) < min_hour_diff:
                     target_date_time = d
-                    min_day_diff = abs(day_diff)
-            logging.debug(f"Ecg date was {ecg_target_date} mri date was {patient_data[mrn_int]['mri_date']} min diff found was {min_day_diff} and new target is {target_date_time}")
+                    min_hour_diff = abs(hour_diff)
+            if len(ecg_dates) > 1:
+                logging.debug(f"Ecg date was {ecg_target_date} mri date was {patient_data[mrn_int]['mri_date']} min diff found was {min_hour_diff/24} and new target is {target_date_time}")
+            if hour_diff//24 > 365:
+                logging.warning(f"BIG DIFFFF! Ecg date was {ecg_target_date} mri date was {patient_data[mrn_int]['mri_date']} min diff found was {min_hour_diff/24} and new target is {target_date_time}")
             if target_date_time is None:
                 raise ValueError(f' Could not find a matching date time.')
             return _ecg_tensor_from_date(tm, hd5, target_date_time, population_normalize)
         elif target in ['age', 'bmi']:
             tensor = np.zeros(tm.shape, dtype=np.float32)
             tensor[0] = patient_data[mrn_int][target]
-            logging.debug(f'Returning {tensor} for {target} key {mrn_int}')
+            #logging.debug(f'Returning {tensor} for {target} key {mrn_int}')
             return tensor
         elif target == 'sex':
             tensor = np.zeros(tm.shape, dtype=np.float32)
@@ -1438,7 +1442,7 @@ def build_ecg_from_date(
                 tensor[0] = 1.0
             elif patient_data[mrn_int][target].lower() == 'male':
                 tensor[1] = 1.0
-            logging.debug(f'Returning {tensor} for {patient_data[mrn_int][target]} key {mrn_int}')
+            #logging.debug(f'Returning {tensor} for {patient_data[mrn_int][target]} key {mrn_int}')
             return tensor
         else:
             raise ValueError(f'{tm.name} has no way to handle target {target}')
