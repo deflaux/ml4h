@@ -1449,6 +1449,95 @@ def build_ecg_from_date(
     return tensor_from_file
 
 
+def _to_float_or_none(s):
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def tensor_from_wide(
+    file_name: str, patient_column: str = 'Mrn', age_column: str = 'age', bmi_column: str = 'bmi', sex_column: str = 'sex',
+    hf_column: str = 'any_hf_age', start_column: str = 'start_fu', end_column: str = 'last_encounter',
+    delimiter: str = '\t', population_normalize: int = 2000, target: str = 'ecg',
+    skip_prevalent: bool = True,
+) -> Callable:
+    """Build a tensor_from_file function for ECGs in the legacy cohort.
+
+    :param file_name: CSV or TSV file with header of patient IDs (MRNs) dates of enrollment and dates of diagnosis
+    :param patient_column: The header name of the column of patient ids
+    :param delimiter: The delimiter separating columns of the TSV or CSV
+    :return: The tensor_from_file function to provide to TensorMap constructors
+    """
+    with open(file_name, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f, delimiter=delimiter)
+        header = next(reader)
+        hf_index = header.index(hf_column)
+        age_index = header.index(age_column)
+        bmi_index = header.index(bmi_column)
+        sex_index = header.index(sex_column)
+        end_index = header.index(end_column)
+        start_index = header.index(start_column)
+        patient_index = header.index(patient_column)
+        patient_data = defaultdict(dict)
+        for row in reader:
+            try:
+                patient_key = int(row[patient_index])
+                patient_data[patient_key] = {
+                    'age': _to_float_or_none(row[age_index]), 'bmi': _to_float_or_none(row[bmi_index]), 'sex': row[sex_index],
+                    'hf_age': _to_float_or_none(row[hf_index]), 'end_age': _to_float_or_none(row[end_index]),
+                    'start_date': datetime.datetime.strptime(row[start_index], CARDIAC_SURGERY_DATE_FORMAT)
+                }
+
+            except ValueError as e:
+                logging.debug(f'val err {e}')
+        logging.info(f'Done processing. Got {len(patient_data)} patient rows.')
+
+    def tensor_from_file(tm: TensorMap, hd5: h5py.File, dependents=None):
+        mrn_int = _hd5_filename_to_mrn_int(hd5.filename)
+        if mrn_int not in patient_data:
+            raise KeyError(f'{tm.name} mrn not in legacy csv.')
+
+        if patient_data[mrn_int]['hf_age'] is None:
+            has_disease = 0
+        elif patient_data[mrn_int]['hf_age'] > patient_data[mrn_int]['age']:
+            has_disease = 1
+        elif skip_prevalent and patient_data[mrn_int]['age'] > patient_data[mrn_int]['hf_age']:
+            raise ValueError(f'{tm.name} skips prevalent cases.')
+        else:
+            has_disease = 1
+
+        if tm.dependent_map and tm.dependent_map.is_time_to_event():
+            dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.float32)
+            dependents[tm.dependent_map][0] = has_disease
+            if has_disease:
+                dependents[tm.dependent_map][1] = (patient_data[mrn_int]['hf_age'] - patient_data[mrn_int]['age']) * YEAR_DAYS
+            else:
+                dependents[tm.dependent_map][1] = (patient_data[mrn_int]['end_age'] - patient_data[mrn_int]['age']) * YEAR_DAYS
+            logging.debug(f'Returning {dependents[tm.dependent_map]} for {patient_data[mrn_int]} key {mrn_int}')
+
+        if target == 'ecg':
+            ecg_dates = list(hd5[tm.path_prefix])
+            earliest = patient_data[mrn_int]['start_date'] - datetime.timedelta(days=3*YEAR_DAYS)
+            ecg_date_key = _date_from_dates(ecg_dates, patient_data[mrn_int]['start_date'], earliest)
+            return _ecg_tensor_from_date(tm, hd5, ecg_date_key, population_normalize)
+        elif target in ['age', 'bmi']:
+            tensor = np.zeros(tm.shape, dtype=np.float32)
+            tensor[0] = patient_data[mrn_int][target]
+            return tensor
+        elif target == 'sex':
+            tensor = np.zeros(tm.shape, dtype=np.float32)
+            if patient_data[mrn_int][target].lower() == 'Female':
+                tensor[0] = 1.0
+            elif patient_data[mrn_int][target].lower() == 'Male':
+                tensor[1] = 1.0
+            logging.debug(f'Returning {tensor} for {patient_data[mrn_int][target]} key {mrn_int}')
+            return tensor
+        else:
+            raise ValueError(f'{tm.name} has no way to handle target {target}')
+    return tensor_from_file
+
+
 def build_incidence_tensor_from_file(
     file_name: str, patient_column: str = 'Mrn', birth_column: str = 'birth_date',
     diagnosis_column: str = 'first_stroke', start_column: str = 'start_fu',
@@ -1750,6 +1839,7 @@ def build_partners_tensor_maps(needed_tensor_maps: List[str]) -> Dict[str, Tenso
     logging.info(f'needed name {needed_tensor_maps}')
     legacy_csv = '/home/sam/ml/legacy_cohort_overlap.csv'
     ecg_date_csv = '/home/sam/ml/ecg_cmr_year_complete.csv'
+    wide_csv = '/home/sam/ml/mgh-wide-2020-06-25-with-mrn.tsv'
     for needed_name in needed_tensor_maps:
         if needed_name == 'age_from_csv':
             name2tensormap[needed_name] = TensorMap(needed_name, shape=(1,), tensor_from_file=csv_field_tensor_from_file(INCIDENCE_CSV))
@@ -1790,7 +1880,24 @@ def build_partners_tensor_maps(needed_tensor_maps: List[str]) -> Dict[str, Tenso
             tff = build_ecg_from_date(ecg_date_csv, target='ecg')
             name2tensormap[needed_name] = TensorMap('ecg_rest_raw', shape=(5000, 12), path_prefix=PARTNERS_PREFIX, tensor_from_file=tff, channel_map=ECG_REST_UKB_LEADS)
 
-
+        elif needed_name == 'sex_from_wide_csv':
+            csv_tff = tensor_from_wide(wide_csv, target='sex')
+            name2tensormap[needed_name] = TensorMap('sex_from_wide', Interpretation.CATEGORICAL, annotation_units=2, tensor_from_file=csv_tff,
+                                                    channel_map={'female': 0, 'male': 1})
+        elif needed_name == 'age_from_wide_csv':
+            csv_tff = build_ecg_from_date(wide_csv, target='age')
+            name2tensormap[needed_name] = TensorMap('age_from_wide', Interpretation.CONTINUOUS, shape=(1,),
+                                                    tensor_from_file=csv_tff, channel_map={'age': 0},
+                                                    normalization={'mean': 63.35798891483556, 'std': 7.554638350423902})
+        elif needed_name == 'bmi_from_wide_csv':
+            csv_tff = csv_tff = build_ecg_from_date(wide_csv, target='bmi')
+            name2tensormap[needed_name] = TensorMap('bmi_from_wide', Interpretation.CONTINUOUS, shape=(1,), channel_map={'bmi': 0},
+                                                    annotation_units=1,  normalization={'mean': 27.3397, 'std': 4.77216}, tensor_from_file=csv_tff)
+        elif needed_name == 'ecg_2500_from_wide_csv':
+            tff = build_ecg_from_date(wide_csv, target='ecg')
+            name2tensormap[f'incident_cox_heart_failure'] = TensorMap(f'incident_cox_heart_failure', Interpretation.TIME_TO_EVENT, cacheable=False)
+            name2tensormap[needed_name] = TensorMap('ecg_rest_raw', shape=(2500, 12), path_prefix=PARTNERS_PREFIX, tensor_from_file=tff,
+                                                    dependent_map=name2tensormap[f'incident_cox_heart_failure'], channel_map=ECG_REST_UKB_LEADS)
         if 'survival' not in needed_name:
             continue
         potential_day_string = needed_name.split('_')[-1]
