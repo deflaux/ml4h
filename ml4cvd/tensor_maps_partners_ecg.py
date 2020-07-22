@@ -1456,6 +1456,29 @@ def _to_float_or_none(s):
         return None
 
 
+def _time_to_event_tensor_from_days(tm: TensorMap, has_disease: int, follow_up_days: int):
+    tensor = np.zeros(tm.shape, dtype=np.float32)
+    if follow_up_days > tm.days_window:
+        has_disease = 0
+        follow_up_days = tm.days_window + 1
+    tensor[0] = has_disease
+    tensor[1] = follow_up_days
+    return tensor
+
+
+def _survival_curve_tensor_from_dates(tm: TensorMap, has_disease: int, assessment_date: datetime.datetime, censor_date: datetime.datetime):
+    intervals = tm.shape[0] // 2
+    days_per_interval = tm.days_window / intervals
+    survival_then_censor = np.zeros(tm.shape, dtype=np.float32)
+    for i, day_delta in enumerate(np.arange(0, tm.days_window, days_per_interval)):
+        cur_date = assessment_date + datetime.timedelta(days=day_delta)
+        survival_then_censor[i] = float(cur_date < censor_date)
+        survival_then_censor[intervals + i] = has_disease * float(censor_date <= cur_date < censor_date + datetime.timedelta(days=days_per_interval))
+        if i == 0 and censor_date <= cur_date:  # Handle prevalent diseases
+            survival_then_censor[intervals] = has_disease
+    return survival_then_censor
+
+
 def tensor_from_wide(
     file_name: str, patient_column: str = 'Mrn', age_column: str = 'age', bmi_column: str = 'bmi', sex_column: str = 'sex',
     hf_column: str = 'any_hf_age', start_column: str = 'start_fu', end_column: str = 'last_encounter',
@@ -1499,7 +1522,7 @@ def tensor_from_wide(
             raise KeyError(f'{tm.name} mrn not in legacy csv.')
         if patient_data[mrn_int]['end_age'] is None or patient_data[mrn_int]['age'] is None:
             raise ValueError(f'{tm.name} could not find ages.')
-        
+
         if patient_data[mrn_int]['hf_age'] is None:
             has_disease = 0
             follow_up_days = (patient_data[mrn_int]['end_age'] - patient_data[mrn_int]['age']) * YEAR_DAYS
@@ -1513,13 +1536,16 @@ def tensor_from_wide(
             follow_up_days = (patient_data[mrn_int]['hf_age'] - patient_data[mrn_int]['age']) * YEAR_DAYS
 
         if tm.dependent_map and tm.dependent_map.is_time_to_event():
-            dependents[tm.dependent_map] = np.zeros(tm.dependent_map.shape, dtype=np.float32)
-            # if follow_up_days > tm.dependent_map.days_window:
-            #     has_disease = 0
-            #     follow_up_days = tm.days_window + 1
-            dependents[tm.dependent_map][0] = has_disease
-            dependents[tm.dependent_map][1] = follow_up_days
+            dependents[tm.dependent_map] = _time_to_event_tensor_from_days(tm.dependent_map, has_disease, follow_up_days)
             logging.debug(f'Returning {dependents[tm.dependent_map]} for {patient_data[mrn_int]} key {mrn_int}')
+        elif tm.dependent_map and tm.dependent_map.is_survival_curve():
+            end_date = patient_data[mrn_int]['start_date'] + datetime.timedelta(days=follow_up_days)
+            dependents[tm.dependent_map] = _survival_curve_tensor_from_dates(tm.dependent_map, has_disease, patient_data[mrn_int]['start_date'], end_date)
+            logging.debug(
+                f"Got survival disease {has_disease}, censor: {end_date}, assess {patient_data[mrn_int]['start_date']}, age {patient_data[mrn_int]['age']} "
+                f"end age: {patient_data[mrn_int]['end_age']} hf age: {patient_data[mrn_int]['hf_age']} "
+                f"fu total {follow_up_days/YEAR_DAYS} tensor:{dependents[tm.dependent_map][:4]} mid tense: {dependents[tm.dependent_map][tm.shape[0] // 2:(tm.shape[0] // 2)+4]} ",
+            )
 
         if target == 'ecg':
             ecg_dates = list(hd5[tm.path_prefix])

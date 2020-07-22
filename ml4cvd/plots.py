@@ -108,7 +108,7 @@ def evaluate_predictions(
         idx = np.random.choice(np.arange(melt_shape[0]), min(melt_shape[0], max_melt), replace=False)
         y_predictions = y_predictions.reshape(melt_shape)[idx]
         y_truth = y_truth.reshape(melt_shape)[idx]
-        performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
+        performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, protected, title, folder))
         performance_metrics.update(plot_precision_recall_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
         plot_prediction_calibration(y_predictions, y_truth, tm.channel_map, title, folder)
         rocs.append((y_predictions, y_truth, tm.channel_map))
@@ -117,7 +117,7 @@ def evaluate_predictions(
         idx = np.random.choice(np.arange(melt_shape[0]), min(melt_shape[0], max_melt), replace=False)
         y_predictions = y_predictions.reshape(melt_shape)[idx]
         y_truth = y_truth.reshape(melt_shape)[idx]
-        performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
+        performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, protected, title, folder))
         performance_metrics.update(plot_precision_recall_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
         plot_prediction_calibration(y_predictions, y_truth, tm.channel_map, title, folder)
         rocs.append((y_predictions, y_truth, tm.channel_map))
@@ -126,7 +126,7 @@ def evaluate_predictions(
         idx = np.random.choice(np.arange(melt_shape[0]), min(melt_shape[0], max_melt), replace=False)
         y_predictions = y_predictions.reshape(melt_shape)[idx]
         y_truth = y_truth.reshape(melt_shape)[idx]
-        performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
+        performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, protected, title, folder))
         performance_metrics.update(plot_precision_recall_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
         plot_prediction_calibration(y_predictions, y_truth, tm.channel_map, title, folder)
         rocs.append((y_predictions, y_truth, tm.channel_map))
@@ -147,12 +147,12 @@ def evaluate_predictions(
         concordance_return_values = ['C-Index', 'Concordant Pairs', 'Discordant Pairs', 'Tied Predicted Risk', 'Tied Event Time']
         logging.info(f"{[f'{label}: {value:.3f}' for label, value in zip(concordance_return_values, c_index)]}")
         new_title = f'{title}_C_Index_{c_index[0]:0.3f}'
-        performance_metrics.update(plot_roc_per_class(y_predictions, y_truth[:, 0, np.newaxis], {f'{new_title}_vs_ROC': 0}, new_title, folder))
+        performance_metrics.update(plot_roc_per_class(y_predictions, y_truth[:, 0, np.newaxis], {f'{new_title}_vs_ROC': 0}, protected, new_title, folder))
         calibration_title = f'{title}_at_{tm.days_window}_days'
         plot_prediction_calibration(y_predictions, y_truth[:, 0, np.newaxis], {tm.name: 0}, calibration_title, folder)
         plot_survivorship(y_truth[:, 0], y_truth[:, 1], y_predictions[:, 0], tm.name, folder, tm.days_window)
     elif tm.is_language():
-        performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
+        performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, protected, title, folder))
         performance_metrics.update(plot_precision_recall_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
         rocs.append((y_predictions, y_truth, tm.channel_map))
     elif tm.axes() > 1 or tm.is_mesh():
