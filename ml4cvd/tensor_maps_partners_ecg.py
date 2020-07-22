@@ -1536,16 +1536,16 @@ def tensor_from_wide(
             follow_up_days = (patient_data[mrn_int]['hf_age'] - patient_data[mrn_int]['age']) * YEAR_DAYS
 
         if target == 'time_to_event':
-            tensor = _time_to_event_tensor_from_days(tm.dependent_map, has_disease, follow_up_days)
+            tensor = _time_to_event_tensor_from_days(tm, has_disease, follow_up_days)
             logging.debug(f'Returning {tensor} for {patient_data[mrn_int]} key {mrn_int}')
             return tensor
         elif target == 'survival_curve':
             end_date = patient_data[mrn_int]['start_date'] + datetime.timedelta(days=follow_up_days)
-            tensor = _survival_curve_tensor_from_dates(tm.dependent_map, has_disease, patient_data[mrn_int]['start_date'], end_date)
+            tensor = _survival_curve_tensor_from_dates(tm, has_disease, patient_data[mrn_int]['start_date'], end_date)
             logging.debug(
                 f"Got survival disease {has_disease}, censor: {end_date}, assess {patient_data[mrn_int]['start_date']}, age {patient_data[mrn_int]['age']} "
                 f"end age: {patient_data[mrn_int]['end_age']} hf age: {patient_data[mrn_int]['hf_age']} "
-                f"fu total {follow_up_days/YEAR_DAYS} tensor:{dependents[tm.dependent_map][:4]} mid tense: {dependents[tm.dependent_map][tm.shape[0] // 2:(tm.shape[0] // 2)+4]} ",
+                f"fu total {follow_up_days/YEAR_DAYS} tensor:{tensor[:4]} mid tense: {tensor[tm.shape[0] // 2:(tm.shape[0] // 2)+4]} ",
             )
             return tensor
         elif target == 'ecg':
