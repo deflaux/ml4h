@@ -1937,7 +1937,8 @@ def build_partners_tensor_maps(needed_tensor_maps: List[str]) -> Dict[str, Tenso
                                                     annotation_units=1,  normalization={'mean': 27.3397, 'std': 4.77216}, tensor_from_file=csv_tff)
         elif needed_name == 'ecg_2500_from_wide_csv':
             tff = tensor_from_wide(wide_csv, target='ecg')
-            name2tensormap[needed_name] = TensorMap('ecg_rest_raw', shape=(2500, 12), path_prefix=PARTNERS_PREFIX, tensor_from_file=tff, channel_map=ECG_REST_UKB_LEADS)
+            name2tensormap[needed_name] = TensorMap('ecg_rest_raw', shape=(2500, 12), path_prefix=PARTNERS_PREFIX, tensor_from_file=tff,
+                                                    cacheable=False, channel_map=ECG_REST_UKB_LEADS)
         elif needed_name == 'time_to_hf_wide_csv':
             tff = tensor_from_wide(wide_csv, target='time_to_event')
             name2tensormap[needed_name] = TensorMap('time_to_hf', Interpretation.TIME_TO_EVENT, tensor_from_file=tff)
