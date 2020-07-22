@@ -1561,9 +1561,9 @@ def tensor_from_wide(
             return tensor
         elif target == 'sex':
             tensor = np.zeros(tm.shape, dtype=np.float32)
-            if patient_data[mrn_int][target].lower() == 'Female':
+            if patient_data[mrn_int][target].lower() == 'female':
                 tensor[0] = 1.0
-            elif patient_data[mrn_int][target].lower() == 'Male':
+            elif patient_data[mrn_int][target].lower() == 'male':
                 tensor[1] = 1.0
             logging.debug(f'Returning {tensor} for {patient_data[mrn_int][target]} key {mrn_int}')
             return tensor
