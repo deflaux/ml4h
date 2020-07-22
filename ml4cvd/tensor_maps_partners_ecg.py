@@ -1535,19 +1535,20 @@ def tensor_from_wide(
             has_disease = 1
             follow_up_days = (patient_data[mrn_int]['hf_age'] - patient_data[mrn_int]['age']) * YEAR_DAYS
 
-        if tm.dependent_map and tm.dependent_map.is_time_to_event():
-            dependents[tm.dependent_map] = _time_to_event_tensor_from_days(tm.dependent_map, has_disease, follow_up_days)
-            logging.debug(f'Returning {dependents[tm.dependent_map]} for {patient_data[mrn_int]} key {mrn_int}')
-        elif tm.dependent_map and tm.dependent_map.is_survival_curve():
+        if target == 'time_to_event':
+            tensor = _time_to_event_tensor_from_days(tm.dependent_map, has_disease, follow_up_days)
+            logging.debug(f'Returning {tensor} for {patient_data[mrn_int]} key {mrn_int}')
+            return tensor
+        elif target == 'survival_curve':
             end_date = patient_data[mrn_int]['start_date'] + datetime.timedelta(days=follow_up_days)
-            dependents[tm.dependent_map] = _survival_curve_tensor_from_dates(tm.dependent_map, has_disease, patient_data[mrn_int]['start_date'], end_date)
+            tensor = _survival_curve_tensor_from_dates(tm.dependent_map, has_disease, patient_data[mrn_int]['start_date'], end_date)
             logging.debug(
                 f"Got survival disease {has_disease}, censor: {end_date}, assess {patient_data[mrn_int]['start_date']}, age {patient_data[mrn_int]['age']} "
                 f"end age: {patient_data[mrn_int]['end_age']} hf age: {patient_data[mrn_int]['hf_age']} "
                 f"fu total {follow_up_days/YEAR_DAYS} tensor:{dependents[tm.dependent_map][:4]} mid tense: {dependents[tm.dependent_map][tm.shape[0] // 2:(tm.shape[0] // 2)+4]} ",
             )
-
-        if target == 'ecg':
+            return tensor
+        elif target == 'ecg':
             ecg_dates = list(hd5[tm.path_prefix])
             earliest = patient_data[mrn_int]['start_date'] - datetime.timedelta(days=3*YEAR_DAYS)
             ecg_date_key = _date_from_dates(ecg_dates, patient_data[mrn_int]['start_date'], earliest)
@@ -1869,7 +1870,15 @@ def build_partners_tensor_maps(needed_tensor_maps: List[str]) -> Dict[str, Tenso
         'stroke': 'first_stroke', 'valvular_disease': 'first_valvular_disease',
     }
     days_window = 1825
-    logging.info(f'needed name {needed_tensor_maps}')
+    for needed_name in needed_tensor_maps:
+        if 'survival' not in needed_name:
+            continue
+        potential_day_string = needed_name.split('_')[-1]
+        try:
+            days_window = int(potential_day_string)
+        except ValueError:
+            pass
+
     legacy_csv = '/home/sam/ml/legacy_cohort_overlap.csv'
     ecg_date_csv = '/home/sam/ml/ecg_cmr_year_complete.csv'
     wide_csv = '/home/sam/ml/mgh-wide-2020-06-25-with-mrn.tsv'
@@ -1928,16 +1937,14 @@ def build_partners_tensor_maps(needed_tensor_maps: List[str]) -> Dict[str, Tenso
                                                     annotation_units=1,  normalization={'mean': 27.3397, 'std': 4.77216}, tensor_from_file=csv_tff)
         elif needed_name == 'ecg_2500_from_wide_csv':
             tff = tensor_from_wide(wide_csv, target='ecg')
-            name2tensormap[f'incident_cox_heart_failure'] = TensorMap(f'incident_cox_heart_failure', Interpretation.TIME_TO_EVENT, cacheable=False)
             name2tensormap[needed_name] = TensorMap('ecg_rest_raw', shape=(2500, 12), path_prefix=PARTNERS_PREFIX, tensor_from_file=tff,
                                                     dependent_map=name2tensormap[f'incident_cox_heart_failure'], channel_map=ECG_REST_UKB_LEADS)
-        if 'survival' not in needed_name:
-            continue
-        potential_day_string = needed_name.split('_')[-1]
-        try:
-            days_window = int(potential_day_string)
-        except ValueError:
-            pass
+        elif needed_name == 'time_to_hf_wide_csv':
+            tff = tensor_from_wide(wide_csv, target='time_to_event')
+            name2tensormap[needed_name] = TensorMap('time_to_hf', Interpretation.TIME_TO_EVENT, tensor_from_file=tff)
+        elif needed_name == 'survival_curve_hf_wide_csv':
+            tff = tensor_from_wide(wide_csv, target='survival_curve')
+            name2tensormap[needed_name] = TensorMap('survival_curve_hf', Interpretation.SURVIVAL_CURVE, tensor_from_file=tff, shape=(50,), days_window=days_window)
 
     for diagnosis in diagnosis2column:
         name = f'csv_incident_cox_{diagnosis}'
