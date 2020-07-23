@@ -45,10 +45,13 @@ diseases['censor_date'] = pd.to_datetime(diseases['censor_date'])
 
 # %%
 pretest = pd.read_csv('pretest_inference_60k.tsv', sep='\t')
+pretest_old = pd.read_csv('pretest_results_for_bolt.tsv', '\t')
+pretest_old['sample_id'] = pretest_old['FID']
 resting = pd.read_csv('exp_resting_hr.csv', sep=',')
 resting['sample_id'] = resting['fpath'].str.split('/').str[-1].str.replace('.hd5', '').apply(int)
 resting = resting[['sample_id', 'resting_hr']]
 pretest = pretest.merge(resting, on='sample_id')
+pretest = pretest.merge(pretest_old, on='sample_id', suffixes=('', '_old'))
 all_ecgs = pd.concat([pretest])
 # %%
 pheno_dic = {
@@ -114,46 +117,100 @@ plt.tight_layout()
 
 # %% 
 # Phenotype plots
+import matplotlib.pyplot as plt
 import seaborn as sns
+
+f, axs = plt.subplots(ncols=1, sharey=True, figsize=(4, 3))
+f.subplots_adjust(hspace=0.5, left=0.07, right=0.93)
+ax = axs
+hb = ax.hexbin(all_ecgs['50_hrr_actual'], all_ecgs['pretest_model_50_hrr_predicted'],  mincnt=1, cmap='gray')
+ax.set_ylabel('HRR50 (bpm)')
+ax.set_xlabel('HRR50-pretest (bpm)')
+ax.set_aspect('equal')
+ax.set_ylim([-5, 60])
+ax.set_ylim([-5, 60])
+cb = f.colorbar(hb, ax=ax)
+cb.set_label('counts')
+plt.tight_layout()
+f.savefig('correlation.png', dpi=500)
+# ax[1].hexbin(all_ecgs['resting_hr'], all_ecgs['50_hrr_actual'], mincnt=1)
+# ax[1].set_ylabel('HRR (bpm)')
+# ax[1].set_xlabel('resting HR (bpm)')
+# ax[1].set_xlim([-5, 150])
+# ax[1].set_ylim([-5, 60])
+# ax[1].set_title(f"r={np.corrcoef(all_ecgs.dropna()['50_hrr_actual'], all_ecgs.dropna()['resting_hr'])[0, 1]}")
+
 f, ax = plt.subplots()
-ax.hexbin(all_ecgs['50_hrr_actual'], 
-          all_ecgs['pretest_model_50_hrr_predicted'])
+f.set_size_inches(3.5, 3)
+sns.distplot(all_ecgs['50_hrr_actual'].dropna(), ax=ax, kde=False, color='gray', label='HRR50')
+sns.distplot(all_ecgs['pretest_model_50_hrr_predicted'], ax=ax, kde=False, color='black', label='HRR50-pretest')
+ax.set_xlabel('HRR (actual vs predicted) (bpm)')
+ax.legend(loc='upper left')
+plt.tight_layout()
+f.savefig('distribution.png', dpi=500)
+
+# all_ecgs['HRR50'] = all_ecgs['50_hrr_actual']
+# all_ecgs['HR-pretest'] = all_ecgs['resting_hr']
+# all_ecgs['HRR50-restHR_age_sex_bmi'] = all_ecgs['pretest_baseline_model_50_hrr_predicted']
+# all_ecgs['HRR50-pretest'] = all_ecgs['pretest_model_50_hrr_predicted']
+# all_ecgs['HRR50-pretest_age_sex_bmi'] = all_ecgs['pretest_model_50_hrr_predicted_old']
+# all_ecgs['HRR50-pretest-maxHR_age_sex_bmi'] = all_ecgs['pretest_hr_achieved_model_50_hrr_predicted']
+# all_ecgs['HRR50-pretest-075maxHR_age_sex_bmi'] = all_ecgs['pretest_hr_achieved_model_50_hrr_predicted_75_hr_achieved']
+# all_ecgs['HR-pretest'] = all_ecgs['resting_hr']
+# f, ax = plt.subplots()
+# f.set_size_inches(6.5, 5)
+# sns.heatmap(np.abs(all_ecgs.dropna()[['HRR50', 'HR-pretest',  
+#                                       'HRR50-pretest', 'HRR50-restHR_age_sex_bmi', 'HRR50-pretest_age_sex_bmi', 
+#                                       'HRR50-pretest-maxHR_age_sex_bmi', 
+#                                       'HRR50-pretest-075maxHR_age_sex_bmi']].corr().round(2)),
+#             annot=True, cmap='gray', ax=ax)
+# ax.set_xticklabels(['HRR50', 'HR-pretest',  
+#                     'HRR50-pretest', 'HRR50-restHR_age_sex_bmi', 'HRR50-pretest_age_sex_bmi', 
+#                     'HRR50-pretest-maxHR_age_sex_bmi', 
+#                     'HRR50-pretest-075maxHR_age_sex_bmi'], rotation=45, ha='right')
+# plt.tight_layout()
+# f.savefig('intercorrlations.png', dpi=500)
 
 
 # %%
 disease_list = [
-    ['Atrial_fibrillation_or_flutter_v2', 'atrial_fibrillation'],
-    ['Bradyarrhythmia_general_inclusive_definition', 'bradyarrhythmia'],
-    ['Cardiac_surgery', 'cardiac surgery'],
-    ['Congenital_heart_disease', 'congenital heart disease'],
-    ['Coronary_Artery_Disease_SOFT', 'coronary heart disease'],
-    ['DCM_I42', 'dilated cardiomyopathy'],
-    ['Diabetes_Type_1', 'diabetes type 1'],
-    ['Diabetes_Type_2', 'diabetes type 2'],
-    ['Heart_Failure_V2', 'heart failure'],
-    ['Hypertension', 'hypertension'],
-    ['Myocardial_Infarction', 'myocardial infarction'],
-    ['Peripheral_vascular_disease', 'peripheral vascular disease'],
-    ['Pulmonary_Hypertension', 'pulmonary hypertension'],
-    ['Sarcoidosis', 'sarcoidosis'],
-    ['Stroke', 'stroke'],
-    ['Supraventricular_arrhythmia_General_inclusive_definition', 'supraventricular arrhythmia'],
-    ['Venous_thromboembolism', 'venous thromboembolism'],
-    ['Chronic_kidney_disease', 'chronic kidney disease'],
-    ['composite_af_chf_dcm_death', 'AF+CHF+DCM+death'],
-    ['composite_cad_dcm_hcm_hf_mi', 'CAD+DCM+HCM+HF+MI'],
-    ['composite_chf_dcm_death', 'CHF+DCM+death'],
-    ['composite_mi_cad_stroke', 'MI+CAD+stroke'],
-    ['composite_mi_cad_stroke_death', 'MI+CAD+stroke+death'],
-    ['composite_mi_cad_stroke_hf', 'MI+CAD+stroke+HF'],
-    ['composite_mi_death', 'MI+death']]
+    'Atrial_fibrillation_or_flutter_v2',
+'Bradyarrhythmia_general_inclusive_definition',
+'Cardiac_surgery',
+'Congenital_heart_disease',
+'Coronary_Artery_Disease_SOFT',
+'DCM_I42',
+'Diabetes_Type_1',
+'Diabetes_Type_2',
+'Heart_Failure_V2',
+'Hypertension',
+'Myocardial_Infarction',
+'Peripheral_vascular_disease',
+'Pulmonary_Hypertension',
+'Sarcoidosis',
+'Stroke',
+'Supraventricular_arrhythmia_General_inclusive_definition',
+'Venous_thromboembolism',
+'composite_af_chf_dcm_death',
+'composite_cad_dcm_hcm_hf_mi',
+'composite_chf_dcm_death',
+'composite_mi_cad_stroke',
+'composite_mi_cad_stroke_death',
+'composite_mi_cad_stroke_death_exclude_AML',
+'composite_mi_cad_stroke_death_exclude_anycancer',
+'composite_mi_cad_stroke_death_exclude_heme',
+'composite_mi_cad_stroke_exclude_heme',
+'composite_mi_cad_stroke_hf',
+'composite_mi_death']
 
-# disease_list = [['Heart_Failure_V2', 'heart failure'], ['Myocardial_Infarction', 'myocardial infarction'],
-#                 ['Atrial_fibrillation_or_flutter_v2', 'atrial fibrillation'], ['Diabetes_Type_2', 'type 2 diabetes'],
-#                 ['Stroke', 'stroke'], ['Coronary_Artery_Disease_SOFT', 'coronary artery disease'],
-#                 ['Hypertension', 'hypertension'], ['Pulmonary_Hypertension', 'pulmonary hypertension'],
-#                 ['Peripheral_vascular_disease', 'peripheral vascular disease']
-#                ]
+disease_list = [['Heart_Failure_V2', 'heart failure'], 
+                ['Myocardial_Infarction', 'myocardial infarction'],
+                ['Atrial_fibrillation_or_flutter_v2', 'atrial fibrillation'], 
+                ['Diabetes_Type_2', 'type 2 diabetes'],
+                ['Hypertension', 'hypertension'],                
+                ['composite_af_chf_dcm_death', 'AF+CHF+DCM+death'],
+                ['composite_cad_dcm_hcm_hf_mi', 'CAD+DCM+HCM+HF+MI'],
+                ['composite_chf_dcm_death', 'CHF+DCM+death']]
 
 # %%
 diseases_unpack = pd.DataFrame()
@@ -177,32 +234,28 @@ for disease, disease_label in disease_list:
 
 # %%
 diseases_unpack = diseases_unpack.fillna(0)
-all_ecgs = all_ecgs.fillna(0)
-all_ecgs.loc[(all_ecgs['smoking'] > 0.5), 'smoking'] = 1.0
-all_ecgs.loc[(all_ecgs['smoking'] <= 0.5), 'smoking'] = 0.0
+all_ecgs = all_ecgs.dropna()
 
 # %%
 label_dic = {
     '50_hrr_actual': ['HRR50', 'beats'],
-    'pretest_baseline_model_50_hrr_predicted': ['HRR50-restHR', 'beats'],
+    'resting_hr': ['HR-pretest', 'beats'],
     'pretest_model_50_hrr_predicted': ['HRR50-pretest', 'beats'],
-    'pretest_hr_achieved_model_50_hrr_predicted': ['HRR50-pretest-maxHR', 'beats'],
-    '50_hr_actual': ['HR50', 'beats'],
-    'pretest_baseline_model_50_hr_predicted': ['HR50-restHR', 'beats'],
-    'pretest_model_50_hr_predicted': ['HR50-pretest', 'beats'],
-    'pretest_hr_achieved_model_50_hr_predicted': ['HRR50-pretest-maxHR', 'beats'],
-    '0_hr_actual': ['HR0', 'beats'],
-    'pretest_baseline_model_0_hr_predicted': ['HR0-restHR', 'beats'],
-    'pretest_model_0_hr_predicted': ['HR0-pretest', 'beats'],
-    'pretest_hr_achieved_model_0_hr_predicted': ['HR0-pretest-maxHR', 'beats'],
-    'bmi': ['BMI', 'units'],
+    'pretest_baseline_model_50_hrr_predicted': ['HRR50-restHR_age_sex_bmi', 'beats'],
+    'pretest_model_50_hrr_predicted_old': ['HRR50-pretest_age_sex_bmi', 'beats'],
+    'pretest_hr_achieved_model_50_hrr_predicted': ['HRR50-pretest-maxHR_age_sex_bmi', 'beats'],
+    'pretest_hr_achieved_model_50_hrr_predicted_75_hr_achieved': ['HRR50-pretest-075maxHR_age_sex_bmi', 'beats'],
     'age': ['Age', 'yrs'],
-    'sex': ['Male', ''],
+    'male': ['Male', ''],
+    'nonwhite': ['Nonwhite', ''],
+    'bmi': ['BMI', 'units'],
     'cholesterol': ['Cholesterol', 'mmol/L'],
     'HDL': ['HDL', 'mmol/L'],
-    'smoking': ['Smoking', ''],
+    'current_smoker': ['Current smoker', ''],
     'diastolic_bp': ['Diastolic blood pressure', 'mmHg'],
     'systolic_bp': ['Systolic blood pressure', 'mmHg'],   
+    'gfr': ['eGFR', 'mL/min/1.73 m2'],
+    'creatinine': ['Creatinine', 'umol/L']
 }
 
 # %%
@@ -210,22 +263,22 @@ label_dic = {
 import statsmodels.api as sm
 or_dic = {}
 for pheno in all_ecgs:
-    if pheno in ['instance0_date', 'sample_id']: 
+    if pheno in ['instance0_date', 'sample_id', 'FID', 'IID', '50_hrr']: 
         continue
     or_dic[pheno] = {}
     tmp_pheno = all_ecgs[['sample_id', pheno]]
     for disease, disease_label in disease_list:
-        for occ in ['incident', 'prevalent']:
+        for occ in ['prevalent']:
             or_dic[pheno][f'{disease}_{occ}'] = {}
             tmp_data = tmp_pheno.merge(diseases_unpack[['sample_id', f'{disease}_{occ}']], left_on='sample_id', right_on='sample_id')
-            if pheno not in ['sex', 'smoking']:
+            if pheno not in ['male', 'nonwhite', 'current_smoker']:
                 std = np.std(tmp_data[pheno].values)
                 tmp_data[pheno] = (tmp_data[pheno].values - np.mean(tmp_data[pheno].values))/std
                 std = ", %.1f" % std
             else:
                 std = ''
             tmp_data['intercept'] = 1.0
-            res = sm.Logit(tmp_data[f'{disease}_{occ}'], tmp_data[[pheno, 'intercept']]).fit()
+            res = sm.Logit(tmp_data[f'{disease}_{occ}'], tmp_data[[pheno, 'intercept']]).fit(disp=False)
             or_dic[pheno][f'{disease}_{occ}']['OR'] = np.exp(res.params[0])
             or_dic[pheno][f'{disease}_{occ}']['CI'] = np.exp(res.conf_int().values[0])
             or_dic[pheno][f'{disease}_{occ}']['p'] = res.pvalues[pheno]
@@ -239,7 +292,7 @@ import matplotlib
 dis_plot_list = disease_list
 phenos = or_dic['50_hrr_actual'].keys()
 for dis, dis_label in disease_list:
-    for occ in ['incident', 'prevalent']: 
+    for occ in ['prevalent']: 
         ors = []
         cis_minus = []
         cis_plus = []
@@ -260,7 +313,7 @@ for dis, dis_label in disease_list:
             if or_dic[pheno][f'{dis}_{occ}']['p'] < (0.05/len(or_dic)):
                 labels[-1] += '*'
         f, ax = plt.subplots()
-        f.set_size_inches(6, 3.5)
+        f.set_size_inches(6, 4)
         ax.errorbar(ors, np.arange(len(ors)), xerr=(cis_minus, cis_plus), marker='o', linestyle='', color='black')  
         ax.plot([1.0, 1.0], [-1.0, len(ors)], 'k--')
         ax.set_yticks(np.arange(len(ors)))
@@ -288,15 +341,15 @@ for dis, dis_label in disease_list:
 import statsmodels.api as sm
 hr_dic = {}
 for pheno in all_ecgs:
-    if pheno in ['sample_id', 'instance0_date']: 
+    if pheno in ['instance0_date', 'sample_id', 'FID', 'IID', '50_hrr']: 
         continue
     hr_dic[pheno] = {}
     tmp_pheno = all_ecgs[['sample_id', pheno, 'instance0_date']]
     for disease, disease_label in disease_list:
         for occ in ['incident']:
             hr_dic[pheno][f'{disease}_{occ}'] = {}
-            tmp_data = tmp_pheno.merge(diseases_unpack[['sample_id', f'{disease}_{occ}', f'{disease}_censor_date']], left_on='FID', right_on='sample_id')
-            if pheno not in ['bmi', 'sex', 'smoking']:
+            tmp_data = tmp_pheno.merge(diseases_unpack[['sample_id', f'{disease}_{occ}', f'{disease}_censor_date']], left_on='sample_id', right_on='sample_id')
+            if pheno not in ['male', 'nonwhite', 'current_smoker']:
                 std = np.std(tmp_data[pheno].values)
                 tmp_data[pheno] = (tmp_data[pheno].values - np.mean(tmp_data[pheno].values))/std
                 std = ", %.1f" % std
@@ -313,3 +366,46 @@ for pheno in all_ecgs:
             hr_dic[pheno][f'{disease}_{occ}']['p'] = res.pvalues[0]
             hr_dic[pheno][f'{disease}_{occ}']['n'] = np.sum(tmp_data[f'{disease}_{occ}'])
             hr_dic[pheno][f'{disease}_{occ}']['std'] = std
+
+# %%
+dis_plot_list = disease_list
+phenos = hr_dic['50_hrr_actual'].keys()
+for dis, dis_label in disease_list:
+    for occ in ['incident']:
+        hrs = []
+        cis_minus = []
+        cis_plus = []
+        labels = []
+        for pheno in hr_dic:
+            if 'genetic' in pheno: 
+                continue
+            if 'hrr' in pheno:
+                scale = 1.0
+            elif 'age' in pheno:
+                scale = 1.0
+            else:
+                scale = 1.0
+            hrs.append(np.exp(np.log(hr_dic[pheno][f'{dis}_{occ}']['HR'])*scale))
+            cis_minus.append(np.exp(np.log(hr_dic[pheno][f'{dis}_{occ}']['HR']-hr_dic[pheno][f'{dis}_{occ}']['CI'][0])*scale))
+            cis_plus.append(np.exp(np.log(hr_dic[pheno][f'{dis}_{occ}']['CI'][1]-hr_dic[pheno][f'{dis}_{occ}']['HR'])*scale))      
+            labels.append(f'{label_dic[pheno][0]}{hr_dic[pheno][dis+"_"+occ]["std"]} {label_dic[pheno][1]}')
+            if hr_dic[pheno][f'{dis}_{occ}']['p'] < (0.05/len(hr_dic)):
+                labels[-1] += '*'
+        f, ax = plt.subplots()
+        f.set_size_inches(3.3, 3)
+        ax.errorbar(hrs, np.arange(len(hrs)), xerr=(cis_minus, cis_plus), marker='o', linestyle='', color='black')    
+        ax.set_yticks(np.arange(len(hrs)))
+        ax.set_yticklabels(labels)
+        ax.set_yticklabels([])
+        ax.set_xscale('log', basex=np.exp(1))  
+        ax.plot([1.0, 1.0], [-1.0, len(hrs)], 'k--')
+        ax.set_xticks([0.25, 0.5, 1.0, 2.0, 4.0])
+        ax.set_xticklabels(map(str, [0.25, 0.5, 1.0, 2.0, 4.0]))
+        ax.set_ylim([-1.0, len(hrs)])
+        ax.set_xlim([0.25, 4.0])
+        ax.set_xlabel('Hazard ratio (per 1-SD increase)')
+        ax.set_title(f'{occ} {dis_label}\n n$_+$ = {int(hr_dic[pheno][dis+"_"+occ]["n"])} / {len(all_ecgs)}')
+        plt.tight_layout()
+        f.savefig(f'{dis}_{occ}_hr_test.png', dpi=500)
+
+# %%
