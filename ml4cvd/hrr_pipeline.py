@@ -789,6 +789,10 @@ def _dummy_tff(_, __, ___):
     return np.zeros(1)
 
 
+def _rest_model_name(setting: ModelSetting, split_idx: int) -> str:
+    return f'{setting.model_id}_split_{split_idx}'
+
+
 def _infer_rest_models():
     logging.info('Beginning inference on rest ECGs')
     tensor_paths = [
@@ -797,7 +801,7 @@ def _infer_rest_models():
     ]
     setting = MODEL_SETTINGS[-1]
     models = [make_pretest_model(setting, split_idx, True) for split_idx in range(K_SPLIT)]
-    model_ids = [f'{setting.model_id}_split_{split_idx}' for split_idx in range(K_SPLIT)]
+    model_ids = [_rest_model_name(setting, split_idx) for split_idx in range(K_SPLIT)]
     tmaps_in = [_make_rest_tmap(setting)]
     normalize = Standardize(*_get_hrr_summary_stats(PRETEST_LABEL_FILE))
     tmaps_out = [
@@ -977,6 +981,55 @@ def plot_training_curves():
     plt.savefig(os.path.join(figure_folder, f'training_curves.png'))
 
 
+def plot_rest_inference():
+    figure_folder = os.path.join(FIGURE_FOLDER, 'rest_results')
+    os.makedirs(figure_folder, exist_ok=True)
+
+    df = pd.read_csv(REST_INFERENCE_FILE, sep='\t')
+    pred_cols = [
+        time_to_pred_hrr_col(HRR_TIME, _rest_model_name(MODEL_SETTINGS[-1], split_idx))
+        for split_idx in range(K_SPLIT)
+    ]
+    mean = df[pred_cols].mean(axis=1)
+    ax_size = 10
+    plt.figure(figsize=(ax_size, ax_size))
+    sns.distplot(mean)
+    plt.title('Rest ECG inference mean')
+    plt.xlabel('Predicted HRR')
+    plt.savefig(os.path.join(figure_folder, 'rest_mean.png'))
+
+    mean = df[pred_cols].std(axis=1)
+    ax_size = 10
+    plt.figure(figsize=(ax_size, ax_size))
+    sns.distplot(mean)
+    plt.title('Rest ECG inference std')
+    plt.xlabel('Predicted HRR std')
+    plt.savefig(os.path.join(figure_folder, 'rest_std.png'))
+
+    quantiles = .01, .99
+    cutoffs = np.quantile(mean, quantiles)
+    num_samples = 2
+    for quantile, cutoff in zip(quantiles, cutoffs):
+        if quantile < .5:
+            rows = df[df < quantile].sample(num_samples)
+        else:
+            rows = df[df > quantile].sample(num_samples)
+        for i in range(num_samples):
+            sample_id = rows['sample_id'].iloc[0]
+            mean = rows[pred_cols].iloc[0].mean()
+            std = rows[pred_cols].iloc[0].std()
+            plt.figure(figsize=(ax_size, ax_size / 2))
+            with h5py.File(os.path.join(REST_TENSOR_FOLDER, f'{sample_id}{TENSOR_EXT}'), 'r') as hd5:
+                ecg = _rest_ecg(
+                    hd5, (SAMPLING_RATE * PRETEST_TRAINING_DUR, len(REST_CHANNEL_MAP)), REST_PREFIX,
+                    REST_CHANNEL_MAP, 1,
+                )
+            plt.plot(ecg)
+            logging.info(f'Plotting rest ecg sample id {sample_id}')
+            plt.title(f'{quantile} std quantile - std {std:.2f} mean {mean:.2f}')
+            plt.savefig(figure_folder, f'{sample_id}_std_quantile_{quantile}.png')
+
+
 if __name__ == '__main__':
     """Always remakes figures"""
     np.random.seed(SEED)
@@ -1035,3 +1088,4 @@ if __name__ == '__main__':
     plot_training_curves()
     if INFER_REST_MODELS:
         _infer_rest_models()
+    plot_rest_inference()
