@@ -21,7 +21,7 @@ from ml4cvd.defines import TENSOR_EXT, MODEL_EXT
 from ml4cvd.logger import load_config
 from ml4cvd.TensorMap import TensorMap, Interpretation, no_nans
 from ml4cvd.tensor_writer_ukbb import tensor_path, first_dataset_at_path
-from ml4cvd.normalizer import Standardize, Normalizer
+from ml4cvd.normalizer import Standardize, Normalizer, ZeroMeanStd1
 from ml4cvd.tensor_from_file import _get_tensor_at_first_date
 from ml4cvd.tensor_generators import test_train_valid_tensor_generators
 from ml4cvd.models import train_model_from_generators, make_multimodal_multitask_model, BottleneckType
@@ -612,7 +612,8 @@ def _make_rest_tmap(setting: ModelSetting) -> TensorMap:
         df.to_csv(REST_ECG_SUMMARY_STATS_CSV, index=False)
     else:
         df = pd.read_csv(REST_ECG_SUMMARY_STATS_CSV)
-    normalizer = Standardize(df[ECG_MEAN_COL].mean(), df[ECG_STD_COL].mean())
+    # normalizer = Standardize(df[ECG_MEAN_COL].mean(), df[ECG_STD_COL].mean())
+    normalizer = ZeroMeanStd1()
     return TensorMap(
         f'pretest_ecg_downsample_{setting.downsample_rate}',
         shape=(int(PRETEST_TRAINING_DUR * SAMPLING_RATE // setting.downsample_rate), len(PRETEST_MODEL_LEADS)),
@@ -998,36 +999,35 @@ def plot_rest_inference():
     plt.xlabel('Predicted HRR')
     plt.savefig(os.path.join(figure_folder, 'rest_mean.png'))
 
-    mean = df[pred_cols].std(axis=1)
+    std = df[pred_cols].std(axis=1)
     ax_size = 10
     plt.figure(figsize=(ax_size, ax_size))
-    sns.distplot(mean)
+    sns.distplot(std)
     plt.title('Rest ECG inference std')
     plt.xlabel('Predicted HRR std')
     plt.savefig(os.path.join(figure_folder, 'rest_std.png'))
 
     quantiles = .01, .99
-    cutoffs = np.quantile(mean, quantiles)
+    cutoffs = np.quantile(std, quantiles)
     num_samples = 2
+    ecg_tmap = _make_rest_tmap(MODEL_SETTINGS[-1])
+    t = np.linspace(0, PRETEST_TRAINING_DUR, ecg_tmap.shape[0])
     for quantile, cutoff in zip(quantiles, cutoffs):
         if quantile < .5:
-            rows = df[df < quantile].sample(num_samples)
+            rows = df[std < cutoff].sample(num_samples)
         else:
-            rows = df[df > quantile].sample(num_samples)
+            rows = df[std > cutoff].sample(num_samples)
         for i in range(num_samples):
-            sample_id = rows['sample_id'].iloc[0]
-            mean = rows[pred_cols].iloc[0].mean()
-            std = rows[pred_cols].iloc[0].std()
+            sample_id = rows['sample_id'].iloc[i]
+            sample_mean = rows[pred_cols].iloc[i].mean()
+            sample_std = rows[pred_cols].iloc[i].std()
             plt.figure(figsize=(ax_size, ax_size / 2))
             with h5py.File(os.path.join(REST_TENSOR_FOLDER, f'{sample_id}{TENSOR_EXT}'), 'r') as hd5:
-                ecg = _rest_ecg(
-                    hd5, (SAMPLING_RATE * PRETEST_TRAINING_DUR, len(REST_CHANNEL_MAP)), REST_PREFIX,
-                    REST_CHANNEL_MAP, 1,
-                )
-            plt.plot(ecg)
+                ecg = ecg_tmap.normalize(ecg_tmap.tensor_from_file(ecg_tmap, hd5))
+            plt.plot(t, ecg, c='k')
             logging.info(f'Plotting rest ecg sample id {sample_id}')
-            plt.title(f'{quantile} std quantile - std {std:.2f} mean {mean:.2f}')
-            plt.savefig(figure_folder, f'{sample_id}_std_quantile_{quantile}.png')
+            plt.title(f'{quantile} std quantile - std {sample_std:.2f} mean {sample_mean:.2f}')
+            plt.savefig(os.path.join(figure_folder, f'{sample_id}_std_quantile_{quantile}.png'))
 
 
 if __name__ == '__main__':
