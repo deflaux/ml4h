@@ -797,7 +797,7 @@ def _infer_rest_models():
     ]
     setting = MODEL_SETTINGS[-1]
     models = [make_pretest_model(setting, split_idx, True) for split_idx in range(K_SPLIT)]
-    model_ids = [setting.model_id]
+    model_ids = [f'{setting.model_id}_split_{split_idx}' for split_idx in range(K_SPLIT)]
     tmaps_in = [_make_rest_tmap(setting)]
     normalize = Standardize(*_get_hrr_summary_stats(PRETEST_LABEL_FILE))
     tmaps_out = [
@@ -1034,5 +1034,4 @@ if __name__ == '__main__':
     _evaluate_models()
     plot_training_curves()
     if INFER_REST_MODELS:
-        # TODO: only infers from the last split's model
         _infer_rest_models()
