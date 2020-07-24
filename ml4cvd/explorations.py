@@ -697,7 +697,7 @@ def _is_continuous_valid_scalar_hd5_dataset(obj) -> bool:
 
 
 def _continuous_explore_header(tm: TensorMap) -> str:
-    return tm.name
+    return tm.channel_map.items()[0][0]
 
 
 def _categorical_explore_header(tm: TensorMap, channel: str) -> str:
