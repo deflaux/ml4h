@@ -769,7 +769,7 @@ class ExploreParallelWrapper():
                         # Most likely error came from tensor_from_file and dict_of_tensor_dicts is empty
                         if tm.channel_map:
                             for cm in tm.channel_map:
-                                dict_of_tensor_dicts[0][f'{tm.name} {cm}'] = np.nan
+                                dict_of_tensor_dicts[0][f'{cm}'] = np.nan
                         else:
                             dict_of_tensor_dicts[0][tm.name] = np.full(shape, np.nan)[0]
                         dict_of_tensor_dicts[0][f'error_type_{tm.name}'] = type(e).__name__
