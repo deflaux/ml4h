@@ -744,7 +744,7 @@ class ExploreParallelWrapper():
 
                             error_type = ''
                             try:
-                                tensor = tm.postprocess_tensor(tensor, augment=False, hd5=hd5)
+                                tensor = tm.rescale(tm.postprocess_tensor(tensor, augment=False, hd5=hd5))
                                 # Append tensor to dict
                                 if tm.channel_map:
                                     for cm in tm.channel_map:
