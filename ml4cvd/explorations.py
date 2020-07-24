@@ -701,7 +701,7 @@ def _continuous_explore_header(tm: TensorMap) -> str:
 
 
 def _categorical_explore_header(tm: TensorMap, channel: str) -> str:
-    return f'{tm.name} {channel}'
+    return f'{channel}'
 
 
 class ExploreParallelWrapper():
@@ -748,7 +748,7 @@ class ExploreParallelWrapper():
                                 # Append tensor to dict
                                 if tm.channel_map:
                                     for cm in tm.channel_map:
-                                        dict_of_tensor_dicts[i][f'{tm.name} {cm}'] = tensor[tm.channel_map[cm]]
+                                        dict_of_tensor_dicts[i][f'{cm}'] = tensor[tm.channel_map[cm]]
                                 else:
                                     # If tensor is a scalar, isolate the value in the array;
                                     # otherwise, retain the value as array
@@ -759,7 +759,7 @@ class ExploreParallelWrapper():
                             except (IndexError, KeyError, ValueError, OSError, RuntimeError) as e:
                                 if tm.channel_map:
                                     for cm in tm.channel_map:
-                                        dict_of_tensor_dicts[i][f'{tm.name} {cm}'] = np.nan
+                                        dict_of_tensor_dicts[i][f'{cm}'] = np.nan
                                 else:
                                     dict_of_tensor_dicts[i][tm.name] = np.full(shape, np.nan)[0]
                                 error_type = type(e).__name__
@@ -817,7 +817,7 @@ def _tensors_to_df(args):
     str_cols = ['fpath', 'generator']
     for tm in tmaps:
         if tm.interpretation == Interpretation.LANGUAGE:
-            str_cols.extend([f'{tm.name} {cm}' for cm in tm.channel_map] if tm.channel_map else [tm.name])
+            str_cols.extend([f'{cm}' for cm in tm.channel_map] if tm.channel_map else [tm.name])
         str_cols.append(f'error_type_{tm.name}')
     str_cols = {key: 'string' for key in str_cols}
 
@@ -907,7 +907,7 @@ def explore(args):
                 counts_missing = []
                 if tm.channel_map:
                     for cm in tm.channel_map:
-                        key = f'{tm.name} {cm}'
+                        key = f'{cm}'
                         counts.append(df_cur[key].sum())
                         counts_missing.append(df_cur[key].isna().sum())
                 else:
@@ -1007,13 +1007,13 @@ def explore(args):
                     if tm.channel_map:
                         for cm in tm.channel_map:
                             stats = dict()
-                            key = f'{tm.name} {cm}'
+                            key = f'{cm}'
                             stats["count"] = df_cur[key].count()
                             stats["count_unique"] = len(df_cur[key].value_counts())
                             stats["missing"] = df_cur[key].isna().sum()
                             stats["total"] = len(df_cur[key])
                             stats["missing_percent"] = stats["missing"] / stats["total"] * 100
-                            df_stats = pd.concat([df_stats, pd.DataFrame([stats], index=[f'{tm.name} {cm}'])])
+                            df_stats = pd.concat([df_stats, pd.DataFrame([stats], index=[f'{cm}'])])
                     else:
                         stats = dict()
                         key = tm.name
