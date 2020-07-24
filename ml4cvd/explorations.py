@@ -775,7 +775,7 @@ class ExploreParallelWrapper():
                         dict_of_tensor_dicts[0][f'error_type_{tm.name}'] = type(e).__name__
 
                 for i in dict_of_tensor_dicts:
-                    dict_of_tensor_dicts[i]['fpath'] = path
+                    dict_of_tensor_dicts[i]['fpath'] = os.path.basename(path).split('.')[0]
                     dict_of_tensor_dicts[i]['generator'] = gen_name
 
                 # write tdicts to disk
