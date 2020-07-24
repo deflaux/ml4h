@@ -955,7 +955,7 @@ def explore(args):
                     if tm.channel_map:
                         for cm in tm.channel_map:
                             stats = dict()
-                            key = f'{tm.name} {cm}'
+                            key = f'{cm}'
                             stats["min"] = df_cur[key].min()
                             stats["max"] = df_cur[key].max()
                             stats["mean"] = df_cur[key].mean()
@@ -967,7 +967,7 @@ def explore(args):
                             stats["missing"] = df_cur[key].isna().sum()
                             stats["total"] = len(df_cur[key])
                             stats["missing_percent"] = stats["missing"] / stats["total"] * 100
-                            df_stats = pd.concat([df_stats, pd.DataFrame([stats], index=[f'{tm.name} {cm}'])])
+                            df_stats = pd.concat([df_stats, pd.DataFrame([stats], index=[f'{cm}'])])
                     else:
                         stats = dict()
                         key = tm.name
