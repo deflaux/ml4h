@@ -1073,6 +1073,7 @@ def train_model_from_generators(
     inspect_show_labels: bool,
     return_history: bool = False,
     plot: bool = True,
+    callbacks: Optional[list] = None
 ) -> Union[Model, Tuple[Model, History]]:
     """Train a model from tensor generators for validation and training data.
 
@@ -1103,10 +1104,16 @@ def train_model_from_generators(
         image_p = os.path.join(output_folder, run_id, 'architecture_graph_' + run_id + IMAGE_EXT)
         _inspect_model(model, generate_train, generate_valid, batch_size, training_steps, inspect_show_labels, image_p)
 
+    callback_fns = []
+    if callbacks:
+        callback_fns = callbacks
+    else:
+        callback_fns = _get_callbacks(patience, model_file)
+
     history = model.fit(
         generate_train, steps_per_epoch=training_steps, epochs=epochs, verbose=1,
         validation_steps=validation_steps, validation_data=generate_valid,
-        callbacks=_get_callbacks(patience, model_file),
+        callbacks=callback_fns,
     )
     generate_train.kill_workers()
     generate_valid.kill_workers()
