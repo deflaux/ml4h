@@ -19,9 +19,8 @@ import pandas as pd
 # or FieldID = 53 -- instance 0 date
 # or FieldID = 30700 -- creatinine
 # # %%
-# covariates.to_csv('bq_covariates.tsv', sep='\t')
+# covariates.('bq_covariates.tsv', sep='\t')
 
-# # %%
 # %%bigquery race
 # select sample_id, FieldID, instance, value from `ukbb7089_202006.phenotype` 
 # where FieldID = 21000 -- race
@@ -51,6 +50,10 @@ pretest = pd.read_csv('/mnt/disks/pd-nd-hrr-results/pretest_model_inference.tsv'
 #pretest_old = pd.read_csv('pretest_results_for_bolt.tsv', '\t')
 #pretest_old['sample_id'] = pretest_old['FID']
 pretest_to_rest = pd.read_csv('/mnt/disks/pd-nd-hrr-results/rest_model_inference_0_mean_std_1.tsv', sep='\t').drop(columns=['50_hrr_actual'])
+ventricular_rate = pd.read_csv('/home/pdiachil/ml/notebooks/genetics/ventricular_rate_resting_ecgs.csv', sep=',')
+ventricular_rate['sample_id'] = ventricular_rate['fpath'].str.split('/').str[-1].str.replace('.hd5', '').apply(int)
+pretest_to_rest = pretest_to_rest.merge(ventricular_rate[['sample_id', 'VentricularRate VentricularRate']], on='sample_id')
+pretest_to_rest['ventricular_rate'] = pretest_to_rest['VentricularRate VentricularRate']
 resting = pd.read_csv('exp_resting_hr.csv', sep=',')
 resting['sample_id'] = resting['fpath'].str.split('/').str[-1].str.replace('.hd5', '').apply(int)
 resting = resting[['sample_id', 'resting_hr']]
@@ -78,16 +81,21 @@ pheno_dic = {
              4080: ['systolic_bp', int],
              20116: ['current_smoker', int],
              30700: ['creatinine', float],
-             53: ['instance0_date', pd.to_datetime]
+             53: ['instance0_date', pd.to_datetime],
+             54: ['instance2_date', pd.to_datetime]
             }
 
 
 for i, ecg_set in enumerate(ecg_sets):
     missing = []
     for pheno in pheno_dic:
-        tmp_covariates = covariates[(covariates['FieldID']==pheno) &\
-                                    (covariates['instance']==0)]
-        if pheno == 53:
+        if pheno == 54:
+            tmp_covariates = covariates[(covariates['FieldID']==53) &\
+                                        (covariates['instance']==2)]
+        else:
+            tmp_covariates = covariates[(covariates['FieldID']==pheno) &\
+                                        (covariates['instance']==0)]
+        if pheno == 53 or pheno == 54:
             tmp_covariates['value'] = pd.to_datetime(tmp_covariates['value'])
         else:
             tmp_covariates['value'] = tmp_covariates['value'].apply(pheno_dic[pheno][1])
@@ -126,6 +134,20 @@ for i, ecg_set in enumerate(ecg_sets):
 
 # %%
 all_ecgs, pretest_to_rest, pretest_to_rest_overlap = ecg_sets
+
+# %%
+all_ecgs.to_csv('/home/pdiachil/ml/notebooks/genetics/pretest_covariates.csv', index=False)
+pretest_to_rest.to_csv('/home/pdiachil/ml/notebooks/genetics/rest_covariates.csv', index=False)
+pretest_to_rest_overlap.to_csv('/home/pdiachil/ml/notebooks/genetics/overlap_covariates.csv', index=False)
+
+# %%
+import matplotlib.pyplot as plt
+diff = (pretest_to_rest_overlap['instance2_date']-pretest_to_rest_overlap['instance0_date']).dt.days / 365.25
+ax = diff.hist()
+ax.set_xlabel('instance2 - instance0 (years)')
+ax.set_ylabel('Counts')
+ax.set_title('Years between resting and exercise ECGs')
+plt.savefig('years_between.png', dpi=500)
 # %%
 %matplotlib inline
 import matplotlib.pyplot as plt

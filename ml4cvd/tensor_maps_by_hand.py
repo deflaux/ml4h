@@ -118,7 +118,7 @@ TMAPS['rr-interval'] = TensorMap(
 )
 TMAPS['ventricular-rate'] = TensorMap(
     'VentricularRate', Interpretation.CONTINUOUS, path_prefix='ukb_ecg_rest', channel_map={'VentricularRate': 0}, validator=make_range_validator(30, 150),
-    loss='logcosh', normalization={'mean': 59.3, 'std': 10.6},
+    loss='logcosh', normalization={'mean': 0.0, 'std': 1.0},
 )
 TMAPS['t-offset'] = TensorMap(
     'TOffset', Interpretation.CONTINUOUS, path_prefix='ukb_ecg_rest', channel_map={'TOffset': 0}, loss='logcosh', validator=make_range_validator(700, 1000),
