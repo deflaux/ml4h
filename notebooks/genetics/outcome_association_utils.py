@@ -2,7 +2,9 @@ import numpy as np
 import pandas as pd
 import statsmodels.api as sm
 from matplotlib import pyplot as plt
-from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_auc_score, r2_score
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import KFold
 
 def unpack_disease(diseases, disease_list, phenotypes):
 
@@ -70,7 +72,7 @@ def hazard_ratios(phenotypes, diseases_unpack, labels, disease_labels,
         if pheno in covariates:
             continue
         hr_multi_dic[pheno] = {}
-        tmp_pheno = phenotypes[['sample_id', pheno, 'instance0_date'] + covariates]
+        tmp_pheno = phenotypes[['sample_id', pheno, f'instance{instance}_date'] + covariates]
         tmp_pheno[f'instance{instance}_date'] = pd.to_datetime(tmp_pheno[f'instance{instance}_date'])
         for disease, disease_label in disease_labels:
             hr_multi_dic[pheno][f'{disease}_incident'] = {}
@@ -91,7 +93,7 @@ def hazard_ratios(phenotypes, diseases_unpack, labels, disease_labels,
                                          - np.mean(tmp_data[covariates_scale].values, axis=0))/\
                                          np.std(tmp_data[covariates_scale].values, axis=0)
             tmp_data['intercept'] = 1.0
-            tmp_data['futime'] = (tmp_data[f'{disease}_censor_date']-tmp_data['instance0_date']).dt.days
+            tmp_data['futime'] = (tmp_data[f'{disease}_censor_date']-tmp_data[f'instance{instance}_date']).dt.days
             tmp_data['entry'] = 0.0
             tmp_data = tmp_data[tmp_data['futime']>0]  
             res = sm.PHReg(tmp_data['futime'], tmp_data[[pheno]+covariates], 
@@ -142,3 +144,72 @@ def plot_or_hr(or_dic, label_dic, disease_list, suffix, occ='prevalent'):
         ax.set_xlim([min(0.5, min(ors)*0.667), max(2.0, max(ors)*1.5)])
         plt.tight_layout()
         f.savefig(f'{dis}_{occ}_{suffix}.png', dpi=500)
+
+
+def regression_model(phenotypes, pheno_list, labels,
+                     covariates, dont_scale):
+
+    r_multi_dic = {}
+    for pheno in pheno_list:
+        if pheno in covariates:
+            continue
+        tmp_pheno = phenotypes[['sample_id', pheno] + covariates]
+        tmp_data = tmp_pheno
+        if pheno in dont_scale:
+            std = ''
+        else:
+            std = np.std(tmp_data[pheno].values)
+            tmp_data[pheno] = (tmp_data[pheno].values - np.mean(tmp_data[pheno].values))/std
+            std = f', {std:.1f}'
+        covariates_scale = [covariate for covariate in covariates if covariate not in dont_scale]    
+        tmp_data[covariates_scale] = (tmp_data[covariates_scale].values \
+                                      - np.mean(tmp_data[covariates_scale].values, axis=0))/\
+                                      np.std(tmp_data[covariates_scale].values, axis=0)
+        tmp_data['intercept'] = 1.0
+        res = sm.OLS(tmp_data[pheno], tmp_data[['intercept']+covariates]).fit(disp=False)
+        
+    return res
+
+def random_forest_model(phenotypes, pheno_list, labels,
+                        covariates, dont_scale):
+
+    r_multi_dic = {}
+    for pheno in pheno_list:
+        if pheno in covariates:
+            continue
+        tmp_pheno = phenotypes[['sample_id', pheno] + covariates]
+        tmp_data = tmp_pheno
+        if pheno in dont_scale:
+            std = ''
+        else:
+            std = np.std(tmp_data[pheno].values)
+            tmp_data[pheno] = (tmp_data[pheno].values - np.mean(tmp_data[pheno].values))/std
+            std = f', {std:.1f}'
+        covariates_scale = [covariate for covariate in covariates if covariate not in dont_scale]    
+        tmp_data[covariates_scale] = (tmp_data[covariates_scale].values \
+                                      - np.mean(tmp_data[covariates_scale].values, axis=0))/\
+                                      np.std(tmp_data[covariates_scale].values, axis=0)
+        kf = KFold(n_splits=5)
+        r2s = []
+        for train_index, test_index in kf.split(tmp_data):
+            rf = RandomForestRegressor(max_depth=5)
+            rf.fit(tmp_data[covariates].values[train_index], tmp_data[pheno].values[train_index])
+            predict = rf.predict(tmp_data[covariates].values[test_index])
+            r2s.append(r2_score(tmp_data[pheno].values[test_index], predict))
+        
+    return r2s
+
+def plot_rsquared_covariates(rsquared, label_dic):
+    f, ax = plt.subplots()
+    f.set_size_inches(5, 3)
+    for i, rr in enumerate(rsquared):
+        ax.barh([len(rsquared)-i-1], rsquared[rr]['mean'], xerr=rsquared[rr]['std'], color='gray')
+    ticklabels = []
+    for i, covariate in enumerate(rsquared):
+        prefix = '' if i == 0 else '+ '
+        ticklabels.append(prefix+label_dic[covariate][0])
+    ax.set_yticks(range(len(rsquared)))
+    ax.set_yticklabels(ticklabels[::-1])
+    ax.set_xlabel('R$^2$')
+    plt.tight_layout()
+    f.savefig('rsquared_addedvalue.png', dpi=500)
