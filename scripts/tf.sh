@@ -177,14 +177,13 @@ Attempting to run Docker with
         eval ${CALL_DOCKER_USER} ${PYTHON_COMMAND} ${PYTHON_ARGS}"
 LAUNCH_MESSAGE
 
-#--env GROUP_NAMES \
-#--env GROUP_IDS \
-
 docker run ${INTERACTIVE} \
 ${GPU_DEVICE} \
+--env GROUP_NAMES \
+--env GROUP_IDS \
 --rm \
 --ipc=host \
--v ${WORKDIR}/:${WORKDIR}/ \
+#-v ${WORKDIR}/:${WORKDIR}/ \
 -v ${HOME}/:${HOME}/ \
-${MOUNTS} \
+#${MOUNTS} \
 ${DOCKER_IMAGE} /bin/bash -c "pip install ${WORKDIR}; ${PYTHON_COMMAND} ${PYTHON_ARGS}"
