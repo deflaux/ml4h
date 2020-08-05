@@ -179,8 +179,8 @@ LAUNCH_MESSAGE
 
 docker run ${INTERACTIVE} \
 ${GPU_DEVICE} \
---env GROUP_NAMES \
---env GROUP_IDS \
+#--env GROUP_NAMES \
+#--env GROUP_IDS \
 --rm \
 --ipc=host \
 -v ${WORKDIR}/:${WORKDIR}/ \
