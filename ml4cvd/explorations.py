@@ -45,7 +45,7 @@ def predictions_to_pngs(
     input_map = tensor_maps_in[0]
     if not os.path.exists(folder):
         os.makedirs(folder)
-    for y, tm in zip(predictions, tensor_maps_out):
+    for y, tm in zip(predictions, sorted(tensor_maps_out)):
         if not isinstance(predictions, list):  # When models have a single output model.predict returns a ndarray otherwise it returns a list
             y = predictions
         for im in tensor_maps_in:
