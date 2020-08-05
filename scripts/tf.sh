@@ -176,6 +176,8 @@ Attempting to run Docker with
     ${DOCKER_IMAGE} /bin/bash -c "pip install ${WORKDIR};
         eval ${CALL_DOCKER_USER} ${PYTHON_COMMAND} ${PYTHON_ARGS}"
 LAUNCH_MESSAGE
+#-v ${WORKDIR}/:${WORKDIR}/ \
+#${MOUNTS} \
 
 docker run ${INTERACTIVE} \
 ${GPU_DEVICE} \
@@ -183,7 +185,5 @@ ${GPU_DEVICE} \
 --env GROUP_IDS \
 --rm \
 --ipc=host \
-#-v ${WORKDIR}/:${WORKDIR}/ \
 -v ${HOME}/:${HOME}/ \
-#${MOUNTS} \
 ${DOCKER_IMAGE} /bin/bash -c "pip install ${WORKDIR}; ${PYTHON_COMMAND} ${PYTHON_ARGS}"
