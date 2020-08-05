@@ -178,6 +178,7 @@ Attempting to run Docker with
 LAUNCH_MESSAGE
 #-v ${WORKDIR}/:${WORKDIR}/ \
 #${MOUNTS} \
+#-v ${HOME}/:${HOME}/ \
 
 docker run ${INTERACTIVE} \
 ${GPU_DEVICE} \
@@ -185,5 +186,4 @@ ${GPU_DEVICE} \
 --env GROUP_IDS \
 --rm \
 --ipc=host \
--v ${HOME}/:${HOME}/ \
 ${DOCKER_IMAGE} /bin/bash -c "pip install ${WORKDIR}; ${PYTHON_COMMAND} ${PYTHON_ARGS}"
