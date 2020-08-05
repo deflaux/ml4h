@@ -267,6 +267,7 @@ TMAPS[task] = TensorMap(
     path_prefix=PARTNERS_PREFIX,
     tensor_from_file=partners_ecg_datetime,
     shape=(None, 1),
+    channel_map={task: 0},
     time_series_limit=0,
     validator=validator_no_empty,
 )
