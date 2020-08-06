@@ -13,10 +13,9 @@ import h5py
 import numcodecs
 import numpy as np
 
-from ml4cvd.defines import TENSOR_EXT, XML_EXT
+from ml4cvd.defines import TENSOR_EXT, XML_EXT, ECG_REST_AMP_LEADS
 
-
-ECG_REST_INDEPENDENT_LEADS = ["I", "II", "V1", "V2", "V3", "V4", "V5", "V6"]
+ECG_REST_INDEPENDENT_LEADS = ['I', 'II', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6']
 
 
 def write_tensors_partners(xml_folder: str, tensors: str, num_workers: int) -> None:
@@ -124,6 +123,8 @@ def _data_from_xml(fpath_xml: str) -> Dict[str, Union[str, Dict[str, np.ndarray]
         'intervalmeasurementtimeresolution',
         'intervalmeasurementamplituderesolution',
         'intervalmeasurementfilter',
+        'amplitudemeasurements',
+        'measurementmatrix',
         'waveform',
     ]
     strainer = bs4.SoupStrainer(tags)
@@ -147,6 +148,17 @@ def _data_from_xml(fpath_xml: str) -> Dict[str, Union[str, Dict[str, np.ndarray]
             soup_tag = soup.find(tag)
             if soup_tag is not None:
                 ecg_data['diagnosis_pc'] = _parse_soup_diagnosis(soup_tag)
+            continue
+        elif tag == 'amplitudemeasurements':
+            soup_tag = soup.find(tag)
+            if soup_tag is not None:
+                amplitude_data = _get_amplitude_from_amplitude_tags(soup.find_all('measuredamplitude'))
+                ecg_data['amplitude'] = amplitude_data
+            continue
+        elif tag == 'measurementmatrix':
+            soup_tag = soup.find(tag)
+            if soup_tag is not None:
+                ecg_data['measurementmatrix'] = _get_measurement_matrix_from_matrix_tags(soup.find_all('measurementmatrix'))
             continue
         elif tag == 'waveform':
             voltage_data = _get_voltage_from_waveform_tags(soup.find_all(tag))
@@ -215,6 +227,41 @@ def _parse_soup_diagnosis(input_from_soup: bs4.Tag) -> str:
     return parsed_text
 
 
+def _get_amplitude_from_amplitude_tags(amplitude_tags: bs4.ResultSet) -> Dict[str, Union[str, Dict[str, np.ndarray]]]:
+    wave_ids = set()
+    amplitude_data = {}
+    amplitude_features = ['peak', 'start', 'duration', 'area']
+    ecg_rest_amp_leads = {k.upper(): v for k, v in ECG_REST_AMP_LEADS.items()}
+    for amplitude_tag in amplitude_tags:
+        lead_id = amplitude_tag.find('amplitudemeasurementleadid').text
+        wave_id = amplitude_tag.find('amplitudemeasurementwaveid').text
+        if wave_id not in wave_ids:
+            wave_ids.add(wave_id)
+            for amplitude_feature in amplitude_features:
+                amplitude_data[f'measuredamplitude{amplitude_feature}_{wave_id}'] = np.empty(len(ecg_rest_amp_leads))
+                amplitude_data[f'measuredamplitude{amplitude_feature}_{wave_id}'][:] = np.nan
+        for amplitude_feature in amplitude_features:
+            value = int(amplitude_tag.find(f'amplitudemeasurement{amplitude_feature}').text)
+            try:
+                amplitude_data[f'measuredamplitude{amplitude_feature}_{wave_id}'][ecg_rest_amp_leads[lead_id]] = value
+            except KeyError as e:
+                logging.warning(f'Amplitude of lead {str(e)} will not be extracted.')
+    return amplitude_data
+
+
+def _decode_array(array_raw: str, scale: float = 1.0) -> np.ndarray:
+    decoded = base64.b64decode(array_raw)
+    waveform = [struct.unpack("h", bytes([decoded[t], decoded[t + 1]]))[0] for t in range(0, len(decoded), 2)]
+    return np.array(waveform) * scale
+
+
+def _get_measurement_matrix_from_matrix_tags(matrix_tags: bs4.ResultSet) -> np.ndarray:
+    for matrix_tag in matrix_tags:
+        matrix = matrix_tag.text
+        decoded = _decode_array(matrix)
+    return decoded
+
+
 def _get_voltage_from_waveform_tags(waveform_tags: bs4.ResultSet) -> Dict[str, Union[str, Dict[str, np.ndarray]]]:
     voltage_data = dict()
     metadata_tags = ['samplebase', 'sampleexponent', 'highpassfilter', 'lowpassfilter', 'acfilter']
@@ -243,11 +290,6 @@ def _get_voltage_from_lead_tags(lead_tags: bs4.ResultSet) -> Dict[str, Union[str
     all_lead_lengths = []
     all_lead_units = []
 
-    def _decode_waveform(waveform_raw: str, scale: float) -> np.ndarray:
-        decoded = base64.b64decode(waveform_raw)
-        waveform = [struct.unpack("h", bytes([decoded[t], decoded[t + 1]]))[0] for t in range(0, len(decoded), 2)]
-        return np.array(waveform) * scale
-
     try:
         for lead_tag in lead_tags:
             # for each lead, we make sure all leads use 2 bytes per sample,
@@ -259,7 +301,7 @@ def _get_voltage_from_lead_tags(lead_tags: bs4.ResultSet) -> Dict[str, Union[str
             lead_id = lead_tag.find('leadid').text
             lead_scale = lead_tag.find('leadamplitudeunitsperbit').text
             lead_waveform_raw = lead_tag.find('waveformdata').text
-            lead_waveform = _decode_waveform(lead_waveform_raw, float(lead_scale))
+            lead_waveform = _decode_array(lead_waveform_raw, float(lead_scale))
 
             lead_length = lead_tag.find('leadsamplecounttotal').text
             lead_units = lead_tag.find('leadamplitudeunits').text
@@ -364,6 +406,21 @@ def _convert_xml_to_hd5(fpath_xml: str, fpath_hd5: str, hd5: h5py.Group) -> int:
         voltage = ecg_data.pop('voltage')
         for lead in voltage:
             _compress_and_save_data(hd5=gp, name=lead, data=voltage[lead].astype('int16'), dtype='int16')
+
+        # Save ECG wave amplitudes if present
+        try:
+            amplitudes = ecg_data.pop('amplitude')
+            for amplitude in amplitudes:
+                _compress_and_save_data(hd5=gp, name=amplitude, data=amplitudes[amplitude], dtype='float')
+        except KeyError:
+            logging.info(f'Conversion of amplitude measures failed! Not present in: {fpath_xml}')
+        
+        # Save measurement matrix if present
+        try:
+            measurement_matrix = ecg_data.pop('measurementmatrix')
+            _compress_and_save_data(hd5=gp, name='measurementmatrix', data=measurement_matrix.astype('int16'), dtype='int16')
+        except KeyError:
+            logging.info(f'Conversion of measurement matrix failed! Not present in: {fpath_xml}')
 
         # Save everything else
         for key in ecg_data:
