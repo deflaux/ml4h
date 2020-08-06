@@ -126,6 +126,13 @@ def tensor_maps_to_output_types(tensor_maps_in: List[TensorMap], tensor_maps_out
     )
 
 
+def tensor_maps_to_output_shapes(tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap]):
+    return (
+        {tmap.input_name(): tmap.shape for tmap in tensor_maps_in},
+        {tmap.output_name(): tmap.shape for tmap in tensor_maps_out},
+    )
+
+
 def sample_getter_from_tensor_maps(
         sample_id_to_path: Dict[int, str],
         tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
@@ -144,16 +151,17 @@ def tensor_generator_from_tensor_maps(
         hd5_paths: List[str],
         tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
         batch_size: int,
-        num_workers: int = 0,  # TODO: use this stuff
-        augment: bool = False,
+        augment: bool = False,  # TODO: number of workers, deterministism, shuffling
 ) -> tf.data.Dataset:
     sample_id_to_path = {_hd5_path_to_sample_id(path): path for path in hd5_paths}
     sample_getter = sample_getter_from_tensor_maps(sample_id_to_path, tensor_maps_in, tensor_maps_out, augment)
     output_types = tensor_maps_to_output_types(tensor_maps_in, tensor_maps_out)
+    output_shapes = tensor_maps_to_output_shapes(tensor_maps_in, tensor_maps_out)
     return tf.data.Dataset.from_tensor_slices(  # TODO: This feels overly complicated
-        list(sample_id_to_path.keys())).interleave(
+        list(sample_id_to_path.keys())).interleave(  # TODO: should the sample_id dataset be passed as an argument?
         lambda sample_id: tf.data.Dataset.from_generator(
             sample_getter, args=(sample_id,),
             output_types=output_types,
+            output_shapes=output_shapes,
         )
-    )
+    ).batch(batch_size)
