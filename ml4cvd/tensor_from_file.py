@@ -1971,7 +1971,7 @@ def _slice_tensor_with_segmentation(tensor_key, segmentation_key, path_prefix='u
 
 
 TMAPS['ao_slice_jamesp'] = TensorMap(
-    'cine_segmented_ao_dist', Interpretation.CATEGORICAL, shape=(196, 240, 1), normalization=ZeroMeanStd1(),
+    'cine_segmented_ao_dist', shape=(196, 240, 1), normalization=ZeroMeanStd1(),
     tensor_from_file=_slice_tensor_with_segmentation('cine_segmented_ao_dist/instance_0', 'cine_segmented_ao_dist_jamesp_annotated_'),
 )
 
