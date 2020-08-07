@@ -1,4 +1,5 @@
 import os
+import pandas as pd
 from typing import Set, Any, Dict, List, Callable, Tuple, Optional
 from contextlib import contextmanager, ExitStack
 from abc import ABC, abstractmethod
@@ -7,6 +8,7 @@ import h5py
 import tensorflow as tf
 
 from ml4cvd.TensorMap import TensorMap, Interpretation
+from ml4cvd.defines import SAMPLE_ID
 
 
 class StateSetter(ABC):
@@ -21,6 +23,16 @@ class StateSetter(ABC):
         pass
 
 
+class SampleIdStateSetter(StateSetter):
+    @staticmethod
+    def get_name() -> str:
+        return SAMPLE_ID
+
+    @contextmanager
+    def get_state(self, sample_id: int) -> int:
+        yield sample_id
+
+
 class TensorGetter(ABC):
 
     required_states: Set[str]
@@ -28,7 +40,6 @@ class TensorGetter(ABC):
     shape: Tuple[int, ...]
 
     @abstractmethod
-    @contextmanager
     def get_tensor(self, evaluated_states: Dict[str, Any]) -> np.ndarray:
         pass
 
@@ -71,7 +82,7 @@ class SampleGetter:
             )]
 
 
-class HD5State(StateSetter):
+class HD5StateSetter(StateSetter):
 
     def __init__(self, hd5_paths: Dict[int, str]):
         self.hd5_paths = hd5_paths
@@ -89,8 +100,8 @@ class HD5State(StateSetter):
 class TensorMapTensorGetter(TensorGetter):
 
     def __init__(self, tensor_map: TensorMap, augment: bool, is_input: bool):
-        self.required_states = {HD5State.get_name()}
-        self.required_state = HD5State.get_name()
+        self.required_states = {HD5StateSetter.get_name()}
+        self.required_state = HD5StateSetter.get_name()
         self.tensor_map = tensor_map
         self.name = tensor_map.input_name() if is_input else tensor_map.output_name()
         self.augment = augment
@@ -119,14 +130,18 @@ INTERPRETATION_TO_TENSOR_FLOW_TYPE = {  # TODO: what types?
 }
 
 
-def tensor_maps_to_output_types(tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap]):
+OutputTypes = Tuple[Dict[str, tf.dtypes.DType], Dict[str, tf.dtypes.DType]]
+OutputShapes = Tuple[Dict[str, tf.dtypes.DType], Dict[str, Tuple[Optional[int], ...]]]
+
+
+def tensor_maps_to_output_types(tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap]) -> OutputTypes:
     return (
         {tmap.input_name(): INTERPRETATION_TO_TENSOR_FLOW_TYPE[tmap.interpretation] for tmap in tensor_maps_in},
         {tmap.output_name(): INTERPRETATION_TO_TENSOR_FLOW_TYPE[tmap.interpretation] for tmap in tensor_maps_out},
     )
 
 
-def tensor_maps_to_output_shapes(tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap]):
+def tensor_maps_to_output_shapes(tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap]) -> OutputShapes:
     return (
         {tmap.input_name(): tmap.shape for tmap in tensor_maps_in},
         {tmap.output_name(): tmap.shape for tmap in tensor_maps_out},
@@ -138,7 +153,7 @@ def sample_getter_from_tensor_maps(
         tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
         augment: bool = False,
 ) -> SampleGetter:
-    hd5_state = HD5State(sample_id_to_path)
+    hd5_state = HD5StateSetter(sample_id_to_path)
     input_tensor_getters = [TensorMapTensorGetter(tmap, augment, True) for tmap in tensor_maps_in]
     output_tensor_getters = [TensorMapTensorGetter(tmap, augment, False) for tmap in tensor_maps_out]
     return SampleGetter(
@@ -147,21 +162,44 @@ def sample_getter_from_tensor_maps(
     )
 
 
-def tensor_generator_from_tensor_maps(
-        hd5_paths: List[str],
-        tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
-        batch_size: int,
-        augment: bool = False,  # TODO: number of workers, deterministism, shuffling
+def dataset_from_sample_getter(
+        sample_getter: SampleGetter,
+        sample_ids: List[int],
+        output_types: OutputTypes,
+        output_shapes: OutputShapes,
+        # TODO: number of workers, deterministism, shuffling
 ) -> tf.data.Dataset:
-    sample_id_to_path = {_hd5_path_to_sample_id(path): path for path in hd5_paths}
-    sample_getter = sample_getter_from_tensor_maps(sample_id_to_path, tensor_maps_in, tensor_maps_out, augment)
-    output_types = tensor_maps_to_output_types(tensor_maps_in, tensor_maps_out)
-    output_shapes = tensor_maps_to_output_shapes(tensor_maps_in, tensor_maps_out)
     return tf.data.Dataset.from_tensor_slices(  # TODO: This feels overly complicated
-        list(sample_id_to_path.keys())).interleave(  # TODO: should the sample_id dataset be passed as an argument?
+        sorted(sample_ids)).interleave(
         lambda sample_id: tf.data.Dataset.from_generator(
             sample_getter, args=(sample_id,),
             output_types=output_types,
             output_shapes=output_shapes,
         )
-    ).batch(batch_size)
+    )
+
+
+def dataset_from_tensor_maps(
+        hd5_paths: List[str],
+        tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
+        augment: bool = False,
+) -> tf.data.Dataset:
+    sample_id_to_path = {_hd5_path_to_sample_id(path): path for path in hd5_paths}
+    sample_getter = sample_getter_from_tensor_maps(sample_id_to_path, tensor_maps_in, tensor_maps_out, augment)
+    output_types = tensor_maps_to_output_types(tensor_maps_in, tensor_maps_out)
+    output_shapes = tensor_maps_to_output_shapes(tensor_maps_in, tensor_maps_out)
+    return dataset_from_sample_getter(
+        sample_getter, list(sample_id_to_path.keys()), output_types, output_shapes
+    )
+
+
+class DataFrameTensorGetter(TensorGetter):
+    def __init__(self, df: pd.DataFrame, column: str):
+        """df should be indexed by sample_id"""
+        self.name = column
+        self.required_state = SampleIdStateSetter.get_name()
+        self.required_states = {self.required_state}
+        self.df = df[column]
+
+    def get_tensor(self, evaluated_states: Dict[str, Any]) -> np.ndarray:
+        return self.df[evaluated_states[self.required_state]]
