@@ -183,6 +183,10 @@ def write_tensors_from_dicom_pngs(
         try:
             png = imageio.imread(os.path.join(png_path, dicom_file + png_postfix))
             logging.info(f"PNG shape {png.shape} mean {png.mean():0.3f} std {png.std():0.3f} png r channel {png[:, :, 0].mean():0.3f} std {png[:, :, 0].std():0.3f}")
+            if len(png.shape) == 3 and png.mean() == png[:, :, 0].mean():
+                png = png[:, :, 0]
+            else:
+                raise ValueError(f'PNG has color information but no method to tensorize it.')
             full_tensor = np.zeros((x, y), dtype=np.float32)
             full_tensor[:png.shape[0], :png.shape[1]] = png
             tensor_file = os.path.join(tensors, str(sample_id) + TENSOR_EXT)
