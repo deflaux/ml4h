@@ -1970,11 +1970,11 @@ def _slice_tensor_with_segmentation(tensor_key, segmentation_key, path_prefix='u
     return _slice_tensor_from_file
 
 
-TMAPS['ao_slice_jamesp'] = TensorMap(
-    'cine_segmented_ao_dist', shape=(200, 240, 1), normalization=ZeroMeanStd1(),
+TMAPS['aorta_slice_jamesp'] = TensorMap(
+    'aorta_slice_jamesp', shape=(200, 240, 1), normalization=ZeroMeanStd1(),
     tensor_from_file=_slice_tensor_with_segmentation('cine_segmented_ao_dist/instance_0', 'cine_segmented_ao_dist_jamesp_annotated_'),
 )
-TMAPS['ao_slice_nekoui'] = TensorMap(
+TMAPS['aorta_slice_nekoui'] = TensorMap(
     'aorta_slice_nekoui', shape=(200, 240, 1), normalization=ZeroMeanStd1(),
     tensor_from_file=_slice_tensor_with_segmentation('cine_segmented_ao_dist/instance_0', 'cine_segmented_ao_dist_nekoui_annotated_'),
 )
