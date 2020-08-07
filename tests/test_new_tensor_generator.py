@@ -7,7 +7,7 @@ from collections import defaultdict
 from ml4cvd.new_tensor_generator import dataset_from_tensor_maps, _hd5_path_to_sample_id, sample_getter_from_tensor_maps
 from ml4cvd.new_tensor_generator import dataset_from_sample_getter, DataFrameTensorGetter, SampleGetter, SampleIdStateSetter
 from ml4cvd.new_tensor_generator import tensor_maps_to_output_shapes, tensor_maps_to_output_types, TensorMapTensorGetter
-from ml4cvd.new_tensor_generator import HD5StateSetter
+from ml4cvd.new_tensor_generator import HD5StateSetter, find_working_ids, ERROR_COL, TensorGetter, _format_error
 from ml4cvd.defines import SAMPLE_ID
 from ml4cvd.test_utils import TMAPS_UP_TO_4D
 from ml4cvd.test_utils import build_hdf5s
@@ -131,3 +131,38 @@ def test_combine_tensor_maps_data_frame(expected_tensors):
     for inp, out in dataset.as_numpy_iterator():
         for name, val in inp.items():
             assert pytest.approx(out[name]) == val.mean()
+
+
+class FailSometimesTensorGetter(TensorGetter):
+    def __init__(self):
+        self.name = 'flaky_flakester'
+        self.required_state = SampleIdStateSetter.get_name()
+        self.required_states = {self.required_state}
+
+    def get_tensor(self, evaluated_states) -> np.ndarray:
+        sample_id = evaluated_states[self.required_state]
+        if sample_id % 3 == 0:
+            return np.ones(1)
+        if sample_id % 3 == 1:
+            raise ValueError(sample_id)
+        if sample_id % 3 == 2:
+            raise IndexError(sample_id)
+
+
+def test_find_working_ids():
+    sample_getter = SampleGetter(
+        [FailSometimesTensorGetter()],
+        [],
+        [SampleIdStateSetter()],
+    )
+    sample_ids = list(range(pytest.N_TENSORS))
+    df = find_working_ids(sample_getter, sample_ids, 3)
+    df.index = df[SAMPLE_ID]
+    for sample_id in sample_ids:
+        error = df.loc[sample_id][ERROR_COL]
+        if sample_id % 3 == 0:
+            assert error == ''
+        if sample_id % 3 == 1:
+            assert error == _format_error(ValueError(sample_id))
+        if sample_id % 3 == 2:
+            assert error == _format_error(IndexError(sample_id))

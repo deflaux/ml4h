@@ -1,11 +1,13 @@
 import os
 import pandas as pd
-from typing import Set, Any, Dict, List, Callable, Tuple, Optional
+from functools import partial
+from typing import Set, Any, Dict, List, Tuple, Optional
 from contextlib import contextmanager, ExitStack
 from abc import ABC, abstractmethod
 import numpy as np
 import h5py
 import tensorflow as tf
+from multiprocessing import Pool
 
 from ml4cvd.TensorMap import TensorMap, Interpretation
 from ml4cvd.defines import SAMPLE_ID
@@ -36,7 +38,7 @@ class SampleIdStateSetter(StateSetter):
 class TensorGetter(ABC):
 
     required_states: Set[str]
-    name: str
+    name: str  # TODO: should this be an abstract property?
     shape: Tuple[int, ...]
 
     @abstractmethod
@@ -203,3 +205,33 @@ class DataFrameTensorGetter(TensorGetter):
 
     def get_tensor(self, evaluated_states: Dict[str, Any]) -> np.ndarray:
         return self.df[evaluated_states[self.required_state]]
+
+
+ERROR_COL = 'error'
+
+
+def _format_error(error: Exception):
+    return f'{type(error).__name__}: {error}'
+
+
+def try_sample_id(sample_id: int, sample_getter: SampleGetter) -> Tuple[float, str]:
+    try:
+        sample_getter(sample_id)
+    except (IndexError, KeyError, ValueError, OSError, RuntimeError) as error:
+        return sample_id, _format_error(error)
+    return sample_id, ''
+
+
+def find_working_ids(
+        sample_getter: SampleGetter, sample_ids: List[int], num_workers: int,
+) -> pd.DataFrame:
+    pool = Pool(num_workers)
+    tried_sample_ids = []
+    errors = []
+    for i, (sample_id, error) in enumerate(
+            pool.imap_unordered(partial(try_sample_id, sample_getter=sample_getter), sample_ids)
+    ):
+        tried_sample_ids.append(sample_id)
+        errors.append(error)
+        print(f'{(i + 1) / len(sample_ids):.2%} done finding working sample ids', end='\r')
+    return pd.DataFrame({SAMPLE_ID: tried_sample_ids, ERROR_COL: errors})
