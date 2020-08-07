@@ -593,16 +593,17 @@ def _demo_augmentations(hd5_path: str, setting: ModelSetting):
     plt.savefig(os.path.join(AUGMENTATION_FIGURE_FOLDER, f'{setting.model_id}_{_sample_id_from_path(hd5_path)}.png'))
 
 
-RESTING_HR = TensorMap('resting_hr', path_prefix='ecg_bike', shape=(1,))
+RESTING_HR = TensorMap('resting_hr', path_prefix='ecg_bike/continuous', shape=(1,))
 
 
-def _resting_hr(sample_id: int) -> Dict[str, float]:
+def _resting_hr(path: str) -> Dict[str, float]:
+    sample_id = _sample_id_from_path(path)
     if str(sample_id).endswith('000'):
         logging.info(f'Processing sample_id {sample_id}.')
-    with h5py.File(_path_from_sample_id(str(sample_id)), 'r') as hd5:
+    with h5py.File(path, 'r') as hd5:
         try:
-            hr = RESTING_HR.tensor_from_file(RESTING_HR, hd5)
-        except KeyError:
+            hr = RESTING_HR.tensor_from_file(RESTING_HR, hd5)[0]
+        except (KeyError, ValueError):
             hr = np.nan
     return {'sample_id': sample_id, 'resting_hr': hr}
 
@@ -613,7 +614,7 @@ def _resting_hr_df(paths: List[str]) -> pd.DataFrame:
     pool = Pool()
     logging.info('Beginning to get resting HRs.')
     now = time.time()
-    measures = pool.map(_recovery_hrs_from_path, paths)
+    measures = pool.map(_resting_hr, paths)
     df = pd.DataFrame(measures)
     delta_t = time.time() - now
     logging.info(f'Getting resting HRs took {delta_t // 60} minutes at {delta_t / len(paths):.2f}s per path.')
@@ -624,34 +625,38 @@ def _resting_hr_df(paths: List[str]) -> pd.DataFrame:
 def resting_hr_explore(setting: ModelSetting):
     paths = [os.path.join(TENSOR_FOLDER, p) for p in sorted(os.listdir(TENSOR_FOLDER)) if p.endswith(TENSOR_EXT)]
     resting_hr = _resting_hr_df(paths)
-    infer_df = pd.read_csv(PRETEST_INFERENCE_NAME)
+    infer_df = pd.read_csv(os.path.join(OUTPUT_FOLDER, PRETEST_INFERENCE_NAME), sep='\t')
     target_cols = [time_to_pred_hrr_col(HRR_TIME, setting.model_id), time_to_actual_hrr_col(HRR_TIME)]
     pretest_hr = infer_df[['sample_id'] + target_cols]
     df = pretest_hr.merge(resting_hr, on='sample_id')
     ax_size = 10
-    for low, high in (0, .01), (.495, .505), (.99, 1):
+    step = .03
+    for low, high in [(x, x + step) for x in np.arange(.01, 1, step)]:
         low_cut, high_cut = np.quantile(df['resting_hr'], [low, high])
-        df_slice = df[(df['resting_hr'] < high_cut) & (df['resting_hr'] > low_cut)]
+        df_slice = df[(df['resting_hr'] <= high_cut) & (df['resting_hr'] > low_cut)]
+        if df_slice.empty:
+            continue
         for col in target_cols:
-            low_row = df_slice[col].argmin()
-            high_row = df_slice[col].argmax()
+            low_row = df_slice.iloc[df_slice[col].argmin()]
+            high_row = df_slice.iloc[df_slice[col].argmax()]
             fig, axes = plt.subplots(
-                nrows=3, ncols=1, figsize=(ax_size * 3, ax_size), sharex='all',
+                nrows=3, ncols=1, figsize=(ax_size * 2, ax_size * 3),
             )
             sns.distplot(df_slice[col], ax=axes[0], label=col)
             axes[0].axvline(low_row[col], label=f'Low {col}', color='k', linestyle='--')
             axes[0].axvline(high_row[col], label=f'High {col}', color='k', linestyle='--')
             axes[0].set_title(
-                f'Differences in {col} for {df_slice["resting_hr"].min():.2f} < resting hr < {df_slice["resting_hr"].max()}'
+                f'Differences in {col} for {df_slice["resting_hr"].min():.2f} < resting hr ≤ {df_slice["resting_hr"].max()}',
             )
 
             for ax, row in zip(axes[1:], [low_row, high_row]):
                 sample_id = row['sample_id']
-                with h5py.File(_path_from_sample_id(str(sample_id)), 'r') as hd5:
+                with h5py.File(_path_from_sample_id(str(int(sample_id))), 'r') as hd5:
                     pretest = _get_bike_ecg(hd5, 0, PRETEST_DUR * SAMPLING_RATE, [0])
                 ax.plot(np.linspace(0, PRETEST_TRAINING_DUR, len(pretest)), pretest, c='k', label=f'ECG for {col} = {row[col]:.2f}')
                 ax.legend()
-            plt.savefig(os.path.join(RESTING_HR_FIGURE_FOLDER, f'{setting.model_id}_{col}_{low}_{high}.png'))
+            plt.savefig(os.path.join(RESTING_HR_FIGURE_FOLDER, f'{setting.model_id}_{col}_{low:.3f}_{high:.3f}.png'))
+            plt.close()
 
 
 # Model training
