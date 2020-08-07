@@ -1974,6 +1974,10 @@ TMAPS['ao_slice_jamesp'] = TensorMap(
     'cine_segmented_ao_dist', shape=(200, 240, 1), normalization=ZeroMeanStd1(),
     tensor_from_file=_slice_tensor_with_segmentation('cine_segmented_ao_dist/instance_0', 'cine_segmented_ao_dist_jamesp_annotated_'),
 )
+TMAPS['ao_slice_nekoui'] = TensorMap(
+    'cine_segmented_ao_dist', shape=(200, 240, 1), normalization=ZeroMeanStd1(),
+    tensor_from_file=_slice_tensor_with_segmentation('cine_segmented_ao_dist/instance_0', 'cine_segmented_ao_dist_nekoui_annotated_'),
+)
 
 
 def _segmented_dicom_slice(dicom_key_prefix, path_prefix='ukb_cardiac_mri', max_slices=100):
@@ -1993,6 +1997,10 @@ def _segmented_dicom_slice(dicom_key_prefix, path_prefix='ukb_cardiac_mri', max_
 TMAPS['cine_segmented_ao_dist_jamesp'] = TensorMap(
     'cine_segmented_ao_dist', Interpretation.CATEGORICAL, shape=(200, 240, len(MRI_AO_SEGMENTED_CHANNEL_MAP)),
     tensor_from_file=_segmented_dicom_slice('cine_segmented_ao_dist_jamesp_annotated_'), channel_map=MRI_AO_SEGMENTED_CHANNEL_MAP,
+)
+TMAPS['cine_segmented_ao_dist_nekoui'] = TensorMap(
+    'cine_segmented_ao_dist', Interpretation.CATEGORICAL, shape=(200, 240, len(MRI_AO_SEGMENTED_CHANNEL_MAP)),
+    tensor_from_file=_segmented_dicom_slice('cine_segmented_ao_dist_nekoui_annotated_'), channel_map=MRI_AO_SEGMENTED_CHANNEL_MAP,
 )
 
 
