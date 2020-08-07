@@ -1956,6 +1956,38 @@ TMAPS['liver_shmolli_segmented'] = TensorMap(
 )
 
 
+def _segmented_dicom_slice(dicom_key_prefix, path_prefix='ukb_cardiac_mri', max_slices=100):
+    def _segmented_dicom_tensor_from_file(tm, hd5, dependents={}):
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        for i in range(max_slices):
+            slice_key = f'{dicom_key_prefix}{i + 1}'
+            if f'{path_prefix}/{slice_key}' in hd5:
+                categorical_index_slice = _get_tensor_at_first_date(hd5, path_prefix, slice_key)
+                categorical_one_hot = to_categorical(categorical_index_slice, len(tm.channel_map))
+                tensor[..., :] = _pad_or_crop_array_to_shape(tensor[..., :].shape, categorical_one_hot)
+                return tensor
+    return _segmented_dicom_tensor_from_file
+
+
+TMAPS['cine_segmented_ao_dist_jamesp'] = TensorMap(
+    'cine_segmented_ao_dist', Interpretation.CATEGORICAL, shape=(196, 240, len(MRI_AO_SEGMENTED_CHANNEL_MAP)),
+    tensor_from_file=_segmented_dicom_slices('cine_segmented_ao_dist_jamesp_annotated_'), channel_map=MRI_AO_SEGMENTED_CHANNEL_MAP,
+)
+
+def _dicom_slice_with_segmentation(dicom_key_prefix, path_prefix='ukb_cardiac_mri', max_slices=100):
+    def _dicom_tensor_from_file(tm, hd5, dependents={}):
+        tensor = np.zeros(tm.shape, dtype=np.float32)
+        for i in range(max_slices):
+            slice_key = f'{dicom_key_prefix}{i + 1}'
+            if f'{path_prefix}/{slice_key}' in hd5:
+                categorical_index_slice = _get_tensor_at_first_date(hd5, path_prefix, slice_key)
+                categorical_one_hot = to_categorical(categorical_index_slice, len(tm.channel_map))
+                tensor[..., :] = _pad_or_crop_array_to_shape(tensor[..., :].shape, categorical_one_hot)
+                return tensor
+    return _dicom_tensor_from_file
+
+
+
 def _make_fallback_tensor_from_file(tensor_keys):
     def fallback_tensor_from_file(tm, hd5, dependents={}):
         for k in tensor_keys:

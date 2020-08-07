@@ -182,7 +182,6 @@ def write_tensors_from_dicom_pngs(
         dicom_file = row[dicom_index]
         try:
             png = imageio.imread(os.path.join(png_path, dicom_file + png_postfix))
-            logging.info(f"PNG shape {png.shape} mean {png.mean():0.3f} std {png.std():0.3f} png r channel {png[:, :, 0].mean():0.3f} std {png[:, :, 0].std():0.3f}")
             if len(png.shape) == 3 and png.mean() == png[:, :, 0].mean():
                 png = png[:, :, 0]
             else:
