@@ -443,7 +443,7 @@ def make_pretest_labels(make_ecg_summary_stats: bool):
         new_df[hr_name] = hr
         diff = biosppy_labels[df_diff_col(t)]
         drop_idx[f'diff {t} too high'] = diff > diff.quantile(PRETEST_QUANTILE_CUTOFF)
-        drop_idx[f'hr {t} higher than {PRETEST_QUANTILE_CUTOFF:.2%}'] = (hr > hr.quantile(1 - double_sided_quantile)) | (hr < hr.quantile(double_sided_quantile))
+        drop_idx[f'hr {t} outside center {PRETEST_QUANTILE_CUTOFF:.2%}'] = (hr > hr.quantile(1 - double_sided_quantile)) | (hr < hr.quantile(double_sided_quantile))
         new_df[hr_name] = hr
         if t != 0:
             hrr = hr_0 - hr
@@ -1075,7 +1075,7 @@ if __name__ == '__main__':
     if TRAIN_PRETEST_MODELS:
         for i in range(K_SPLIT):
             for setting in MODEL_SETTINGS:
-                if os.path.exists(pretest_model_file(i, setting.model_id)) and not OVERWRITE_MODELS:
+                if os.path.exists(history_tsv(split_idx=i, model_id=setting.model_id)) and not OVERWRITE_MODELS:
                     logging.info(f'Skipping {setting.model_id} in split {i} since it already exists.')
                     continue
                 _train_pretest_model(setting, i)
