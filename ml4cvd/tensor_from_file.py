@@ -1956,6 +1956,26 @@ TMAPS['liver_shmolli_segmented'] = TensorMap(
 )
 
 
+def _slice_tensor_with_segmentation(tensor_key, segmentation_key, path_prefix='ukb_cardiac_mri', max_slices=100):
+    def _slice_tensor_from_file(tm, hd5, dependents={}):
+        for i in range(max_slices):
+            if f'{path_prefix}/{segmentation_key}{i + 1}' in hd5:
+                if tm.shape[-1] == 1:
+                    t = _pad_or_crop_array_to_shape(tm.shape[:-1], np.array(hd5[f'{path_prefix}/{tensor_key}'][..., i], dtype=np.float32))
+                    tensor = np.expand_dims(t, axis=-1)
+                else:
+                    tensor = _pad_or_crop_array_to_shape(tm.shape, np.array(hd5[f'{path_prefix}/{tensor_key}'][..., i], dtype=np.float32))
+                return tensor
+        raise ValueError(f'No segmented slice found for {tm.name}')
+    return _slice_tensor_from_file
+
+
+TMAPS['ao_slice_jamesp'] = TensorMap(
+    'cine_segmented_ao_dist', Interpretation.CATEGORICAL, shape=(196, 240, 1), normalization=ZeroMeanStd1(),
+    tensor_from_file=_slice_tensor_with_segmentation('cine_segmented_ao_dist/instance_0', 'cine_segmented_ao_dist_jamesp_annotated_'),
+)
+
+
 def _segmented_dicom_slice(dicom_key_prefix, path_prefix='ukb_cardiac_mri', max_slices=100):
     def _segmented_dicom_tensor_from_file(tm, hd5, dependents={}):
         tensor = np.zeros(tm.shape, dtype=np.float32)
@@ -1973,6 +1993,7 @@ TMAPS['cine_segmented_ao_dist_jamesp'] = TensorMap(
     'cine_segmented_ao_dist', Interpretation.CATEGORICAL, shape=(196, 240, len(MRI_AO_SEGMENTED_CHANNEL_MAP)),
     tensor_from_file=_segmented_dicom_slices('cine_segmented_ao_dist_jamesp_annotated_'), channel_map=MRI_AO_SEGMENTED_CHANNEL_MAP,
 )
+
 
 def _dicom_slice_with_segmentation(dicom_key_prefix, path_prefix='ukb_cardiac_mri', max_slices=100):
     def _dicom_tensor_from_file(tm, hd5, dependents={}):
