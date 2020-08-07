@@ -182,6 +182,7 @@ def write_tensors_from_dicom_pngs(
         dicom_file = row[dicom_index]
         try:
             png = imageio.imread(os.path.join(png_path, dicom_file + png_postfix))
+            logging.info(f"PNG shape {png.shape} mean {png.mean():0.3f} std {png.std():0.3f} png r channel {png[:, :, 0].mean():0.3f} std {png[:, :, 0].std():0.3f}")
             full_tensor = np.zeros((x, y), dtype=np.float32)
             full_tensor[:png.shape[0], :png.shape[1]] = png
             tensor_file = os.path.join(tensors, str(sample_id) + TENSOR_EXT)
