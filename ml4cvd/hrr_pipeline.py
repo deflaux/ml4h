@@ -25,7 +25,7 @@ from ml4cvd.normalizer import Standardize, Normalizer, ZeroMeanStd1
 from ml4cvd.tensor_from_file import _get_tensor_at_first_date
 from ml4cvd.tensor_generators import test_train_valid_tensor_generators
 from ml4cvd.models import train_model_from_generators, make_multimodal_multitask_model, BottleneckType
-from ml4cvd.recipes import _infer_models
+from ml4cvd.recipes import _infer_models, hidden_column
 from ml4cvd.metrics import coefficient_of_determination
 
 
@@ -70,9 +70,12 @@ PRETEST_MODEL_LEADS = [0]
 SEED = 217
 PRETEST_INFERENCE_NAME = 'pretest_model_inference.tsv'
 REST_INFERENCE_FILE = os.path.join(OUTPUT_FOLDER, 'rest_model_inference.tsv')
+HIDDEN_INFERENCE_NAME = 'pretest_model_latent_inference.tsv'
 K_SPLIT = 5
 RESTING_HR_DF = os.path.join(OUTPUT_FOLDER, 'resting_hr.tsv')
 RESTING_HR_FIGURE_FOLDER = os.path.join(FIGURE_FOLDER, 'resting_hr_stratification')
+
+JOHANNA_LATENT_VARIABLES = [50, 18, 8, 47, 33, 51, 19, 60, 6, 4, 29, 52, 63, 56, 14]
 
 
 # Tensor from file helpers
@@ -812,6 +815,10 @@ def _inference_file(split_idx: int) -> str:
     return os.path.join(split_folder_name(split_idx), PRETEST_INFERENCE_NAME)
 
 
+def _hidden_inference_file(split_idx: int) -> str:
+    return os.path.join(split_folder_name(split_idx), HIDDEN_INFERENCE_NAME)
+
+
 def tmap_to_actual_col(tmap: TensorMap):
     return f'{tmap.name}{ACTUAL_POSTFIX}'
 
@@ -844,6 +851,24 @@ def _infer_models_split_idx(split_idx: int):
     models = [make_pretest_model(setting, split_idx, True) for setting in MODEL_SETTINGS]
     model_ids = [setting.model_id for setting in MODEL_SETTINGS]
     tmaps_in = [_make_ecg_tmap(setting, split_idx) for setting in MODEL_SETTINGS]
+    tmaps_out = [_make_hrr_tmap(split_idx)]
+    _infer_models(
+        models=models,
+        model_ids=model_ids,
+        tensor_maps_in=tmaps_in,
+        tensor_maps_out=tmaps_out,
+        inference_tsv=_inference_file(split_idx), num_workers=8, batch_size=128, tensor_paths=tensor_paths,
+    )
+
+
+def _infer_hidden_models_split_idx(split_idx: int):
+    tensor_paths = [
+        _path_from_sample_id(str(sample_id)) for
+        sample_id in pd.read_csv(_split_test_name(split_idx))['sample_id']
+    ]
+    models = [make_pretest_model(MODEL_SETTINGS[-1], split_idx, True)]
+    model_ids = [MODEL_SETTINGS[-1].model_id]
+    tmaps_in = [_make_ecg_tmap(MODEL_SETTINGS[-1], split_idx)]
     tmaps_out = [_make_hrr_tmap(split_idx)]
     _infer_models(
         models=models,
@@ -1012,6 +1037,21 @@ def _evaluate_models():
     plt.close('all')
 
 
+def _evaluate_hidden():
+    inference_dfs = []
+    for i in range(K_SPLIT):
+        inference_df = pd.read_csv(_hidden_inference_file(i), sep='\t')
+        inference_df['split_idx'] = i
+        inference_dfs.append(inference_df)
+    inference_df = pd.concat(inference_dfs)
+    inference_df.to_csv(os.path.join(OUTPUT_FOLDER, HIDDEN_INFERENCE_NAME), sep='\t', index=False)
+
+    for lv in JOHANNA_LATENT_VARIABLES:
+        lvs = inference_df[hidden_column(MODEL_SETTINGS[-1].model_id, lv)]
+        # TODO: plot extremes and center of this lv
+        # TODO: plot extremes and center of this lv stratified by resting hr
+
+
 def plot_training_curves():
     _, (ax1, ax2) = plt.subplots(nrows=1, ncols=2, figsize=(20, 10), sharey=True)
     for setting in MODEL_SETTINGS:
@@ -1125,6 +1165,10 @@ if __name__ == '__main__':
             False or TRAIN_PRETEST_MODELS
             or not all(os.path.exists(_inference_file(split_idx)) for split_idx in range(K_SPLIT))
     )
+    INFER_HIDDEN_MODELS = (
+            False or TRAIN_PRETEST_MODELS
+            or not all(os.path.exists(_hidden_inference_file(split_idx)) for split_idx in range(K_SPLIT))
+    )
     INFER_REST_MODELS = False or not os.path.exists(REST_INFERENCE_FILE)
 
     if MAKE_LABELS:
@@ -1153,9 +1197,14 @@ if __name__ == '__main__':
         for i in range(K_SPLIT):
             logging.info(f'Running inference on split {i}.')
             _infer_models_split_idx(i)
+    if INFER_HIDDEN_MODELS:
+        for i in range(K_SPLIT):
+            logging.info(f'Running inference on split {i}.')
+            _infer_hidden_models_split_idx(i)
     _evaluate_models()
     plot_training_curves()
     if INFER_REST_MODELS:
         _infer_rest_models()
     plot_rest_inference()
     resting_hr_explore(MODEL_SETTINGS[-1])
+    _evaluate_hidden()
