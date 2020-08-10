@@ -23,8 +23,10 @@ from ml4cvd.tensor_writer_partners import write_tensors_partners
 from ml4cvd.explorations import mri_dates, ecg_dates, predictions_to_pngs, sample_from_language_model
 from ml4cvd.explorations import tabulate_correlations_of_tensors, test_labels_to_label_map, infer_with_pixels, explore
 from ml4cvd.explorations import plot_heatmap_of_tensors, plot_while_learning, plot_histograms_of_tensors_in_pdf, cross_reference
-from ml4cvd.tensor_generators import TensorGenerator, test_train_valid_tensor_generators, big_batch_from_minibatch_generator
+from ml4cvd.tensor_generators import test_train_valid_tensor_generators, big_batch_from_minibatch_generator
 from ml4cvd.tensor_generators import BATCH_INPUT_INDEX, BATCH_OUTPUT_INDEX, BATCH_PATHS_INDEX
+from ml4cvd.tensor_generators import new_test_train_valid_tensor_generators
+from ml4cvd.new_tensor_generator import big_batch_from_dataset, dataset_from_tensor_maps, _hd5_path_to_sample_id
 from ml4cvd.models import make_character_model_plus, embed_model_predict, make_siamese_model, make_multimodal_multitask_model
 from ml4cvd.plots import evaluate_predictions, plot_scatters, plot_rocs, plot_precision_recalls, subplot_roc_per_class, plot_tsne, plot_prediction_calibrations
 from ml4cvd.metrics import get_roc_aucs, get_precision_recall_aucs, get_pearson_coefficients, log_aucs, log_pearson_coefficients
@@ -137,15 +139,15 @@ def _find_learning_rate(args) -> float:
 
 
 def train_multimodal_multitask(args):
-    generate_train, generate_valid, generate_test = test_train_valid_tensor_generators(**args.__dict__)
+    generate_train, generate_valid, generate_test, _, _, test_paths = new_test_train_valid_tensor_generators(**args.__dict__)
     model = make_multimodal_multitask_model(**args.__dict__)
     model = train_model_from_generators(
         model, generate_train, generate_valid, args.training_steps, args.validation_steps, args.batch_size,
         args.epochs, args.patience, args.output_folder, args.id, args.inspect_model, args.inspect_show_labels,
     )
 
-    out_path = os.path.join(args.output_folder, args.id + '/')
-    test_data, test_labels, test_paths = big_batch_from_minibatch_generator(generate_test, args.test_steps)
+    out_path = os.path.join(args.output_folder, args.id)
+    test_data, test_labels = big_batch_from_dataset(generate_test, args.test_steps * args.batch_size)
     return _predict_and_evaluate(
         model, test_data, test_labels, args.tensor_maps_in, args.tensor_maps_out, args.tensor_maps_protected,
         args.batch_size, args.hidden_layer, out_path, test_paths, args.embed_visualization, args.alpha,
@@ -153,13 +155,13 @@ def train_multimodal_multitask(args):
 
 
 def test_multimodal_multitask(args):
-    _, _, generate_test = test_train_valid_tensor_generators(**args.__dict__)
+    _, _, generate_test, _, _, test_paths = new_test_train_valid_tensor_generators(**args.__dict__)
     model = make_multimodal_multitask_model(**args.__dict__)
-    out_path = os.path.join(args.output_folder, args.id + '/')
-    data, labels, paths = big_batch_from_minibatch_generator(generate_test, args.test_steps)
+    out_path = os.path.join(args.output_folder, args.id)
+    test_data, test_labels = big_batch_from_dataset(generate_test, args.test_steps * args.batch_size)
     return _predict_and_evaluate(
-        model, data, labels, args.tensor_maps_in, args.tensor_maps_out, args.tensor_maps_protected,
-        args.batch_size, args.hidden_layer, out_path, paths, args.embed_visualization, args.alpha,
+        model, test_data, test_labels, args.tensor_maps_in, args.tensor_maps_out, args.tensor_maps_protected,
+        args.batch_size, args.hidden_layer, out_path, test_paths, args.embed_visualization, args.alpha,
     )
 
 
@@ -213,7 +215,6 @@ def inference_file_name(output_folder: str, id_: str) -> str:
 
 def infer_multimodal_multitask(args):
     stats = Counter()
-    tensor_paths_inferred = set()
     inference_tsv = inference_file_name(args.output_folder, args.id)
     tsv_style_is_genetics = 'genetics' in args.tsv_style
     sample_set = None
@@ -222,18 +223,16 @@ def infer_multimodal_multitask(args):
             sample_ids = [row[0] for row in csv.reader(csv_file)]
             sample_set = set(sample_ids[1:])
     tensor_paths = [
-        os.path.join(args.tensors, tp) for tp in sorted(os.listdir(args.tensors))
+        os.path.join(args.tensors, tp) for tp in os.listdir(args.tensors)
         if os.path.splitext(tp)[-1].lower() == TENSOR_EXT and (sample_set is None or os.path.splitext(tp)[0] in sample_set)
-    ]
+    ]  # TODO: this along with the sort on the next line should be in a path getting function
+    tensor_paths = sorted(tensor_paths, key=_hd5_path_to_sample_id)
     model = make_multimodal_multitask_model(**args.__dict__)
     no_fail_tmaps_out = [_make_tmap_nan_on_fail(tmap) for tmap in args.tensor_maps_out]
-    # hard code batch size to 1 so we can iterate over file names and generated tensors together in the tensor_paths for loop
-    generate_test = TensorGenerator(
-        1, args.tensor_maps_in, no_fail_tmaps_out, tensor_paths, num_workers=0,
-        cache_size=0, keep_paths=True, mixup=args.mixup_alpha,
-    )
+    generate_test = dataset_from_tensor_maps(
+        tensor_paths, args.tensor_maps_in, no_fail_tmaps_out,
+    ).batch(1).as_numpy_iterator()
     logging.info(f"Found {len(tensor_paths)} tensor paths.")
-    generate_test.set_worker_paths(tensor_paths)
     with open(inference_tsv, mode='w') as inference_file:
         # TODO: csv.DictWriter is much nicer for this
         inference_writer = csv.writer(inference_file, delimiter='\t', quotechar='"', quoting=csv.QUOTE_MINIMAL)
@@ -252,18 +251,12 @@ def infer_multimodal_multitask(args):
                 header.extend(channel_columns)
         inference_writer.writerow(header)
 
-        while True:
-            batch = next(generate_test)
-            input_data, output_data, tensor_paths = batch[BATCH_INPUT_INDEX], batch[BATCH_OUTPUT_INDEX], batch[BATCH_PATHS_INDEX]
-            if tensor_paths[0] in tensor_paths_inferred:
-                next(generate_test)  # this prints end of epoch info
-                logging.info(f"Inference on {stats['count']} tensors finished. Inference TSV file at: {inference_tsv}")
-                break
+        for tensor_path, (input_data, output_data) in zip(tensor_paths, generate_test):
             prediction = model.predict(input_data)
             if len(no_fail_tmaps_out) == 1:
                 prediction = [prediction]
 
-            csv_row = [os.path.basename(tensor_paths[0]).replace(TENSOR_EXT, '')]  # extract sample id
+            csv_row = [_hd5_path_to_sample_id(tensor_path)]  # extract sample id
             if tsv_style_is_genetics:
                 csv_row *= 2
             for y, tm in zip(prediction, no_fail_tmaps_out):
@@ -284,10 +277,9 @@ def infer_multimodal_multitask(args):
                             logging.debug(f'index error at {tm.name} item {i} key {k} with cm: {tm.channel_map} y is {y.shape} y is {y}')
 
             inference_writer.writerow(csv_row)
-            tensor_paths_inferred.add(tensor_paths[0])
             stats['count'] += 1
             if stats['count'] % 250 == 0:
-                logging.info(f"Wrote:{stats['count']} rows of inference.  Last tensor:{tensor_paths[0]}")
+                logging.info(f"Wrote:{stats['count']} rows of inference.  Last tensor:{tensor_paths}")
 
 
 def hidden_inference_file_name(output_folder: str, id_: str) -> str:
@@ -300,11 +292,10 @@ def infer_hidden_layer_multimodal_multitask(args):
     inference_tsv = hidden_inference_file_name(args.output_folder, args.id)
     tsv_style_is_genetics = 'genetics' in args.tsv_style
     tensor_paths = [os.path.join(args.tensors, tp) for tp in sorted(os.listdir(args.tensors)) if os.path.splitext(tp)[-1].lower() == TENSOR_EXT]
-    # hard code batch size to 1 so we can iterate over file names and generated tensors together in the tensor_paths for loop
-    generate_test = TensorGenerator(
-        1, args.tensor_maps_in, args.tensor_maps_out, tensor_paths, num_workers=0,
-        cache_size=args.cache_size, keep_paths=True, mixup=args.mixup_alpha,
-    )
+    tensor_paths = sorted(tensor_paths, key=_hd5_path_to_sample_id)
+    generate_test = dataset_from_tensor_maps(
+        tensor_paths, args.tensor_maps_in, [],
+    ).batch(1).as_numpy_iterator()
     generate_test.set_worker_paths(tensor_paths)
     full_model = make_multimodal_multitask_model(**args.__dict__)
     embed_model = make_hidden_layer_model(full_model, args.tensor_maps_in, args.hidden_layer)
@@ -318,15 +309,8 @@ def infer_hidden_layer_multimodal_multitask(args):
         header += [f'latent_{i}' for i in range(latent_dimensions)]
         inference_writer.writerow(header)
 
-        while True:
-            batch = next(generate_test)
-            input_data, tensor_paths = batch[BATCH_INPUT_INDEX], batch[BATCH_PATHS_INDEX]
-            if tensor_paths[0] in stats:
-                next(generate_test)  # this prints end of epoch info
-                logging.info(f"Latent space inference on {stats['count']} tensors finished. Inference TSV file at: {inference_tsv}")
-                break
-
-            sample_id = os.path.basename(tensor_paths[0]).replace(TENSOR_EXT, '')
+        for tensor_path, (input_data, _) in zip(tensor_paths, generate_test):
+            sample_id = _hd5_path_to_sample_id(tensor_path)
             prediction = embed_model.predict(input_data)
             prediction = np.reshape(prediction, (latent_dimensions,))
             csv_row = [sample_id, sample_id] if tsv_style_is_genetics else [sample_id]
@@ -336,6 +320,7 @@ def infer_hidden_layer_multimodal_multitask(args):
             stats['count'] += 1
             if stats['count'] % 500 == 0:
                 logging.info(f"Wrote:{stats['count']} rows of latent space inference.  Last tensor:{tensor_paths[0]}")
+    logging.info(f"Latent space inference on {stats['count']} tensors finished. Inference TSV file at: {inference_tsv}")
 
 
 def train_shallow_model(args):

@@ -1147,11 +1147,12 @@ def train_model_from_generators(
         validation_steps=validation_steps, validation_data=generate_valid,
         callbacks=_get_callbacks(patience, model_file),
     )
-    generate_train.kill_workers()
-    generate_valid.kill_workers()
+    if hasattr(generate_train, 'kill_workers'):  # TODO: remove work-around when no longer requiring backward compat
+        generate_train.kill_workers()
+        generate_valid.kill_workers()
 
-    logging.info('Model weights saved at: %s' % model_file)
-    model = load_model(model_file, custom_objects=_get_custom_objects(generate_train.output_maps))
+    logging.info(f'Model weights saved at: {model_file}')
+    model.load_weights(model_file)
     if plot:
         plot_metric_history(history, training_steps, run_id, os.path.dirname(model_file))
     if return_history:

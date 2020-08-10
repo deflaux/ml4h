@@ -19,6 +19,7 @@ import logging
 import traceback
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from collections import Counter
 from multiprocessing import Process, Queue
 from itertools import chain
@@ -26,6 +27,7 @@ from typing import List, Dict, Tuple, Set, Optional, Iterator, Callable, Any, Un
 
 from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.TensorMap import TensorMap
+from ml4cvd.new_tensor_generator import dataset_from_tensor_maps
 
 np.set_printoptions(threshold=np.inf)
 
@@ -575,7 +577,6 @@ def _sample_csv_to_set(sample_csv: Optional[str] = None) -> Union[None, Set[str]
     return set(sample_ids)
 
 
-
 def get_train_valid_test_paths(
         tensors: str,
         sample_csv: str,
@@ -814,6 +815,49 @@ def test_train_valid_tensor_generators(
         keep_paths or keep_paths_test, name='test_worker', siamese=siamese, augment=False,
     )
     return generate_train, generate_valid, generate_test
+
+
+def new_test_train_valid_tensor_generators(
+        tensor_maps_in: List[TensorMap],
+        tensor_maps_out: List[TensorMap],
+        tensor_maps_protected: List[TensorMap],
+        tensors: str,  # TODO: rename this to tensor_folder
+        batch_size: int,
+        sample_csv: str = None,
+        valid_ratio: float = None,
+        test_ratio: float = None,
+        train_csv: str = None,
+        valid_csv: str = None,
+        test_csv: str = None,
+        **kwargs
+) -> Tuple[
+    tf.data.Dataset, tf.data.Dataset, tf.data.Dataset,
+    List[str], List[str], List[str],
+]:
+    # TODO: implement batch functions, choose how to specify parallelization, integrate non-tmap tensor getters
+    # TODO: use the filtering function to remove the exception throwing tensors
+    train_paths, valid_paths, test_paths = get_train_valid_test_paths(
+        tensors=tensors,
+        sample_csv=sample_csv,
+        valid_ratio=valid_ratio,
+        test_ratio=test_ratio,
+        train_csv=train_csv,
+        valid_csv=valid_csv,
+        test_csv=test_csv,
+    )
+    generate_train = dataset_from_tensor_maps(
+        train_paths, tensor_maps_in, tensor_maps_out, True
+    ).shuffle(len(train_paths)).batch(batch_size)
+    generate_valid = dataset_from_tensor_maps(
+        valid_paths, tensor_maps_in, tensor_maps_out, False
+    ).shuffle(len(train_paths)).batch(batch_size)
+    generate_test = dataset_from_tensor_maps(
+        valid_paths, tensor_maps_in, tensor_maps_out + tensor_maps_protected, False
+    )
+    return (
+        generate_train, generate_valid, generate_test,
+        train_paths, valid_paths, test_paths,
+    )
 
 
 def _log_first_error(stats: Counter, tensor_path: str):

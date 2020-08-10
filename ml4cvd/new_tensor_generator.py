@@ -235,3 +235,11 @@ def find_working_ids(
         errors.append(error)
         print(f'{(i + 1) / len(sample_ids):.2%} done finding working sample ids', end='\r')
     return pd.DataFrame({SAMPLE_ID: tried_sample_ids, ERROR_COL: errors})
+
+
+Batch = Dict[str, np.ndarray]
+
+
+def big_batch_from_dataset(dataset: tf.data.Dataset, num_samples: int) -> Tuple[Batch, Batch]:
+    """Assumes dataset is not a batched dataset"""
+    return next(dataset.batch(num_samples).as_numpy_iterator())
