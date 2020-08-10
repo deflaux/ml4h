@@ -11,9 +11,10 @@ from ml4cvd.explorations import _continuous_explore_header, _categorical_explore
 # Imports with test in their name
 from ml4cvd.recipes import test_multimodal_multitask as tst_multimodal_multitask
 from ml4cvd.recipes import test_multimodal_scalar_tasks as tst_multimodal_scalar_tasks
-from ml4cvd.test_utils import TMAPS_UP_TO_4D
+from ml4cvd.test_utils import TMAPS_UP_TO_4D, CATEGORICAL_TMAPS
 from ml4cvd.test_utils import build_hdf5s
 from ml4cvd.TensorMap import TensorMap, Interpretation
+from ml4cvd.defines import TENSOR_EXT
 
 
 class TestRecipes:
@@ -27,10 +28,22 @@ class TestRecipes:
         tst_multimodal_scalar_tasks(default_arguments)
 
     def test_infer(self, default_arguments):
+        tmap_key = '1d_cat'
+        tmap = CATEGORICAL_TMAPS[0]
+        default_arguments.output_tensors = [tmap_key]
+        default_arguments.tensor_maps_out = [tmap]
         infer_multimodal_multitask(default_arguments)
+
         tsv = inference_file_name(default_arguments.output_folder, default_arguments.id)
         inferred = pd.read_csv(tsv, sep='\t')
+        expected_tensors = default_arguments.tensor_values
+
         assert len(set(inferred['sample_id'])) == pytest.N_TENSORS
+        for sample_id in range(pytest.N_TENSORS):
+            path = os.path.join(default_arguments.tensors, f'{sample_id}{TENSOR_EXT}')
+            row = inferred[inferred['sample_id'] == sample_id]
+            for k, idx in tmap.channel_map.items():
+                assert expected_tensors[(path, tmap)][idx] == float(row[f'{tmap_key}_{k}_actual'])
 
     def test_infer_genetics(self, default_arguments):
         default_arguments.tsv_style = 'genetics'

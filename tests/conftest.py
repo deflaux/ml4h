@@ -15,7 +15,7 @@ def pytest_configure():
 @mock.patch.dict(TMAPS, MOCK_TMAPS)
 def default_arguments(tmpdir_factory):
     temp_dir = tmpdir_factory.mktemp('data')
-    build_hdf5s(temp_dir, MOCK_TMAPS.values(), n=pytest.N_TENSORS)
+    tensor_values = build_hdf5s(temp_dir, MOCK_TMAPS.values(), n=pytest.N_TENSORS)
     hdf5_dir = str(temp_dir)
     inp_key = '3d_cont'
     out_key = '1d_cat'
@@ -36,4 +36,5 @@ def default_arguments(tmpdir_factory):
         '--batch_size', '2',
     ]
     args = parse_args()
+    args.tensor_values = tensor_values
     return args
