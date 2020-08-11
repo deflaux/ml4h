@@ -939,23 +939,6 @@ def explore(args):
 
         # Plot counts of categorical TMAPs over time
         if args.time_tensor and (args.time_tensor in args.input_tensors):
-<<<<<<< HEAD
-            freq = args.time_frequency  # Monthly frequency
-            time_tensors = pd.to_datetime(df[args.time_tensor])
-            min_date = time_tensors.min()
-            max_date = time_tensors.max()
-            date_range = pd.date_range(min_date, max_date, freq=freq)
-            for tm in categorical_tmaps:
-                prev_date = min_date
-                tm_counts = defaultdict(list)
-                for i, date in enumerate(date_range[1:]):
-                    sub_df = df[(time_tensors >= prev_date) & (time_tensors < date)]
-                    for cm in tm.channel_map:
-                        tm_counts[cm].append(np.sum(sub_df[f'{tm.name} {cm}']))
-                    prev_date = date
-                fpath = os.path.join(args.output_folder, args.id, f'{tm.name}_over_time.png')
-                plot_categorical_tmap_over_time(tm_counts, tm.name, date_range, fpath)
-=======
             min_plotted_counts = 2
             for df_cur, df_str in zip([df, df.dropna()], ["union", "intersect"]):
                 freq = args.time_frequency  # Monthly frequency
@@ -982,7 +965,6 @@ def explore(args):
                         prev_date = date
                     fpath = os.path.join(args.output_folder, args.id, f'{tm.name}_over_time_{df_str}.png')
                     plot_categorical_tmap_over_time(tm_counts, tm.name, date_range_filtered, fpath)
->>>>>>> pd_explore_categorical_tmaps
 
     # Check if any tmaps are continuous
     if Interpretation.CONTINUOUS in [tm.interpretation for tm in tmaps]:
