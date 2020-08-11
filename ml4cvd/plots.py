@@ -1297,10 +1297,18 @@ def plot_categorical_tmap_over_time(counts, tmap_name, dates, fpath):
     ax.set_title(tmap_name)
     colors = [[c, c, c] for c in np.linspace(1.0, 0.2, len(counts))]
     bottom = np.zeros(len(dates)-1)
+<<<<<<< HEAD
     for i, cm in enumerate(counts):        
         ax.bar(range(1, len(dates)), counts[cm], width=1, bottom=bottom, edgecolor='black', linewidth=.5,
                label=cm + f', n={int(np.sum(counts[cm]))}', color=colors[i])
         bottom += np.array(counts[cm])
+=======
+    for i, (cm, counts_cm) in enumerate(sorted(counts.items(), key=lambda kv: np.sum(kv[1]), reverse=True)):
+        label = cm + f', n={int(np.sum(counts_cm))}' if i < 20 else None
+        ax.bar(range(1, len(dates)), counts_cm, width=1, bottom=bottom, edgecolor='black', linewidth=.5,
+               label=label, color=colors[i])
+        bottom += np.array(counts_cm)
+>>>>>>> pd_explore_categorical_tmaps
         ax.legend()
     ax.set_xlim(1, len(dates))
     ax.set_xticks(range(1, len(dates), 12))
@@ -1310,6 +1318,7 @@ def plot_categorical_tmap_over_time(counts, tmap_name, dates, fpath):
     f.savefig(fpath, dpi=500)
 
 
+<<<<<<< HEAD
 def plot_chi2_association(cramer_table, p_table, tmaps, fpath):
     tmap_names = [tm.name for tm in tmaps]
     cramer_array = np.zeros((len(tmap_names), len(tmap_names)))
@@ -1341,6 +1350,8 @@ def plot_chi2_association(cramer_table, p_table, tmaps, fpath):
     f.savefig(fpath)
 
 
+=======
+>>>>>>> pd_explore_categorical_tmaps
 def _ecg_rest_traces_and_text(hd5):
     """Extracts ECG resting traces from HD5 and returns a dictionary based on biosppy template"""
     path_prefix = 'ukb_ecg_rest'
