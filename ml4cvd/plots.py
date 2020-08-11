@@ -30,11 +30,6 @@ from matplotlib.ticker import AutoMinorLocator, MultipleLocator
 
 from sklearn import manifold
 from sklearn.metrics import roc_curve, auc, precision_recall_curve, average_precision_score
-<<<<<<< HEAD
-from sklearn.metrics import brier_score_loss, precision_score, recall_score, f1_score, roc_auc_score
-from sklearn.calibration import calibration_curve
-=======
->>>>>>> pd_explore_categorical_tmaps
 from sksurv.metrics import concordance_index_censored
 
 import seaborn as sns
@@ -78,13 +73,8 @@ ECG_REST_PLOT_AMP_LEADS = [
 
 
 def evaluate_predictions(
-<<<<<<< HEAD
-    tm: TensorMap, y_predictions: np.ndarray, y_truth: np.ndarray, protected: Dict[TensorMap, np.ndarray], title: str, folder: str, test_paths: List[str] = None,
-    max_melt: int = 150000, rocs: List[Tuple[np.ndarray, np.ndarray, Dict[str, int]]] = [],
-=======
     tm: TensorMap, y_predictions: np.ndarray, y_truth: np.ndarray, title: str, folder: str, test_paths: List[str] = None,
     max_melt: int = 15000, rocs: List[Tuple[np.ndarray, np.ndarray, Dict[str, int]]] = [],
->>>>>>> pd_explore_categorical_tmaps
     scatters: List[Tuple[np.ndarray, np.ndarray, str, List[str]]] = [],
 ) -> Dict[str, float]:
     """ Evaluate predictions for a given TensorMap with truth data and plot the appropriate metrics.
@@ -106,14 +96,8 @@ def evaluate_predictions(
     if tm.is_categorical() and tm.axes() == 1:
         logging.info(f"For tm:{tm.name} with channel map:{tm.channel_map} examples:{y_predictions.shape[0]}")
         logging.info(f"\nSum Truth:{np.sum(y_truth, axis=0)} \nSum pred :{np.sum(y_predictions, axis=0)}")
-<<<<<<< HEAD
-        plot_precision_recall_per_class(y_predictions, y_truth, tm.channel_map, title, folder)
-        plot_prediction_calibration(y_predictions, y_truth, tm.channel_map, title, folder)
-        performance_metrics.update(subplot_roc_per_class(y_predictions, y_truth, tm.channel_map, protected, title, folder))
-=======
         performance_metrics.update(plot_roc_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
         performance_metrics.update(plot_precision_recall_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
->>>>>>> pd_explore_categorical_tmaps
         rocs.append((y_predictions, y_truth, tm.channel_map))
     elif tm.is_categorical() and tm.axes() == 2:
         melt_shape = (y_predictions.shape[0] * y_predictions.shape[1], y_predictions.shape[2])
@@ -147,18 +131,7 @@ def evaluate_predictions(
         concordance_return_values = ['C-Index', 'Concordant Pairs', 'Discordant Pairs', 'Tied Predicted Risk', 'Tied Event Time']
         logging.info(f"{[f'{label}: {value}' for label, value in zip(concordance_return_values, c_index)]}")
         new_title = f'{title}_C_Index_{c_index[0]:0.3f}'
-<<<<<<< HEAD
-        performance_metrics.update(subplot_roc_per_class(y_predictions, y_truth[:, 0, np.newaxis], {f'{new_title}_vs_ROC': 0}, protected, new_title, folder))
-        calibration_title = f'{title}_at_{tm.days_window}_days'
-        plot_prediction_calibration(y_predictions, y_truth[:, 0, np.newaxis], {tm.name: 0}, calibration_title, folder)
-        plot_survivorship(y_truth[:, 0], y_truth[:, 1], y_predictions[:, 0], tm.name, folder, tm.days_window)
-    elif tm.is_language():
-        performance_metrics.update(subplot_roc_per_class(y_predictions, y_truth, tm.channel_map, protected, title, folder))
-        performance_metrics.update(plot_precision_recall_per_class(y_predictions, y_truth, tm.channel_map, title, folder))
-        rocs.append((y_predictions, y_truth, tm.channel_map))
-=======
         performance_metrics.update(plot_roc_per_class(y_predictions, y_truth[:, 0, np.newaxis], {f'{new_title}_vs_ROC': 0}, new_title, folder))
->>>>>>> pd_explore_categorical_tmaps
     elif tm.axes() > 1 or tm.is_mesh():
         prediction_flat = tm.rescale(y_predictions).flatten()[:max_melt]
         truth_flat = tm.rescale(y_truth).flatten()[:max_melt]
@@ -1709,13 +1682,6 @@ def subplot_roc_per_class(
             continue
         color = _hash_string_to_color(key)
         label_text = f'{key} area: {roc_auc[labels[key]]:.3f} n={true_sums[labels[key]]:.0f}'
-<<<<<<< HEAD
-        axes[-1, -1].plot(fpr[labels[key]], tpr[labels[key]], color=color, lw=lw, label=label_text)
-        logging.info(f'ROC Label {label_text} Truth shape {truth.shape}, true sums {true_sums}')
-
-    axes[-1, -1].set_title(f'ROC {title} n={truth.shape[0]:.0f}\n')
-    axes[-1, -1].legend(loc='lower right')
-=======
         plt.plot(fpr[labels[key]], tpr[labels[key]], color=color, lw=lw, label=label_text)
         logging.info(f'ROC Label {label_text}')
 
@@ -1727,7 +1693,6 @@ def subplot_roc_per_class(
     plt.plot([0, 1], [0, 1], 'k:', lw=0.5)
     plt.title(f'ROC {title} n={np.sum(true_sums):.0f}\n')
 
->>>>>>> pd_explore_categorical_tmaps
     figure_path = os.path.join(prefix, 'per_class_roc_' + title + IMAGE_EXT)
     if not os.path.exists(os.path.dirname(figure_path)):
         os.makedirs(os.path.dirname(figure_path))

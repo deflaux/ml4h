@@ -1826,13 +1826,6 @@ def build_cardiac_surgery_tensor_maps(
 
     return name2tensormap
 
-<<<<<<< HEAD
-TMAPS['partners_ecg_race'] = TensorMap(
-    'partners_ecg_race', interpretation=Interpretation.CATEGORICAL, path_prefix=PARTNERS_PREFIX, channel_map={'asian': 0, 'black': 1, 'hispanic': 2, 'white': 3, 'unknown': 4},
-    tensor_from_file=partners_channel_string('race', race_synonyms), time_series_limit=0,
-)
-=======
->>>>>>> pd_explore_categorical_tmaps
 
 def partners_channel_string_bias(hd5_key, synonyms={}, unspecified_key='unspecified'):
     def tensor_from_string(tm, hd5, dependents={}):
@@ -1851,14 +1844,9 @@ def partners_channel_string_bias(hd5_key, synonyms={}, unspecified_key='unspecif
                     path = _make_hd5_path(tm, ecg_date, hd5_key)
                     hd5_string = decompress_data(data_compressed=hd5[path][()], dtype=hd5[path].attrs['dtype'])
                 for key in synonyms:
-<<<<<<< HEAD
-                    if hd5_string.lower() == key.lower():  
-                        slices = (i, synonyms[key]) if dynamic else (synonyms[key],)
-=======
                     if hd5_string.lower() == key.lower():
                         index = synonyms[key]
                         slices = (i, index) if dynamic else (index,)
->>>>>>> pd_explore_categorical_tmaps
                         tensor[slices] = 1.0
                         found = True
                         break
@@ -1868,75 +1856,14 @@ def partners_channel_string_bias(hd5_key, synonyms={}, unspecified_key='unspecif
                 if unspecified_key is None:
                     # TODO Do we want to try to continue to get tensors for other ECGs in HD5?
                     raise ValueError(f'No channel keys found in {hd5_string} for {tm.name} with channel map {tm.channel_map}.')
-<<<<<<< HEAD
-                slices = (i, synonyms[unspecified_key]) if dynamic else (synonyms[unspecified_key],)
-=======
                 index = synonyms[unspecified_key]
                 slices = (i, index) if dynamic else (index,)
->>>>>>> pd_explore_categorical_tmaps
                 tensor[slices] = 1.0
         return tensor
     return tensor_from_string
 
 
-<<<<<<< HEAD
-bias_dic = {'acquisitionyear': {'2000': 0,
-                                '2001': 1,
-                                '1999': 2,
-                                '2002': 3,
-                                '2015': 4,
-                                '2016': 5,
-                                '2017': 6,
-                                '2012': 7,
-                                '2011': 8,
-                                '2014': 9,
-                                '2010': 10,
-                                '2003': 11,
-                                '2013': 12,
-                                '2007': 13,
-                                '2009': 14,
-                                '2008': 15,
-                                '2004': 16,
-                                '2006': 17,
-                                '2005': 18,
-                                '1998': 19,
-                                '2018': 20,
-                                '2019': 21,
-                                'unspecified': 22},
-            'acquisitionsoftwareversion': {'010A': 0,
-                                           '009A': 1,
-                                           '007A.2': 2,
-                                           '005A.1': 3,
-                                           '006A': 4,
-                                           '009C': 5,
-                                           '010B': 6,
-                                           '008A': 7,
-                                           '008B': 8,
-                                           '005A': 9,
-                                           '5.7': 10,
-                                           '6.7': 11,
-                                           '6.4': 12,
-                                           '7.2': 13,
-                                           '7.3': 14,
-                                           '009B.1': 15,
-                                           '5.4': 16,
-                                           '003A': 17,
-                                           '5.3': 18,
-                                           '1.0.2': 19,
-                                           'V6.5': 20,
-                                           '6.3': 21,
-                                           '6.8': 22,
-                                           '5.5': 23,
-                                           '008C': 24,
-                                           'V6.73': 25,
-                                           'V6.51': 26,
-                                           '010Bsp1': 27,
-                                           'V6.72': 28,
-                                           '010A.1': 29,
-                                           'unspecified': 30},
-=======
 bias_dic = {
->>>>>>> pd_explore_categorical_tmaps
             'acquisitiondevice': {'MAC': 0,
                                   'MAC55': 1,
                                   'MAC5K': 2,
@@ -2009,42 +1936,7 @@ bias_dic = {
                              '101-BEACON HILL PRIMARY NR': 0,
                              '138-ED OBSERVATION UNIT': 0,
                              '147-DANVERS ACC CARDIOLOGY PRTCE': 1,
-<<<<<<< HEAD
-                             'unspecified': 0},
-            'testreason': {'V72.81': 0,
-                           '786.50': 1,
-                           'NOBILL': 2,
-                           '401.9': 3,
-                           '00': 4,
-                           '785.1': 5,
-                           '57': 6,
-                           '786.09': 7,
-                           'V71.7': 8,
-                           '99': 9,
-                           '429.9': 10,
-                           '780.2': 11,
-                           '427.9': 12,
-                           '414.00': 13,
-                           'Arrhythmia~I49.9': 14,
-                           '1': 15,
-                           '780.4': 16,
-                           '427.31': 17,
-                           'Chest pain / anginal equivalent~R07.9,I20.8': 18,
-                           '410.90': 19,
-                           '789.00': 20,
-                           '786.59': 21,
-                           '15': 22,
-                           '11': 23,
-                           'EKG': 24,
-                           '6': 25,
-                           '411.1': 26,
-                           '428.0': 27,
-                           '414.04': 28,
-                           '2': 29,
-                           'unspecified': 30}}
-=======
                              'unspecified': 0}}
->>>>>>> pd_explore_categorical_tmaps
 
 
 def _clean_variable_name(s):
@@ -2094,11 +1986,7 @@ def partners_waveform_feature_bias(bias_key, lead='I', synonyms={}, unspecified_
         ecg_dates = _get_ecg_dates(tm, hd5)
         dynamic, shape = _is_dynamic_shape(tm, len(ecg_dates))
         tensor = np.zeros(shape, dtype=np.float32)
-<<<<<<< HEAD
         for i, ecg_date in enumerate(ecg_dates):
-=======
-        for ecg_date in ecg_dates:
->>>>>>> pd_explore_categorical_tmaps
             try:
                 path = _make_hd5_path(tm, ecg_date, lead)
                 waveform = decompress_data(data_compressed=hd5[path][()], dtype=hd5[path].attrs['dtype'])
@@ -2119,30 +2007,18 @@ def partners_waveform_feature_bias(bias_key, lead='I', synonyms={}, unspecified_
                     else:
                         hd5_string = '0.0'
                 for key in synonyms:
-<<<<<<< HEAD
                     if key.lower() in hd5_string.lower():
                         slices = (i, synonyms[key]) if dynamic else (synonyms[key],)
                         tensor[slices] = 1.0
                         found = True
                         break
-=======
-                    if key.lower() in hd5_string.lower():                        
-                        slices = (synonyms[key],)
-                        tensor[slices] = 1.0
-                        found = True
-                        break               
->>>>>>> pd_explore_categorical_tmaps
             except KeyError:
                 pass
             if not found:
                 if unspecified_key is None:
                     # TODO Do we want to try to continue to get tensors for other ECGs in HD5?
                     raise ValueError(f'No channel keys found in {hd5_string} for {tm.name} with channel map {tm.channel_map}.')
-<<<<<<< HEAD
                 slices = (i, synonyms[unspecified_key]) if dynamic else (synonyms[unspecified_key],)
-=======
-                slices = (synonyms[unspecified_key],)
->>>>>>> pd_explore_categorical_tmaps
                 tensor[slices] = 1.0
         return tensor
     return tensor_from_waveform
@@ -2300,8 +2176,6 @@ for feature in partners_ecg_features_dic:
         tensor_from_file=make_partners_ecg_tensor(key=feature),
         shape=(1,)
     )
-<<<<<<< HEAD
-=======
 
 
 def make_measurement_matrix_from_file(key: str, lead: str = None):
@@ -2348,4 +2222,3 @@ for lead in measurement_matrix_leads:
               time_series_limit=0,
               tensor_from_file=make_measurement_matrix_from_file(measurement, lead=lead)
         )
->>>>>>> pd_explore_categorical_tmaps
