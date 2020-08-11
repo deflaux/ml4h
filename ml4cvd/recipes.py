@@ -19,7 +19,7 @@ from ml4cvd.arguments import parse_args
 from ml4cvd.optimizers import find_learning_rate
 from ml4cvd.defines import TENSOR_EXT, MODEL_EXT
 from ml4cvd.tensor_map_maker import write_tensor_maps
-from ml4cvd.tensor_writer_partners import write_tensors_partners, write_tensors_from_ecg_pdfs
+from ml4cvd.tensor_writer_partners import write_tensors_partners
 from ml4cvd.explorations import mri_dates, ecg_dates, predictions_to_pngs, sample_from_language_model
 from ml4cvd.explorations import tabulate_correlations_of_tensors, test_labels_to_label_map, infer_with_pixels, explore
 from ml4cvd.explorations import plot_heatmap_of_tensors, plot_while_learning, plot_histograms_of_tensors_in_pdf, cross_reference
