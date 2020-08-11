@@ -1923,6 +1923,10 @@ TMAPS['cine_segmented_lvot'] = TensorMap(
     'cine_segmented_lvot', Interpretation.CATEGORICAL, shape=(208, 160, 50, len(MRI_LVOT_SEGMENTED_CHANNEL_MAP)),
     tensor_from_file=_segmented_dicom_slices('cine_segmented_lvot_annotated_'), channel_map=MRI_LVOT_SEGMENTED_CHANNEL_MAP,
 )
+TMAPS['cine_segmented_lvot_16_3'] = TensorMap(
+    'cine_segmented_lvot_16_3', Interpretation.CATEGORICAL, shape=(208, 160, 16, len(MRI_LVOT_SEGMENTED_CHANNEL_MAP)),
+    tensor_from_file=_segmented_dicom_slices('cine_segmented_lvot_annotated_', step=3), channel_map=MRI_LVOT_SEGMENTED_CHANNEL_MAP,
+)
 TMAPS['flow_segmented'] = TensorMap(
     'flow_segmented', Interpretation.CATEGORICAL, shape=(192, 192, 30, len(MRI_AO_SEGMENTED_CHANNEL_MAP)),
     tensor_from_file=_segmented_dicom_slices('flow_250_tp_aov_bh_epat_annotated_'), channel_map=MRI_AO_SEGMENTED_CHANNEL_MAP,
