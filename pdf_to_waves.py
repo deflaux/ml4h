@@ -31,12 +31,17 @@ from tempfile import mkstemp
 import os, sys
 import subprocess
 from xml.dom.minidom import parse
+import dateutil.parser
 import numpy as np
 import pandas as pd
+import datetime
+import shutil
+import h5py
 import json
 from scipy.interpolate import interp1d
 from tqdm import tqdm
 from multiprocessing import Pool
+from ml4cvd.tensor_writer_partners import _clean_mrn, _compress_and_save_data
 
 
 def resample_core(signalx, signaly, sqlen, minspacing):
@@ -61,7 +66,7 @@ def resample_core(signalx, signaly, sqlen, minspacing):
     return(newy)
 
 
-async def convert_pdf_to_svg(fname, outname) -> int:
+def convert_pdf_to_svg(fname, outname) -> int:
     '''
     Input: 
          fname   : PDF file name
@@ -72,9 +77,9 @@ async def convert_pdf_to_svg(fname, outname) -> int:
     This will convert PDF into SVG format and save it in the given outpath.
     '''
 
-    cmd = f'pdftocairo -svg {fname} {outname}'
-    proc = await asyncio.create_subprocess_shell(cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    stdout, stderr = await proc.communicate()
+    cmd = ['pdftocairo', '-svg', fname,  outname]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, )
+    stdout, stderr = proc.communicate()
     if proc.returncode != 0:
         if stdout:
             print(stdout.decode())
@@ -84,7 +89,30 @@ async def convert_pdf_to_svg(fname, outname) -> int:
     return proc.returncode
 
 
-def process_svg_to_pd_perdata(svgfile, pdffile=None):
+def convert_pdf_to_txt(fname, outname) -> int:
+    '''
+    Input: 
+         fname   : PDF file name
+         outname : TXT file name
+    Output:
+         outname : return outname (file saved to disk)
+    
+    This will convert PDF into TXT format and save it in the given outpath.
+    '''
+
+    cmd = ['pdftotext', fname,  outname]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, )
+    stdout, stderr = proc.communicate()
+    if proc.returncode != 0:
+        if stdout:
+            print(stdout.decode())
+        if stderr:
+            print(f'Error in converting {fname} to SVG:\n{stderr.decode()}')
+
+    return proc.returncode
+
+
+def process_svg_to_pd_perdata(svgfile, txtfile, pdffile=None):
     '''
     Input:
     svgfile - datapath for svg file
@@ -106,6 +134,19 @@ def process_svg_to_pd_perdata(svgfile, pdffile=None):
         strn = 'FILENAME_NA'
     else:
         strn = os.path.splitext(os.path.basename(pdffile))[0]
+
+    with open(txtfile, 'r') as txt:
+        for line in txt:
+            if 'ID:' in line:
+                *idc, idx = line.strip().split(':')
+                if 'ID' in idc:
+                    mrn = _clean_mrn(idx, 'bad_mrn')
+            try:                
+                ecg_date = dateutil.parser.parse(' '.join(line.split()[:2]))
+                if ecg_date.time() != datetime.time(0):
+                    break
+            except (ValueError, TypeError):
+                continue
     
     data = pd.DataFrame(columns = ['PT_MRN','TEST_ID','filename','lead','x','y']) #,'scale_x','scale_y'])
     a = 0
@@ -150,6 +191,8 @@ def process_svg_to_pd_perdata(svgfile, pdffile=None):
                 except:
                     pid = tmp[0]
                     testid = tmp[0]
+                pid = mrn
+                testid = 0
                 data.loc[data.shape[0]] = [pid, testid, strn, columnnames[a],signalx,signaly]
                 spacingx = [t -s for s,t in zip(signalx, signalx[1:])]
                 spacingvals.append(np.min(spacingx))
@@ -210,8 +253,14 @@ def process_svg_to_pd_perdata(svgfile, pdffile=None):
         data['minspacing'] = spacingvals[0:arr_shape]
     except:
         data =  None
+
+    try: 
+        if mrn is None:
+            pass
+    except:
+           print(f'Problems with {sys.argv[1]}')
         
-    return data
+    return data, mrn, ecg_date
 
 
 def process_resample_data(data):
@@ -242,9 +291,9 @@ def process_resample_data(data):
 
         signaly = signaly/calibration_y
 
-        #newy = resample_core(signalx, signaly, sqlen, config['minspacing'])
-        #newy = newy.astype(np.float32)
-        newy = signaly
+        newy = resample_core(signalx, signaly, sqlen, config['minspacing'])
+        newy = newy.astype(np.float32)
+        #newy = signaly
 
         resampled_data.loc[resampled_data.shape[0]] = [lead_data.PT_MRN.values[0], 
                                                        lead_data.TEST_ID.values[0], 
@@ -256,7 +305,7 @@ def process_resample_data(data):
     return resampled_data
 
 
-async def get_data_from_PDF(pdf_path):
+def get_data_from_PDF(pdf_path):
     '''
     Input:
          pdf_path : path to the pdf 
@@ -268,29 +317,38 @@ async def get_data_from_PDF(pdf_path):
         if not os.path.exists('tmp/svgs'):
             os.makedirs('tmp/svgs')
         fp, svgfile = mkstemp(suffix='.svg', dir='tmp/svgs')
+        ft, txtfile = mkstemp(suffix='.txt', dir='tmp/svgs')
         os.close(fp)
+        os.close(ft)
 
-        convertExitStatus = await convert_pdf_to_svg(pdf_path, svgfile)
+        convertExitStatus = convert_pdf_to_txt(pdf_path, txtfile)
+        convertExitStatus = convert_pdf_to_svg(pdf_path, svgfile)
         assert 0 == convertExitStatus, f'convert_pdf_to_svg failed with status {convertExitStatus}'
 
-        data  = process_svg_to_pd_perdata(svgfile, pdf_path)
-
-        print(data)
+        data, mrn, ecg_date = process_svg_to_pd_perdata(svgfile, txtfile, pdf_path)        
 
         # Make sure all the signals have same sampling rate - it should be unless I picked up wrong signal from SVG and called it a signal
         assert (data.minspacing.round() == data.minspacing[0].round()).all(), 'Sampling is different for different leads'
 
         resampled_data = process_resample_data(data)
         assert ((resampled_data.shape[0] == 12) | (resampled_data.shape[0] == 15)) == True, 'Number of signals extracted does not match 12 or 15'
-        return resampled_data
+        return resampled_data, mrn, ecg_date
     finally:
         if os.path.exists(svgfile):
             os.remove(svgfile)
 
 
-async def main():
-    data = await get_data_from_PDF(sys.argv[1])
-    data.to_csv(sys.argv[1].lower().replace('pdf', 'csv'), index=False)
+def main():
+    data, mrn, ecg_date = get_data_from_PDF(sys.argv[1])
+    dest_fname = f'{os.path.dirname(sys.argv[1])}/{mrn}.hd5'
+    shutil.copyfile(f'/data/ecg/mgh/{mrn}.hd5', dest_fname)
+    with h5py.File(dest_fname, 'r+') as hd5:
+        for i, row in data.iterrows():
+            try:
+                gp = hd5['partners_ecg_rest'][ecg_date.isoformat()]
+                _compress_and_save_data(gp, f'{row["lead"]}_pdf', np.array(row['signal']).astype('float32'), dtype='float32')
+            except KeyError:
+                print(f"Problems with {sys.argv[1]}, {mrn}, {ecg_date}")
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()
