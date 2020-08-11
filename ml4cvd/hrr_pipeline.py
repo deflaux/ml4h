@@ -25,7 +25,7 @@ from ml4cvd.normalizer import Standardize, Normalizer, ZeroMeanStd1
 from ml4cvd.tensor_from_file import _get_tensor_at_first_date
 from ml4cvd.tensor_generators import test_train_valid_tensor_generators
 from ml4cvd.models import train_model_from_generators, make_multimodal_multitask_model, BottleneckType
-from ml4cvd.recipes import _infer_models, hidden_column
+from ml4cvd.recipes import _infer_models, hidden_column, _infer_hidden, make_hidden_layer_model
 from ml4cvd.metrics import coefficient_of_determination
 
 
@@ -870,12 +870,15 @@ def _infer_hidden_models_split_idx(split_idx: int):
     model_ids = [MODEL_SETTINGS[-1].model_id]
     tmaps_in = [_make_ecg_tmap(MODEL_SETTINGS[-1], split_idx)]
     tmaps_out = [_make_hrr_tmap(split_idx)]
-    _infer_models(
-        models=models,
-        model_ids=model_ids,
-        tensor_maps_in=tmaps_in,
-        tensor_maps_out=tmaps_out,
-        inference_tsv=_inference_file(split_idx), num_workers=8, batch_size=128, tensor_paths=tensor_paths,
+    embed_models = [
+        make_hidden_layer_model(model, tmaps_in, 'embed') for model in models
+    ]
+    dummy_input = {tm.input_name(): np.zeros((1,) + tm.shape) for tm in tmaps_in}
+    hidden_shapes = [np.prod(embed_model.predict(dummy_input).shape) for embed_model in embed_models]
+    _infer_hidden(
+        embed_models, model_ids, inference_tsv=_hidden_inference_file(split_idx),
+        tensor_paths=tensor_paths, hidden_shapes=hidden_shapes,
+        tensor_maps_in=tmaps_in, num_workers=8, batch_size=128,
     )
 
 
@@ -1197,14 +1200,14 @@ if __name__ == '__main__':
         for i in range(K_SPLIT):
             logging.info(f'Running inference on split {i}.')
             _infer_models_split_idx(i)
-    if INFER_HIDDEN_MODELS:
-        for i in range(K_SPLIT):
-            logging.info(f'Running inference on split {i}.')
-            _infer_hidden_models_split_idx(i)
     _evaluate_models()
     plot_training_curves()
     if INFER_REST_MODELS:
         _infer_rest_models()
     plot_rest_inference()
     resting_hr_explore(MODEL_SETTINGS[-1])
+    if INFER_HIDDEN_MODELS:
+        for i in range(K_SPLIT):
+            logging.info(f'Running hidden inference on split {i}.')
+            _infer_hidden_models_split_idx(i)
     _evaluate_hidden()

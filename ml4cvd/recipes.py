@@ -331,7 +331,8 @@ def _infer_models(
                     )
         finally:
             logging.info(
-                f"Inference on {len(visited_paths)} tensors finished. Inference TSV file at: {inference_tsv}")
+                f"Inference on {len(visited_paths)} tensors finished. Inference TSV file at: {inference_tsv}",
+            )
             if generate_test is not None:
                 generate_test.kill_workers()
 
@@ -411,15 +412,18 @@ def _infer_hidden(
                 count += 1
                 logging.info(f"Wrote {count} batches of inference.")
                 if generate_test.stats_q.qsize() == generate_test.num_workers:
+                    remaining = len(tensor_paths_set - visited_paths)
+                    logging.info(f'{remaining} samples remaining.')
                     generate_test.aggregate_and_print_stats()
                     generate_test.kill_workers()
                     generate_test = TensorGenerator(
-                        1, tensor_maps_in, [], tensor_paths, num_workers=num_workers,
+                        min(batch_size, remaining), tensor_maps_in, [], tensor_paths, num_workers=num_workers,
                         cache_size=0, keep_paths=True, mixup=0,
                     )
         finally:
             logging.info(
-                f"Inference on {len(visited_paths)} tensors finished. Inference TSV file at: {inference_tsv}")
+                f"Inference on {len(visited_paths)} tensors finished. Inference TSV file at: {inference_tsv}",
+            )
             if generate_test is not None:
                 generate_test.kill_workers()
 
