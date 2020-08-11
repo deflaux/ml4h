@@ -13,9 +13,7 @@ import h5py
 import numcodecs
 import numpy as np
 
-from ml4cvd.defines import TENSOR_EXT, XML_EXT, ECG_REST_AMP_LEADS
-
-ECG_REST_INDEPENDENT_LEADS = ['I', 'II', 'V1', 'V2', 'V3', 'V4', 'V5', 'V6']
+from ml4cvd.defines import TENSOR_EXT, XML_EXT, ECG_REST_AMP_LEADS, ECG_REST_INDEPENDENT_LEADS
 
 
 def write_tensors_partners(xml_folder: str, tensors: str, num_workers: int) -> None:
@@ -249,12 +247,6 @@ def _get_amplitude_from_amplitude_tags(amplitude_tags: bs4.ResultSet) -> Dict[st
     return amplitude_data
 
 
-def _decode_array(array_raw: str, scale: float = 1.0) -> np.ndarray:
-    decoded = base64.b64decode(array_raw)
-    waveform = [struct.unpack("h", bytes([decoded[t], decoded[t + 1]]))[0] for t in range(0, len(decoded), 2)]
-    return np.array(waveform) * scale
-
-
 def _get_measurement_matrix_from_matrix_tags(matrix_tags: bs4.ResultSet) -> np.ndarray:
     for matrix_tag in matrix_tags:
         matrix = matrix_tag.text
@@ -282,6 +274,12 @@ def _get_voltage_from_waveform_tags(waveform_tags: bs4.ResultSet) -> Dict[str, U
         voltage_data.update(lead_data)
         break
     return voltage_data
+
+
+def _decode_array(array_raw: str, scale: float = 1.0) -> np.ndarray:
+    decoded = base64.b64decode(array_raw)
+    waveform = [struct.unpack("h", bytes([decoded[t], decoded[t + 1]]))[0] for t in range(0, len(decoded), 2)]
+    return np.array(waveform) * scale
 
 
 def _get_voltage_from_lead_tags(lead_tags: bs4.ResultSet) -> Dict[str, Union[str, Dict[str, np.ndarray]]]:
