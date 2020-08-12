@@ -290,8 +290,8 @@ def optimize_aorta_architecture(args):
     conv_type = ['conv', 'separable', 'depth']
     pool_type = ['max', 'average']
     space = {
-        'pool_x': hp.quniform('pool_x', 2, 8, 2),
-        'pool_y': hp.quniform('pool_y', 2, 8, 2),
+        'pool_x': hp.quniform('pool_x', 2, 6, 2),
+        'pool_y': hp.quniform('pool_y', 2, 6, 2),
         'conv_layers': hp.choice('conv_layers', conv_layers_sets),
         'dense_blocks': hp.choice('dense_blocks', dense_blocks_sets),
         'dense_layers': hp.choice('dense_layers', dense_layers_sets),
@@ -305,7 +305,6 @@ def optimize_aorta_architecture(args):
         'conv_layers': conv_layers_sets,
         'dense_blocks': dense_blocks_sets,
         'dense_layers': dense_layers_sets,
-        'conv_dilate': conv_dilate,
         'conv_normalize': conv_normalize,
         'conv_type': conv_type,
         'activation': activation,
