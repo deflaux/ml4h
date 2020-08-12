@@ -74,6 +74,7 @@ HIDDEN_INFERENCE_NAME = 'pretest_model_latent_inference.tsv'
 K_SPLIT = 5
 RESTING_HR_DF = os.path.join(OUTPUT_FOLDER, 'resting_hr.tsv')
 RESTING_HR_FIGURE_FOLDER = os.path.join(FIGURE_FOLDER, 'resting_hr_stratification')
+LV_FIGURE_FOLDER = os.path.join(FIGURE_FOLDER, 'latent_variable_explore')
 
 JOHANNA_LATENT_VARIABLES = [50, 18, 8, 47, 33, 51, 19, 60, 6, 4, 29, 52, 63, 56, 14]
 
@@ -1051,13 +1052,38 @@ def _evaluate_hidden():
         inference_df = pd.read_csv(_hidden_inference_file(i), sep='\t')
         inference_df['split_idx'] = i
         inference_dfs.append(inference_df)
-    inference_df = pd.concat(inference_dfs)
-    inference_df.to_csv(os.path.join(OUTPUT_FOLDER, HIDDEN_INFERENCE_NAME), sep='\t', index=False)
+    hidden_df = pd.concat(inference_dfs)
+    hidden_df.to_csv(os.path.join(OUTPUT_FOLDER, HIDDEN_INFERENCE_NAME), sep='\t', index=False)
+
+    resting_hr = pd.read_csv(RESTING_HR_DF, sep='\t')
+    infer_df = pd.read_csv(os.path.join(OUTPUT_FOLDER, PRETEST_INFERENCE_NAME), sep='\t')
+    df = hidden_df.merge(resting_hr, on='sample_id').merge(infer_df, on='sample_id')
+
+    quantiles = .05, .5, .95
 
     for lv in JOHANNA_LATENT_VARIABLES:
-        lvs = inference_df[hidden_column(MODEL_SETTINGS[-1].model_id, lv)]
-        # TODO: plot extremes and center of this lv
-        # TODO: plot extremes and center of this lv stratified by resting hr
+        lv_col = hidden_column(MODEL_SETTINGS[-1].model_id, lv)
+        lvs = df[lv_col]
+        fig, axes = plt.subplots(nrows=1, ncols=2 + len(quantiles), figsize=(10, 30))
+        ax1, ax2 = axes[:2]
+
+        sns.jointplot(df['resting_hr'], lvs, ax=ax1, kind='hex')
+        ax1.set_xlabel('Resting HR')
+        ax1.set_ylabel(f'Latent variable {lv}')
+
+        sns.jointplot(df[time_to_pred_hrr_col(HRR_TIME, MODEL_SETTINGS[-1].model_id)], lvs, ax=ax1, kind='hex')
+        ax2.set_xlabel('Predicted HRR')
+        ax2.set_ylabel(f'Latent variable {lv}')
+
+        for quantile, ax in zip(quantiles, axes[2:]):
+            row = df[(lvs > lvs.quantile(quantile - .05)) & (lvs < lv.quantile(quantile + .05))].iloc[0]
+            sample_id = row['sample_id']
+            with h5py.File(_path_from_sample_id(str(int(sample_id))), 'r') as hd5:
+                pretest = _get_bike_ecg(hd5, 0, PRETEST_DUR * SAMPLING_RATE, [0])
+            ax.plot(np.linspace(0, PRETEST_TRAINING_DUR, len(pretest)), pretest, c='k', label=f'ECG for latent {lv} = {row[lv_col]:.2f}')
+            ax.legend()
+        fig.savefig(os.path.join(f'latent_{lv}.png'))
+        # TODO: plot ECG extremes and center of this lv stratified by resting hr
 
 
 def plot_training_curves():
