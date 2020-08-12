@@ -557,16 +557,16 @@ def _get_pretest_summary_stats(id_csv: str) -> Tuple[float, float]:
     return mean, std
 
 
-ModelSetting = namedtuple('ModelSetting', ['model_id', 'downsample_rate', 'augmentations', 'shift'])
+ModelSetting = namedtuple('ModelSetting', ['model_id', 'downsample_rate', 'augmentations', 'shift', 'display_name'])
 
 
 AUGMENTATIONS = [_warp_ecg, _random_crop_ecg, _rand_add_noise]
 MODEL_SETTINGS = [
-    ModelSetting(**{'model_id': 'baseline_model', 'downsample_rate': 1, 'augmentations': [], 'shift': False}),
-    ModelSetting(**{'model_id': 'shift', 'downsample_rate': 1, 'augmentations': [], 'shift': True}),
-    ModelSetting(**{'model_id': 'shift_augment', 'downsample_rate': 1, 'augmentations': AUGMENTATIONS, 'shift': True}),
-    ModelSetting(**{'model_id': 'downsample_model', 'downsample_rate': BIOSPPY_DOWNSAMPLE_RATE, 'augmentations': [], 'shift': True}),
-    ModelSetting(**{'model_id': 'downsample_augment', 'downsample_rate': BIOSPPY_DOWNSAMPLE_RATE, 'augmentations': AUGMENTATIONS, 'shift': True}),
+    ModelSetting(**{'model_id': 'baseline_model', 'downsample_rate': 1, 'augmentations': [], 'shift': False, 'display_name': 'Baseline CNN'}),
+    ModelSetting(**{'model_id': 'shift', 'downsample_rate': 1, 'augmentations': [], 'shift': True, 'display_name': 'Random pretest selection'}),
+    ModelSetting(**{'model_id': 'shift_augment', 'downsample_rate': 1, 'augmentations': AUGMENTATIONS, 'shift': True, 'display_name': 'Random pretest selection and augmentation'}),
+    ModelSetting(**{'model_id': 'downsample_model', 'downsample_rate': BIOSPPY_DOWNSAMPLE_RATE, 'augmentations': [], 'shift': True, 'display_name': 'Random pretest selection and downsampling'}),
+    ModelSetting(**{'model_id': 'downsample_augment', 'downsample_rate': BIOSPPY_DOWNSAMPLE_RATE, 'augmentations': AUGMENTATIONS, 'shift': True, 'display_name': 'Full pipeline'}),
 ]
 
 
@@ -945,13 +945,15 @@ def bootstrap_compare_models(
     performance = {'model': [], 'R2': []}
     actual_col = time_to_actual_hrr_col(HRR_TIME)
     pred_cols = {m_id: time_to_pred_hrr_col(HRR_TIME, m_id) for m_id in model_ids}
-    for _ in range(num_bootstraps):
+    for i in range(num_bootstraps):
         df = inference_result.sample(frac=bootstrap_frac, replace=True)
         for m_id, pred_col in pred_cols.items():
             pred = df[pred_col]
             R2 = coefficient_of_determination(df[actual_col], pred)
             performance['model'].append(m_id)
             performance['R2'].append(R2)
+        print(f'Bootstrap - {(i + 1) / num_bootstraps:.2%}', end='\r')
+    print()
     return pd.DataFrame(performance)
 
 
@@ -1001,7 +1003,8 @@ def _evaluate_models():
 
     model_ids = list(R2_df['model'].unique())
     logging.info('Beginning bootstrap performance evaluation.')
-    R2_df = bootstrap_compare_models(model_ids, inference_df, num_bootstraps=5000, bootstrap_frac=1)
+    num_bootstraps = 10000
+    R2_df = bootstrap_compare_models(model_ids, inference_df, num_bootstraps=num_bootstraps, bootstrap_frac=1)
 
     plt.figure(figsize=(ax_size, ax_size))
     sns.violinplot(x='model', y='R2', data=R2_df)
@@ -1025,17 +1028,19 @@ def _evaluate_models():
     plt.legend(loc="upper right")
     plt.savefig(os.path.join(figure_folder, f'bootstrap_distributions.png'))
 
-    plt.figure(figsize=(ax_size, ax_size))
-    cmap = cm.get_cmap('rainbow')
-    for i, m_id in enumerate(model_ids[:-1]):
+    plt.figure(figsize=(2 * ax_size, ax_size))
+    for i, setting in enumerate(MODEL_SETTINGS[:-1]):
+        m_id = setting.model_id
         R2 = R2_df['R2'][R2_df['model'] == m_id].values
         diff = R2 - final_R2
-        color = cmap(i / K_SPLIT)
+        color = cmap(i / (K_SPLIT - 1))
         sns.distplot(diff, color=color)
-        plt.axvline(diff.mean(), color=color, label=f'({m_id} R2 - {final_model} R2) mean ({diff.mean():.3f})', linestyle='--')
-    plt.axvline(0, c='k', linestyle='--')
-    plt.xlabel('R2')
-    plt.legend(loc="upper right")
+        plt.axvline(diff.mean(), color=color, label=f'{setting.display_name} ({diff.mean():.3f}, {diff.std():.3f})', linestyle='--')
+    plt.title(f'Bootstrapped Performance Comparison\nsamples = {num_bootstraps}')
+    final_name = MODEL_SETTINGS[-1].display_name
+    plt.axvline(0, c='k', linestyle='--', label=f'{final_name}')
+    plt.xlabel(f'$R^2$ - {final_name} $R^2$')
+    plt.legend(loc="upper left")
     plt.savefig(os.path.join(figure_folder, f'bootstrap_diff_distributions.png'))
     plt.close('all')
 
