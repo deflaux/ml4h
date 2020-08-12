@@ -50,6 +50,8 @@ def run(args):
             optimize_ecg_rest_unet_architecture(args)
         elif 'mri_sax' == args.mode:
             optimize_mri_sax_architecture(args)
+        elif 'aorta' == args.mode:
+            optimize_aorta_architecture(args)
         elif 'conv_x' == args.mode:
             optimize_conv_x(args)
         else:
@@ -244,7 +246,7 @@ def optimize_ecg_rest_unet_architecture(args):
 
 
 def optimize_mri_sax_architecture(args):
-    dense_blocks_sets = [[], [16], [32], [48], [32, 16], [32, 32], [32, 24, 16], [48, 32, 24], [48, 48, 48]]
+    dense_blocks_sets = [[], [16], [32], [48], [32, 16], [32, 32], [32, 24, 16], [32, 32, 32], [48, 48, 48], [32, 32, 32, 32], [48, 48, 48, 48],]
     conv_layers_sets = [[], [16], [32], [48], [32, 32], [48, 32], [48, 32, 24]]
     dense_layers_sets = [[16], [24], [32], [48], [16, 64], [8, 128], [16, 64, 128]]
     activation = ['leaky', 'prelu', 'relu', 'elu']
@@ -260,6 +262,39 @@ def optimize_mri_sax_architecture(args):
         'dense_blocks': hp.choice('dense_blocks', dense_blocks_sets),
         'dense_layers': hp.choice('dense_layers', dense_layers_sets),
         'conv_dilate': hp.choice('conv_dilate', conv_dilate),
+        'conv_normalize': hp.choice('conv_normalize', conv_normalize),
+        'conv_type': hp.choice('conv_type', conv_type),
+        'activation': hp.choice('activation', activation),
+        'pool_type': hp.choice('pool_type', pool_type),
+        'block_size': hp.quniform('block_size', 1, 6, 1),
+    }
+    param_lists = {
+        'conv_layers': conv_layers_sets,
+        'dense_blocks': dense_blocks_sets,
+        'dense_layers': dense_layers_sets,
+        'conv_dilate': conv_dilate,
+        'conv_normalize': conv_normalize,
+        'conv_type': conv_type,
+        'activation': activation,
+        'pool_type': pool_type,
+    }
+    hyperparameter_optimizer(args, space, param_lists)
+
+
+def optimize_aorta_architecture(args):
+    dense_blocks_sets = [[], [16], [32], [48], [32, 32], [32, 24, 16], [32, 32, 32], [48, 48, 48], [32, 32, 32, 32], [48, 48, 48, 48],]
+    conv_layers_sets = [[], [16], [32], [48], [32, 32], [32, 32, 32], [48, 32, 24]]
+    dense_layers_sets = [[16], [32], [48], [16, 16], [16, 64], [16, 64, 128]]
+    activation = ['leaky', 'prelu', 'relu', 'elu']
+    conv_normalize = ['', 'batch_norm']
+    conv_type = ['conv', 'separable', 'depth']
+    pool_type = ['max', 'average']
+    space = {
+        'pool_x': hp.quniform('pool_x', 2, 8, 2),
+        'pool_y': hp.quniform('pool_y', 2, 8, 2),
+        'conv_layers': hp.choice('conv_layers', conv_layers_sets),
+        'dense_blocks': hp.choice('dense_blocks', dense_blocks_sets),
+        'dense_layers': hp.choice('dense_layers', dense_layers_sets),
         'conv_normalize': hp.choice('conv_normalize', conv_normalize),
         'conv_type': hp.choice('conv_type', conv_type),
         'activation': hp.choice('activation', activation),
