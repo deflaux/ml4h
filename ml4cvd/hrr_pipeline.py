@@ -1056,33 +1056,40 @@ def _evaluate_hidden():
     hidden_df.to_csv(os.path.join(OUTPUT_FOLDER, HIDDEN_INFERENCE_NAME), sep='\t', index=False)
 
     resting_hr = pd.read_csv(RESTING_HR_DF, sep='\t')
+    resting_hr = resting_hr[resting_hr['resting_hr'] > 0]
     infer_df = pd.read_csv(os.path.join(OUTPUT_FOLDER, PRETEST_INFERENCE_NAME), sep='\t')
     df = hidden_df.merge(resting_hr, on='sample_id').merge(infer_df, on='sample_id')
 
-    quantiles = .05, .5, .95
-
     for lv in JOHANNA_LATENT_VARIABLES:
+        logging.info(f'Plotting latent variable {lv}')
         lv_col = hidden_column(MODEL_SETTINGS[-1].model_id, lv)
         lvs = df[lv_col]
-        fig, axes = plt.subplots(nrows=1, ncols=2 + len(quantiles), figsize=(10, 30))
-        ax1, ax2 = axes[:2]
+        fig, (ax1, ax2) = plt.subplots(ncols=2, nrows=1, figsize=(20, 10))
+        ax1, ax2
 
-        sns.jointplot(df['resting_hr'], lvs, ax=ax1, kind='hex')
-        ax1.set_xlabel('Resting HR')
-        ax1.set_ylabel(f'Latent variable {lv}')
+        ax1.scatter(y=df['resting_hr'], x=lvs, marker='.', color='k', s=1)
+        ax1.set_ylabel('Resting HR')
+        ax1.set_xlabel(f'Latent variable {lv}')
 
-        sns.jointplot(df[time_to_pred_hrr_col(HRR_TIME, MODEL_SETTINGS[-1].model_id)], lvs, ax=ax1, kind='hex')
-        ax2.set_xlabel('Predicted HRR')
-        ax2.set_ylabel(f'Latent variable {lv}')
+        ax2.scatter(y=df[time_to_pred_hrr_col(HRR_TIME, MODEL_SETTINGS[-1].model_id)], x=lvs, marker='.', color='k', s=1)
+        ax2.set_ylabel('Predicted HRR')
+        ax2.set_xlabel(f'Latent variable {lv}')
+        fig.savefig(os.path.join(LV_FIGURE_FOLDER, f'latent_{lv}_vs_covs.png'))
 
-        for quantile, ax in zip(quantiles, axes[2:]):
-            row = df[(lvs > lvs.quantile(quantile - .05)) & (lvs < lv.quantile(quantile + .05))].iloc[0]
-            sample_id = row['sample_id']
-            with h5py.File(_path_from_sample_id(str(int(sample_id))), 'r') as hd5:
-                pretest = _get_bike_ecg(hd5, 0, PRETEST_DUR * SAMPLING_RATE, [0])
-            ax.plot(np.linspace(0, PRETEST_TRAINING_DUR, len(pretest)), pretest, c='k', label=f'ECG for latent {lv} = {row[lv_col]:.2f}')
-            ax.legend()
-        fig.savefig(os.path.join(f'latent_{lv}.png'))
+        num_samples = 4
+        quantiles = .05, .3, .5, .7, .95
+        fig, axes = plt.subplots(ncols=num_samples, nrows=len(quantiles), figsize=(num_samples * 10, len(quantiles) * 5))
+        for i, quantile in enumerate(quantiles):
+            for sample in range(num_samples):
+                row = df[(lvs > lvs.quantile(quantile - .05)) & (lvs < lvs.quantile(quantile + .05))].iloc[sample]
+                sample_id = row['sample_id']
+                with h5py.File(_path_from_sample_id(str(int(sample_id))), 'r') as hd5:
+                    pretest = _get_bike_ecg(hd5, 0, PRETEST_DUR * SAMPLING_RATE, [0])
+                ax = axes[i, sample]
+                ax.plot(np.linspace(0, PRETEST_TRAINING_DUR, len(pretest)), pretest, c='k', label=f'ECG for latent {lv} = {row[lv_col]:.2f}')
+                ax.legend()
+        fig.savefig(os.path.join(LV_FIGURE_FOLDER, f'latent_{lv}_ecgs.png'))
+        plt.close('all')
         # TODO: plot ECG extremes and center of this lv stratified by resting hr
 
 
@@ -1181,6 +1188,7 @@ if __name__ == '__main__':
     os.makedirs(PRETEST_LABEL_FIGURE_FOLDER, exist_ok=True)
     os.makedirs(AUGMENTATION_FIGURE_FOLDER, exist_ok=True)
     os.makedirs(RESTING_HR_FIGURE_FOLDER, exist_ok=True)
+    os.makedirs(LV_FIGURE_FOLDER, exist_ok=True)
     now_string = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')
     load_config('INFO', OUTPUT_FOLDER, 'log_' + now_string, USER)
 
