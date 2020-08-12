@@ -125,12 +125,12 @@ def predictions_to_pngs(
                 for j in range(y.shape[3]):
                     if tm.is_categorical():
                         truth = np.argmax(labels[tm.output_name()][i, :, :, j, :], axis=-1)
-                        prediction = y[i, :, :, j, :]
+                        prediction = np.argmax(y[i, :, :, j, :], axis=-1)
                         plt.imsave(folder+sample_id+'_truth_{0:03d}_{1:03d}'.format(i, j)+IMAGE_EXT, truth, cmap='gray')
                         plt.imsave(folder+sample_id+'_prediction_{0:03d}_{1:03d}'.format(i, j)+IMAGE_EXT, prediction, cmap='gray')
-                        plt.imsave(folder+sample_id+'_mri_slice_{0:03d}_{1:03d}'.format(i, j)+IMAGE_EXT, data[im.input_name()][i, :, :, j, :], cmap='gray')
+                        plt.imsave(folder+sample_id+'_mri_slice_{0:03d}_{1:03d}'.format(i, j)+IMAGE_EXT, data[im.input_name()][i, :, :, j, 0], cmap='gray')
                     else:
-                        plt.imsave(folder+sample_id+'_truth_{0:03d}_{1:03d}'.format(i, j)+IMAGE_EXT, labels[tm.output_name()][i, :, :, j, :], cmap='gray')
+                        plt.imsave(folder+sample_id+'_truth_{0:03d}_{1:03d}'.format(i, j)+IMAGE_EXT, labels[tm.output_name()][i, :, :, j, 0], cmap='gray')
                         plt.imsave(folder+sample_id+'_prediction_{0:03d}_{1:03d}'.format(i, j)+IMAGE_EXT, y[i, :, :, j, :], cmap='gray')
 
 
