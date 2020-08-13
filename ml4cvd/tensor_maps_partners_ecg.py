@@ -156,6 +156,20 @@ for length, exact_length, normalization in product(length_options, exact_options
         validator=validator_not_all_zero,
     )
 
+for length, exact_length, normalization in product(length_options, exact_options, normalize_options):
+    norm = '' if isinstance(normalization, ZeroMeanStd1) else '_std' if isinstance(normalization, Standardize) else '_raw'
+    exact = '_exact' if exact_length else ''
+    name = f'partners_ecg_{length}{norm}{exact}_newest'
+    TMAPS[name] = TensorMap(
+        name,
+        shape=(length, 12),
+        path_prefix=PARTNERS_PREFIX,
+        tensor_from_file=make_voltage(exact_length),
+        normalization=normalization,
+        channel_map=ECG_REST_AMP_LEADS,
+        validator=validator_not_all_zero,
+    )
+
 
 def voltage_stat(tm, hd5, dependents={}):
     ecg_dates = _get_ecg_dates(tm, hd5)
