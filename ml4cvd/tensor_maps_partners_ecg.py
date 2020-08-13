@@ -989,6 +989,7 @@ def partners_ecg_age(tm, hd5, dependents={}):
 
 
 TMAPS['partners_ecg_age'] = TensorMap('partners_ecg_age', path_prefix=PARTNERS_PREFIX, loss='logcosh', tensor_from_file=partners_ecg_age, shape=(None, 1), time_series_limit=0)
+TMAPS['partners_ecg_age_newest'] = TensorMap('partners_ecg_age_newest', path_prefix=PARTNERS_PREFIX, loss='logcosh', tensor_from_file=partners_ecg_age, shape=(1,))
 
 
 def partners_ecg_acquisition_year(tm, hd5, dependents={}):
