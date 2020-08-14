@@ -817,6 +817,16 @@ def test_train_valid_tensor_generators(
     return generate_train, generate_valid, generate_test
 
 
+def _get_num_prefetch(
+        tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
+        batch_size: int, prefetch_mem=1e9,
+) -> int:
+    """Estimate reasonable number of batches to prefetch during training"""
+    float_size = 32
+    num_floats = sum(np.prod(tmap.shape) for tmap in tensor_maps_in + tensor_maps_out)
+    return prefetch_mem / (num_floats * float_size * batch_size)
+
+
 def new_test_train_valid_tensor_generators(
         tensor_maps_in: List[TensorMap],
         tensor_maps_out: List[TensorMap],
@@ -845,15 +855,19 @@ def new_test_train_valid_tensor_generators(
         valid_csv=valid_csv,
         test_csv=test_csv,
     )
+    prefetch = _get_num_prefetch(tensor_maps_in, tensor_maps_out, batch_size)
     generate_train = dataset_from_tensor_maps(
-        train_paths, tensor_maps_in, tensor_maps_out, True
-    ).shuffle(len(train_paths)).batch(batch_size)
+        train_paths, tensor_maps_in, tensor_maps_out,
+        augment=True,
+    ).shuffle(len(train_paths)).batch(batch_size).prefetch(prefetch)
     generate_valid = dataset_from_tensor_maps(
-        valid_paths, tensor_maps_in, tensor_maps_out, False
-    ).shuffle(len(train_paths)).batch(batch_size)
+        valid_paths, tensor_maps_in, tensor_maps_out,
+        augment=False,
+    ).shuffle(len(train_paths)).batch(batch_size).prefetch(prefetch)
     generate_test = dataset_from_tensor_maps(
-        valid_paths, tensor_maps_in, tensor_maps_out + tensor_maps_protected, False
-    )
+        valid_paths, tensor_maps_in, tensor_maps_out + tensor_maps_protected,
+        augment=False,
+    ).prefetch(prefetch)
     return (
         generate_train, generate_valid, generate_test,
         train_paths, valid_paths, test_paths,

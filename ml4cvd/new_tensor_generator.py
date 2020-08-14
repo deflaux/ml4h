@@ -169,7 +169,6 @@ def dataset_from_sample_getter(
         sample_ids: List[int],
         output_types: OutputTypes,
         output_shapes: OutputShapes,
-        # TODO: number of workers, deterministism, shuffling
 ) -> tf.data.Dataset:
     return tf.data.Dataset.from_tensor_slices(  # TODO: This feels overly complicated
         sorted(sample_ids)).interleave(
@@ -177,7 +176,8 @@ def dataset_from_sample_getter(
             sample_getter, args=(sample_id,),
             output_types=output_types,
             output_shapes=output_shapes,
-        )
+        ),
+        num_parallel_calls=tf.data.experimental.AUTOTUNE,
     )
 
 
@@ -191,7 +191,7 @@ def dataset_from_tensor_maps(
     output_types = tensor_maps_to_output_types(tensor_maps_in, tensor_maps_out)
     output_shapes = tensor_maps_to_output_shapes(tensor_maps_in, tensor_maps_out)
     return dataset_from_sample_getter(
-        sample_getter, list(sample_id_to_path.keys()), output_types, output_shapes
+        sample_getter, list(sample_id_to_path.keys()), output_types, output_shapes,
     )
 
 
