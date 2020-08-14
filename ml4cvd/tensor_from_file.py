@@ -1901,6 +1901,11 @@ TMAPS['lax_4ch_segmented_192_16_3_w'] = TensorMap(
     channel_map=MRI_LAX_4CH_SEGMENTED_CHANNEL_MAP,
     loss=weighted_crossentropy([0.01, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 1.0, 1.0, 1.0, 1.0, 5.0, 0.5]),
 )
+TMAPS['lax_4ch_segmented_224_16_3'] = TensorMap(
+    'lax_4ch_segmented_224_16_3', Interpretation.CATEGORICAL, shape=(160, 224, 16, 14),
+    tensor_from_file=_segmented_dicom_slices('cine_segmented_lax_4ch_annotated_', step=3),
+    channel_map=MRI_LAX_4CH_SEGMENTED_CHANNEL_MAP,
+)
 TMAPS['lax_4ch_segmented_224_16_3_w'] = TensorMap(
     'lax_4ch_segmented_224_16_3', Interpretation.CATEGORICAL, shape=(160, 224, 16, 14),
     tensor_from_file=_segmented_dicom_slices('cine_segmented_lax_4ch_annotated_', step=3),
