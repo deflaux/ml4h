@@ -117,9 +117,6 @@ def predictions_to_pngs(
                         plt.imsave(f"{folder}{sample_id}_prediction_{tm.name}_{i:02d}_{j:02d}{IMAGE_EXT}", y[i, :, :, j], cmap='gray')
                         plt.imsave(f"{folder}{sample_id}_mri_slice_{tm.name}_{i:02d}_{j:02d}{IMAGE_EXT}", data[input_map.input_name()][i, :, :, j], cmap='gray')
         elif len(tm.shape) == 4:
-            for im in tensor_maps_in:
-                if im.dependent_map == tm:
-                    break
             for i in range(y.shape[0]):
                 sample_id = os.path.basename(paths[i]).replace(TENSOR_EXT, '')
                 for j in range(y.shape[3]):
@@ -129,7 +126,7 @@ def predictions_to_pngs(
                         prediction = np.argmax(y[i, :, :, j, :], axis=-1)
                         plt.imsave(f'{image_path_base}_truth{IMAGE_EXT}', truth, cmap='gray')
                         plt.imsave(f'{image_path_base}_prediction{IMAGE_EXT}', prediction, cmap='gray')
-                        plt.imsave(f'{image_path_base}_input{IMAGE_EXT}', data[im.input_name()][i, :, :, j, 0], cmap='gray')
+                        plt.imsave(f'{image_path_base}_input{IMAGE_EXT}', data[input_map.input_name()][i, :, :, j, 0], cmap='gray')
                     else:
                         plt.imsave(f'{image_path_base}_truth{IMAGE_EXT}', labels[tm.output_name()][i, :, :, j, 0], cmap='gray')
                         plt.imsave(f'{image_path_base}_prediction{IMAGE_EXT}', y[i, :, :, j, :], cmap='gray')
