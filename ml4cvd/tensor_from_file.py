@@ -1836,6 +1836,8 @@ def _segmented_dicom_slices(dicom_key_prefix, path_prefix='ukb_cardiac_mri', ste
                 categorical_one_hot = to_categorical(categorical_index_slice, len(tm.channel_map))
                 tensor[..., tensor_index, :] = _pad_or_crop_array_to_shape(tensor[..., tensor_index, :].shape, categorical_one_hot)
                 tensor_index += 1
+                if tensor_index >= tensor.shape[-2]:
+                    break
         else:
             raise ValueError(f'No method to get segmented slices for TensorMap: {tm}')
         return tensor
