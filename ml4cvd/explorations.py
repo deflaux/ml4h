@@ -123,15 +123,16 @@ def predictions_to_pngs(
             for i in range(y.shape[0]):
                 sample_id = os.path.basename(paths[i]).replace(TENSOR_EXT, '')
                 for j in range(y.shape[3]):
+                    image_path_base = f'{folder}{sample_id}_{tm.name}_{i:03d}_{j:03d}_'
                     if tm.is_categorical():
                         truth = np.argmax(labels[tm.output_name()][i, :, :, j, :], axis=-1)
                         prediction = np.argmax(y[i, :, :, j, :], axis=-1)
-                        plt.imsave(folder+sample_id+'_truth_{0:03d}_{1:03d}'.format(i, j)+IMAGE_EXT, truth, cmap='gray')
-                        plt.imsave(folder+sample_id+'_prediction_{0:03d}_{1:03d}'.format(i, j)+IMAGE_EXT, prediction, cmap='gray')
-                        plt.imsave(folder+sample_id+'_mri_slice_{0:03d}_{1:03d}'.format(i, j)+IMAGE_EXT, data[im.input_name()][i, :, :, j, 0], cmap='gray')
+                        plt.imsave(f'{image_path_base}_truth{IMAGE_EXT}', truth, cmap='gray')
+                        plt.imsave(f'{image_path_base}_prediction{IMAGE_EXT}', prediction, cmap='gray')
+                        plt.imsave(f'{image_path_base}_input{IMAGE_EXT}', data[im.input_name()][i, :, :, j, 0], cmap='gray')
                     else:
-                        plt.imsave(folder+sample_id+'_truth_{0:03d}_{1:03d}'.format(i, j)+IMAGE_EXT, labels[tm.output_name()][i, :, :, j, 0], cmap='gray')
-                        plt.imsave(folder+sample_id+'_prediction_{0:03d}_{1:03d}'.format(i, j)+IMAGE_EXT, y[i, :, :, j, :], cmap='gray')
+                        plt.imsave(f'{image_path_base}_truth{IMAGE_EXT}', labels[tm.output_name()][i, :, :, j, 0], cmap='gray')
+                        plt.imsave(f'{image_path_base}_prediction{IMAGE_EXT}', y[i, :, :, j, :], cmap='gray')
 
 
 def plot_while_learning(
