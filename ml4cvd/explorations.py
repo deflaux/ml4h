@@ -51,7 +51,7 @@ def predictions_to_pngs(
         for im in tensor_maps_in:
             if tm.is_categorical() and im.dependent_map == tm:
                 input_map = im
-            elif len(tm.shape) == len(im.shape):
+            elif tm.shape == im.shape:
                 input_map = im
         logging.info(f"Write predictions as PNGs y:{y.shape} labels:{labels[tm.output_name()].shape} folder:{folder}")
         if tm.is_mesh():
