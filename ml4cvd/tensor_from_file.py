@@ -1822,7 +1822,7 @@ TMAPS['cine_sax_b6_192_1'] = TensorMap(
 )
 
 
-def _segmented_dicom_slices(dicom_key_prefix, path_prefix='ukb_cardiac_mri', step=1):
+def _segmented_dicom_slices(dicom_key_prefix, path_prefix='ukb_cardiac_mri', step=1, total_slices=50):
     def _segmented_dicom_tensor_from_file(tm, hd5, dependents={}):
         tensor = np.zeros(tm.shape, dtype=np.float32)
         if path_prefix == 'ukb_liver_mri':
@@ -1831,7 +1831,7 @@ def _segmented_dicom_slices(dicom_key_prefix, path_prefix='ukb_cardiac_mri', ste
             tensor[..., :] = _pad_or_crop_array_to_shape(tensor[..., :].shape, categorical_one_hot)
         elif tm.axes() == 4:
             tensor_index = 0
-            for i in range(0, tm.shape[-2], step):
+            for i in range(0, total_slices, step):
                 categorical_index_slice = _get_tensor_at_first_date(hd5, path_prefix, f'{dicom_key_prefix}{i+1}')
                 categorical_one_hot = to_categorical(categorical_index_slice, len(tm.channel_map))
                 tensor[..., tensor_index, :] = _pad_or_crop_array_to_shape(tensor[..., tensor_index, :].shape, categorical_one_hot)
