@@ -95,7 +95,7 @@ def predictions_to_pngs(
                 for j in range(y.shape[3]):
                     image_path_base = f'{folder}{sample_id}_{tm.name}_{i:03d}_{j:03d}'
                     if tm.is_categorical():
-                        logging.info(f' count nonzero {np.count_nonzero(labels[tm.output_name()][i, :, :, j, :])}')
+                        logging.info(f'i {i} j {j} count nonzero {np.count_nonzero(labels[tm.output_name()][i, :, :, j, :])}')
                         truth = np.argmax(labels[tm.output_name()][i, :, :, j, :], axis=-1)
                         prediction = np.argmax(y[i, :, :, j, :], axis=-1)
                         plt.imsave(f'{image_path_base}_truth{IMAGE_EXT}', truth, cmap='gray')
