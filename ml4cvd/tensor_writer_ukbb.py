@@ -185,7 +185,7 @@ def write_tensors_from_dicom_pngs(
             if len(png.shape) == 3 and png.mean() == png[:, :, 0].mean():
                 png = png[:, :, 0]
             else:
-                raise ValueError(f'PNG has color information but no method to tensorize it.')
+                raise ValueError(f'PNG has color information but no method to tensorize it {png.mean()}, 0ch :{png[:, :, 0].mean()}, 1ch :{png[:, :, 1].mean()}, 2ch :{png[:, :, 2].mean()}.')
             full_tensor = np.zeros((x, y), dtype=np.float32)
             full_tensor[:png.shape[0], :png.shape[1]] = png
             tensor_file = os.path.join(tensors, str(sample_id) + TENSOR_EXT)
