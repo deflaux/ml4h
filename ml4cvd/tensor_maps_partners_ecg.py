@@ -774,6 +774,17 @@ TMAPS[task] = TensorMap(
     validator=validator_not_all_zero,
 )
 
+task = "partners_ecg_sampling_frequency_wv_cont"
+TMAPS[task] = TensorMap(
+    task,
+    interpretation=Interpretation.CONTINUOUS,
+    path_prefix=PARTNERS_PREFIX,
+    tensor_from_file=make_partners_ecg_tensor(key="waveform_samplebase"),
+    time_series_limit=0,
+    shape=(None, 1),
+    validator=validator_not_all_zero,
+)
+
 
 task = "partners_ecg_sampling_frequency_md"
 TMAPS[task] = TensorMap(
@@ -792,8 +803,8 @@ TMAPS[task] = TensorMap(
     task,
     interpretation=Interpretation.CATEGORICAL,
     path_prefix=PARTNERS_PREFIX,
-    tensor_from_file=make_partners_ecg_tensor(key="waveform_samplebase", channel_prefix='_'),
-    channel_map={'_0': 0, '_240': 1, '_250': 2, '_500': 3, 'other': 4},
+    tensor_from_file=make_partners_ecg_tensor(key="waveform_samplebase", channel_prefix='x'),
+    channel_map={'x0': 0, 'x240': 1, 'x250': 2, 'x500': 3, 'other': 4},
     time_series_limit=0,
     validator=validator_not_all_zero,
 )
