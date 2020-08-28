@@ -1025,6 +1025,7 @@ def _evaluate_models():
         sns.distplot(R2, color=color)
         plt.axvline(R2.mean(), color=color, label=f'{m_id} mean ({R2.mean():.3f})', linestyle='--')
         logging.info(f'Probability {final_model} is not better than {m_id} (null hypothesis) is {(R2 >= final_R2).mean():.3%}.')
+        logging.info(f'{m_id} $R^2$ has mean {R2.mean():.3%} and 95% CI {np.quantile(R2, .025):.3f}, {np.quantile(R2, .975):.3f}')
     plt.xlabel('R2')
     plt.legend(loc="upper right")
     plt.savefig(os.path.join(figure_folder, f'bootstrap_distributions.png'))
