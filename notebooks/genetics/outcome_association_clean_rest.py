@@ -7,10 +7,14 @@ from outcome_association_utils import odds_ratios, hazard_ratios, plot_or_hr, un
 ########### Pretest exercise ECGs ###########################
 # Read phenotype and covariates
 phenotypes = pd.read_csv('/home/pdiachil/ml/notebooks/genetics/pretest_covariates.csv')
-# phenotypes = pd.read_csv('/home/pdiachil/ml/notebooks/genetics/rest_covariates.csv')
+phenotypes_rest = pd.read_csv('/home/pdiachil/ml/notebooks/genetics/rest_covariates.csv')
 # phenotypes = pd.read_csv('/home/pdiachil/ml/notebooks/genetics/overlap_covariates.csv')
+phenotypes = phenotypes_rest.merge(phenotypes['sample_id'], how='outer', indicator=True, on='sample_id')
+phenotypes = phenotypes[phenotypes['_merge']=='left_only']
+splits = [f'50_hrr_downsample_augment_split_{i}_prediction' for i in range(5)]
+phenotypes['50_hrr_downsample_augment_prediction'] = phenotypes[splits].median(axis=1)
 
-phenos_to_binarize = ['50_hrr_actual', '50_hrr_downsample_augment_prediction']
+phenos_to_binarize = ['50_hrr_downsample_augment_prediction']
 for pheno in phenos_to_binarize:
     phenotypes[f'{pheno}_binary'] = (phenotypes[pheno] < phenotypes[pheno].quantile(0.33)).apply(float)
     phenotypes[f'{pheno}_binary'] = (phenotypes[pheno] < phenotypes[pheno].quantile(0.33)).apply(float)
@@ -20,7 +24,7 @@ label_dic = {
     '50_hrr_downsample_augment_prediction_binary': ['lowest tertile HRR$_{pred}$', ''],
     '50_hrr_actual': ['HRR', 'beats'],
     '50_hrr_downsample_augment_prediction': ['HRR$_{pred}$', 'beats'],
-    'resting_hr': ['Rest HR', 'beats'],
+    'ventricular_rate': ['Rest HR', 'beats'],
     'age': ['Age', 'yrs'],
     'male': ['Male', ''],
     # 'nonwhite': ['Nonwhite', ''],
@@ -81,18 +85,18 @@ plot_or_hr(hazard_ratio_univariable, label_dic, disease_list, f'hr_univariate_li
 covariates = ['bmi', 'age', 'male', 'cholesterol', 'HDL', 'current_smoker',
               'systolic_bp', 'Diabetes_Type_2_prevalent', 'c_antihypertensive', 'c_lipidlowering']
 
-phenotype_subset = ['50_hrr_actual_binary', '50_hrr_downsample_augment_prediction_binary',
-                    '50_hrr_actual', '50_hrr_downsample_augment_prediction', 'resting_hr',
+phenotype_subset = ['50_hrr_downsample_augment_prediction_binary',
+                    '50_hrr_downsample_augment_prediction', 'ventricular_rate',
                     ]
 labels = {key: label_dic[key] for key in phenotype_subset}
 
-#odds_ratio_multivariable = odds_ratios(phenotypes, diseases_unpack, labels,
-#                                       disease_list, covariates=covariates, instance=0, dont_scale=dont_scale)
-#plot_or_hr(odds_ratio_multivariable, labels, disease_list, f'or_multivariate_pretest', occ='prevalent')
+# odds_ratio_multivariable = odds_ratios(phenotypes, diseases_unpack, labels,
+#                                        disease_list, covariates=covariates, instance=2, dont_scale=dont_scale)
+# plot_or_hr(odds_ratio_multivariable, labels, disease_list, f'or_multivariate_rest', occ='prevalent')
 
 hazard_ratio_multivariable = hazard_ratios(phenotypes, diseases_unpack, labels,
-                                           disease_list, covariates=covariates, instance=0, dont_scale=dont_scale)
-plot_or_hr(hazard_ratio_multivariable, labels, disease_list, f'hr_multivariate_pretest', occ='incident', horizontal_line_y=1.5)
+                                           disease_list, covariates=covariates, instance=2, dont_scale=dont_scale)
+plot_or_hr(hazard_ratio_multivariable, labels, disease_list, f'hr_multivariate_rest', occ='incident', horizontal_line_y=0.5)
 
 # %%
 # Clinical model

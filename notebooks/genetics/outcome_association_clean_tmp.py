@@ -16,19 +16,19 @@ for pheno in phenos_to_binarize:
     phenotypes[f'{pheno}_binary'] = (phenotypes[pheno] < phenotypes[pheno].quantile(0.33)).apply(float)
 
 label_dic = {
-    '50_hrr_actual_binary': ['lowest tertile HRR', ''],
-    '50_hrr_downsample_augment_prediction_binary': ['lowest tertile HRR$_{pred}$', ''],
-    '50_hrr_actual': ['HRR', 'beats'],
-    '50_hrr_downsample_augment_prediction': ['HRR$_{pred}$', 'beats'],
-    'resting_hr': ['Rest HR', 'beats'],
+    # '50_hrr_actual_binary': ['low HRR50', ''],
+    # '50_hrr_downsample_augment_prediction_binary': ['low HRR50-pretest', ''],
+    '50_hrr_actual': ['Actual HRR', ''],
+    '50_hrr_downsample_augment_prediction': ['Model-predicted HRR', ''],
+    'resting_hr': ['Resting heart rate', ''],
     'age': ['Age', 'yrs'],
     'male': ['Male', ''],
-    # 'nonwhite': ['Nonwhite', ''],
+    'nonwhite': ['Nonwhite', ''],
     'bmi': ['BMI', 'units'],
     'cholesterol': ['Cholesterol', 'mmol/L'],
     'HDL': ['HDL', 'mmol/L'],
     'current_smoker': ['Current smoker', ''],
-    # 'diastolic_bp': ['Diastolic blood pressure', 'mmHg'],
+    'diastolic_bp': ['Diastolic blood pressure', 'mmHg'],
     'systolic_bp': ['Systolic blood pressure', 'mmHg'],
     # 'gfr': ['eGFR', 'mL/min/1.73 m2'],
     # 'creatinine': ['Creatinine', 'umol/L'],
@@ -62,7 +62,6 @@ hazard_ratio_univariable = hazard_ratios(phenotypes, diseases_unpack, label_dic,
 
 plot_or_hr(hazard_ratio_univariable, label_dic, disease_list, f'hr_univariate_pretest', occ='incident')
 
-# %%
 # Univariate lighter
 phenotype_subset = ['50_hrr_actual', '50_hrr_downsample_augment_prediction', 'resting_hr',
                     '50_hrr_actual_binary', '50_hrr_downsample_augment_prediction_binary']
@@ -79,31 +78,20 @@ plot_or_hr(hazard_ratio_univariable, label_dic, disease_list, f'hr_univariate_li
 # %%
 # Multivariate
 covariates = ['bmi', 'age', 'male', 'cholesterol', 'HDL', 'current_smoker',
-              'systolic_bp', 'Diabetes_Type_2_prevalent', 'c_antihypertensive', 'c_lipidlowering']
+              'diastolic_bp', 'systolic_bp', 'c_antihypertensive', 'c_lipidlowering']
 
-phenotype_subset = ['50_hrr_actual_binary', '50_hrr_downsample_augment_prediction_binary',
-                    '50_hrr_actual', '50_hrr_downsample_augment_prediction', 'resting_hr',
-                    ]
+phenotype_subset = ['50_hrr_actual', '50_hrr_downsample_augment_prediction', 'resting_hr',]
 labels = {key: label_dic[key] for key in phenotype_subset}
 
-#odds_ratio_multivariable = odds_ratios(phenotypes, diseases_unpack, labels,
-#                                       disease_list, covariates=covariates, instance=0, dont_scale=dont_scale)
-#plot_or_hr(odds_ratio_multivariable, labels, disease_list, f'or_multivariate_pretest', occ='prevalent')
+odds_ratio_multivariable = odds_ratios(phenotypes, diseases_unpack, labels,
+                                       disease_list, covariates=covariates, instance=0, dont_scale=dont_scale)
+plot_or_hr(odds_ratio_multivariable, labels, disease_list, f'or_multivariate_pretest', occ='prevalent')
 
 hazard_ratio_multivariable = hazard_ratios(phenotypes, diseases_unpack, labels,
                                            disease_list, covariates=covariates, instance=0, dont_scale=dont_scale)
-plot_or_hr(hazard_ratio_multivariable, labels, disease_list, f'hr_multivariate_pretest', occ='incident', horizontal_line_y=1.5)
+plot_or_hr(hazard_ratio_multivariable, labels, disease_list, f'hr_multivariate_pretest', occ='incident')
 
-# %%
-# Clinical model
-covariates = ['age', 'male', 'cholesterol', 'HDL', 'current_smoker',
-              'systolic_bp', 'Diabetes_Type_2_prevalent', 'c_antihypertensive', 'c_lipidlowering']
 
-phenotype_subset = ['bmi']
-labels = {key: label_dic[key] for key in phenotype_subset}
-hazard_ratio_clinical = hazard_ratios(phenotypes, diseases_unpack, labels,
-                                      disease_list, covariates=covariates, instance=0, dont_scale=dont_scale)
-plot_or_hr(hazard_ratio_clinical, labels, disease_list, f'hr_multivariate_pretest_clinical', occ='incident')
 
 # %%
 ############## Resting ECGs ###############
@@ -121,9 +109,9 @@ for pheno in phenos_to_binarize:
     phenotypes[f'{pheno}_binary'] = (phenotypes[pheno] < phenotypes[pheno].quantile(0.33)).apply(float)
 
 label_dic = {
-    '50_hrr_downsample_augment_prediction_binary': ['lowest tertile HRR$_{pred}$', ''],
-    '50_hrr_downsample_augment_prediction': ['HRR$_{pred}$', 'beats'],
-    'ventricular_rate': ['Rest HR', 'beats'],
+    '50_hrr_downsample_augment_prediction_binary': ['low HRR50-rest', ''],
+    '50_hrr_downsample_augment_prediction': ['HRR50-rest', 'beats'],
+    'ventricular_rate': ['HR-rest', 'beats'],
     'age': ['Age', 'yrs'],
     'male': ['Male', ''],
     'nonwhite': ['Nonwhite', ''],
@@ -181,20 +169,19 @@ plot_or_hr(hazard_ratio_univariable, label_dic, disease_list, f'hr_univariate_li
 # %%
 # Multivariate
 covariates = ['bmi', 'age', 'male', 'cholesterol', 'HDL', 'current_smoker',
-              'systolic_bp', 'Diabetes_Type_2_prevalent', 'c_antihypertensive', 'c_lipidlowering']
+              'diastolic_bp', 'systolic_bp', 'c_antihypertensive', 'c_lipidlowering']
 
-phenotype_subset = ['50_hrr_downsample_augment_prediction_binary',
-                    '50_hrr_downsample_augment_prediction', 'ventricular_rate',
-                    ]
+phenotype_subset = ['50_hrr_downsample_augment_prediction', 'ventricular_rate',
+                    '50_hrr_downsample_augment_prediction_binary']
 labels = {key: label_dic[key] for key in phenotype_subset}
 
-#odds_ratio_multivariable = odds_ratios(phenotypes, diseases_unpack, labels,
-#                                       disease_list, covariates=covariates, instance=0, dont_scale=dont_scale)
-#plot_or_hr(odds_ratio_multivariable, labels, disease_list, f'or_multivariate_pretest', occ='prevalent')
+odds_ratio_multivariable = odds_ratios(phenotypes, diseases_unpack, labels,
+                                       disease_list, covariates=covariates, instance=2, dont_scale=dont_scale)
+plot_or_hr(odds_ratio_multivariable, labels, disease_list, f'or_multivariate_rest', occ='prevalent')
 
 hazard_ratio_multivariable = hazard_ratios(phenotypes, diseases_unpack, labels,
-                                           disease_list, covariates=covariates, instance=0, dont_scale=dont_scale)
-plot_or_hr(hazard_ratio_multivariable, labels, disease_list, f'hr_multivariate_rest', occ='incident', horizontal_line_y=0.5)
+                                           disease_list, covariates=covariates, instance=2, dont_scale=dont_scale)
+plot_or_hr(hazard_ratio_multivariable, labels, disease_list, f'hr_multivariate_rest', occ='incident')
 
 # %%
 
@@ -237,7 +224,6 @@ for covariate in ['resting_hr', 'bmi', 'age', 'male', 'cholesterol', 'HDL', 'cur
     rsquared[covariate]['std'] = np.std(res)
 
 plot_rsquared_covariates(rsquared, label_dic)
-
 
 # %%
 

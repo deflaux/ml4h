@@ -19,8 +19,9 @@ import pandas as pd
 # or FieldID = 53 -- instance 0 date
 # or FieldID = 30700 -- creatinine
 # # %%
-# covariates.('bq_covariates.tsv', sep='\t')
+# covariates.to_csv('bq_covariates.tsv', sep='\t')
 
+# # %%
 # %%bigquery race
 # select sample_id, FieldID, instance, value from `ukbb7089_202006.phenotype` 
 # where FieldID = 21000 -- race
@@ -50,10 +51,6 @@ pretest = pd.read_csv('/mnt/disks/pd-nd-hrr-results/pretest_model_inference.tsv'
 #pretest_old = pd.read_csv('pretest_results_for_bolt.tsv', '\t')
 #pretest_old['sample_id'] = pretest_old['FID']
 pretest_to_rest = pd.read_csv('/mnt/disks/pd-nd-hrr-results/rest_model_inference_0_mean_std_1.tsv', sep='\t').drop(columns=['50_hrr_actual'])
-ventricular_rate = pd.read_csv('/home/pdiachil/ml/notebooks/genetics/ventricular_rate_resting_ecgs.csv', sep=',')
-ventricular_rate['sample_id'] = ventricular_rate['fpath'].str.split('/').str[-1].str.replace('.hd5', '').apply(int)
-pretest_to_rest = pretest_to_rest.merge(ventricular_rate[['sample_id', 'VentricularRate VentricularRate']], on='sample_id')
-pretest_to_rest['ventricular_rate'] = pretest_to_rest['VentricularRate VentricularRate']
 resting = pd.read_csv('exp_resting_hr.csv', sep=',')
 resting['sample_id'] = resting['fpath'].str.split('/').str[-1].str.replace('.hd5', '').apply(int)
 resting = resting[['sample_id', 'resting_hr']]
@@ -68,7 +65,7 @@ pretest_to_rest = pretest_to_rest.fillna(0)
 pretest_to_rest_overlap = pretest_to_rest_overlap.merge(drugs, on='sample_id', how='left')
 pretest_to_rest_overlap = pretest_to_rest_overlap.fillna(0)
 
-ecg_sets = [all_ecgs, pretest_to_rest]
+ecg_sets = [all_ecgs, pretest_to_rest, pretest_to_rest_overlap]
 # %%
 pheno_dic = {
              21003: ['age', float],
@@ -81,31 +78,23 @@ pheno_dic = {
              4080: ['systolic_bp', int],
              20116: ['current_smoker', int],
              30700: ['creatinine', float],
-             53: ['instance0_date', pd.to_datetime],
-             54: ['instance2_date', pd.to_datetime]
+             53: ['instance0_date', pd.to_datetime]
             }
 
-dont_update = [30690, 30760, 30700, 31, 21000]
+
 for i, ecg_set in enumerate(ecg_sets):
     missing = []
     for pheno in pheno_dic:
-        instance = 0 if ((i==0) or (pheno in dont_update))  else 2
-        if pheno == 54:
-            if i == 0: 
-                continue
-            tmp_covariates = covariates[(covariates['FieldID']==pheno-1) &\
-                                        (covariates['instance']==2)]
-        else:
-            tmp_covariates = covariates[(covariates['FieldID']==pheno) &\
-                                        (covariates['instance']==instance)]
-        if pheno == 53 or pheno == 54:
+        tmp_covariates = covariates[(covariates['FieldID']==pheno) &\
+                                    (covariates['instance']==0)]
+        if pheno == 53:
             tmp_covariates['value'] = pd.to_datetime(tmp_covariates['value'])
         else:
             tmp_covariates['value'] = tmp_covariates['value'].apply(pheno_dic[pheno][1])
         if (pheno == 4079) or (pheno == 4080):
             tmp_covariates = tmp_covariates[['sample_id', 'value']].groupby('sample_id').mean().reset_index(level=0)
         
-        ecg_sets[i] = ecg_sets[i].merge(tmp_covariates[['sample_id', 'value']], left_on=['sample_id'], right_on=['sample_id'], how='left')
+        ecg_sets[i] = ecg_sets[i].merge(tmp_covariates[['sample_id', 'value']], left_on=['sample_id'], right_on=['sample_id'], how='inner')
         ecg_sets[i][pheno_dic[pheno][0]] = ecg_sets[i]['value']
         ecg_sets[i] = ecg_sets[i].drop(columns=['value'])
         missing.append(ecg_sets[i][pheno_dic[pheno][0]].isna().sum())
@@ -116,9 +105,6 @@ for i, ecg_set in enumerate(ecg_sets):
     missing = pd.DataFrame({'missing': missing})
     missing
 
-ecg_sets[1] = ecg_sets[1].fillna(value={'diastolic_bp': 80.0, 'systolic_bp': 120.0})
-ecg_sets[0] = ecg_sets[0].dropna()
-ecg_sets[1] = ecg_sets[1].dropna()
 # %%
 def gfr(x):
     k = 0.7 + 0.2*x['male']
@@ -139,21 +125,9 @@ for i, ecg_set in enumerate(ecg_sets):
     ecg_sets[i]['gfr'] = gfr(ecg_sets[i])
 
 # %%
-all_ecgs, pretest_to_rest = ecg_sets
-
-# %%
-# all_ecgs.to_csv('/home/pdiachil/ml/notebooks/genetics/pretest_covariates.csv', index=False)
-pretest_to_rest.to_csv('/home/pdiachil/ml/notebooks/genetics/rest_covariates.csv', index=False)
-# pretest_to_rest_overlap.to_csv('/home/pdiachil/ml/notebooks/genetics/overlap_covariates.csv', index=False)
-
-# %%
-import matplotlib.pyplot as plt
-diff = (pretest_to_rest_overlap['instance2_date']-pretest_to_rest_overlap['instance0_date']).dt.days / 365.25
-ax = diff.hist()
-ax.set_xlabel('instance2 - instance0 (years)')
-ax.set_ylabel('Counts')
-ax.set_title('Years between resting and exercise ECGs')
-plt.savefig('years_between.png', dpi=500)
+all_ecgs, pretest_to_rest, pretest_to_rest_overlap = ecg_sets
+all_ecgs = pretest_to_rest_overlap
+all_ecgs['50_hrr_downsample_augment_prediction_rest'] = np.median(all_ecgs[[f'50_hrr_downsample_augment_split_{i}_prediction' for i in range(5)]], axis=1)
 # %%
 %matplotlib inline
 import matplotlib.pyplot as plt
@@ -162,33 +136,63 @@ f.set_size_inches(16, 9)
 all_ecgs.hist(ax=ax)
 plt.tight_layout()
 
+# %%
+tmp = pd.DataFrame()
+tmp['HRR50'] = all_ecgs['50_hrr_actual']
+tmp['HRR50-pretest'] = all_ecgs['50_hrr_downsample_augment_prediction']
+tmp['HRR50-rest'] = all_ecgs['50_hrr_downsample_augment_prediction_rest']
+tmp.corr().round(2)
+
 # %% 
 # Phenotype plots
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-f, axs = plt.subplots(ncols=1, sharey=True, figsize=(4, 3))
-f.subplots_adjust(hspace=0.5, left=0.07, right=0.93)
-ax = axs
+f, axs = plt.subplots(ncols=3, sharey=True, figsize=(9, 3))
+f.subplots_adjust(hspace=0.5, left=0.07, right=0.97)
+ax = axs[0]
+hb = ax.hexbin(all_ecgs['50_hrr_actual'], all_ecgs['50_hrr_downsample_augment_prediction_rest'],  mincnt=1, cmap='gray')
+ax.set_xlabel('HRR50 (bpm)')
+ax.set_ylabel('HRR50-rest (bpm)')
+ax.plot([all_ecgs['50_hrr_actual'].dropna().quantile(0.33), 
+         all_ecgs['50_hrr_actual'].dropna().quantile(0.33)],
+         [-5.0, 60.], color='gray', linestyle='--')
+ax.plot([-5.0, 60.0], 
+        [all_ecgs['50_hrr_downsample_augment_prediction_rest'].dropna().quantile(0.33), 
+         all_ecgs['50_hrr_downsample_augment_prediction_rest'].dropna().quantile(0.33)], color='gray', linestyle='--')
+ax.plot()
+ax = axs[1]
 hb = ax.hexbin(all_ecgs['50_hrr_actual'], all_ecgs['50_hrr_downsample_augment_prediction'],  mincnt=1, cmap='gray')
+ax.set_xlabel('HRR50 (bpm)')
+ax.set_ylabel('HRR50-pretest (bpm)')
 ax.plot([all_ecgs['50_hrr_actual'].dropna().quantile(0.33), 
          all_ecgs['50_hrr_actual'].dropna().quantile(0.33)],
          [-5.0, 60.], color='gray', linestyle='--')
 ax.plot([-5.0, 60.0], 
         [all_ecgs['50_hrr_downsample_augment_prediction'].dropna().quantile(0.33), 
          all_ecgs['50_hrr_downsample_augment_prediction'].dropna().quantile(0.33)], color='gray', linestyle='--')
+ax = axs[2]
+hb = ax.hexbin(all_ecgs['50_hrr_downsample_augment_prediction'], all_ecgs['50_hrr_downsample_augment_prediction_rest'],  mincnt=1, cmap='gray')
+ax.set_xlabel('HRR50-pretest (bpm)')
+ax.set_ylabel('HRR50-rest (bpm)')
+ax.plot([all_ecgs['50_hrr_downsample_augment_prediction'].dropna().quantile(0.33), 
+         all_ecgs['50_hrr_downsample_augment_prediction'].dropna().quantile(0.33)],
+         [-5.0, 60.], color='gray', linestyle='--')
+ax.plot([-5.0, 60.0], 
+        [all_ecgs['50_hrr_downsample_augment_prediction_rest'].dropna().quantile(0.33), 
+         all_ecgs['50_hrr_downsample_augment_prediction_rest'].dropna().quantile(0.33)], color='gray', linestyle='--')
 
-ax.set_xlabel('HRR (bpm)')
-ax.set_ylabel('HRR$_{pred}$ (bpm)')
-ax.set_aspect('equal')
-ax.set_xlim([-5, 60])
-ax.set_ylim([-5, 60])
-ax.set_xticks([0, 20, 40, 60])
-ax.set_yticks([0, 20, 40, 60])
-cb = f.colorbar(hb, ax=ax)
-cb.set_label('counts')
+
+for ax in axs:
+    ax.set_aspect('equal')
+    ax.set_xlim([-5, 60])
+    ax.set_ylim([-5, 60])
+    ax.set_xticks([0, 20, 40, 60])
+    ax.set_yticks([0, 20, 40, 60])
+#cb = f.colorbar(hb, ax=ax)
+#cb.set_label('counts')
 plt.tight_layout()
-f.savefig('correlation.png', dpi=500)
+f.savefig('correlation_overlap.png', dpi=500)
 # ax[1].hexbin(all_ecgs['resting_hr'], all_ecgs['50_hrr_actual'], mincnt=1)
 # ax[1].set_ylabel('HRR (bpm)')
 # ax[1].set_xlabel('resting HR (bpm)')
@@ -198,21 +202,25 @@ f.savefig('correlation.png', dpi=500)
 
 f, ax = plt.subplots()
 f.set_size_inches(3.5, 3)
-bins = np.linspace(all_ecgs['50_hrr_actual'].dropna().min(), all_ecgs['50_hrr_actual'].dropna().max(), 100)
-sns.distplot(all_ecgs['50_hrr_actual'].dropna(), bins=bins, ax=ax, norm_hist=False, kde=False, color='gray', label='HRR')
-sns.distplot(all_ecgs['50_hrr_downsample_augment_prediction'].dropna(), bins=bins, norm_hist=False, ax=ax, kde=False, color='black', 
-             label='HRR$_{pred}$')
-# ax.plot([all_ecgs['50_hrr_actual'].dropna().quantile(0.33), 
-#          all_ecgs['50_hrr_actual'].dropna().quantile(0.33)],
-#          [0.0, 3000.], color='black', linestyle='--')
-# ax.plot([all_ecgs['50_hrr_downsample_augment_prediction'].dropna().quantile(0.33), 
-#          all_ecgs['50_hrr_downsample_augment_prediction'].dropna().quantile(0.33)],
-#          [0.0, 3000.], color='black')
-ax.set_ylim([0.0, 2900.0])
-ax.set_xlabel('HRR vs HRR$_{pred}$ (bpm)')
+sns.distplot(all_ecgs['50_hrr_actual'].dropna(), ax=ax, kde=False, color='gray', label='HRR50')
+sns.distplot(all_ecgs['50_hrr_downsample_augment_prediction_rest'], ax=ax, kde=False, color='black', 
+             label='HRR50-rest')
+sns.distplot(all_ecgs['50_hrr_downsample_augment_prediction'], ax=ax, kde=False, color='black', 
+             label='HRR50-pretest')
+ax.plot([all_ecgs['50_hrr_actual'].dropna().quantile(0.33), 
+         all_ecgs['50_hrr_actual'].dropna().quantile(0.33)],
+         [0.0, 500.], color='black', linestyle='--')
+ax.plot([all_ecgs['50_hrr_downsample_augment_prediction_rest'].dropna().quantile(0.33), 
+         all_ecgs['50_hrr_downsample_augment_prediction_rest'].dropna().quantile(0.33)],
+         [0.0, 500.], color='black')
+ax.plot([all_ecgs['50_hrr_downsample_augment_prediction'].dropna().quantile(0.33), 
+         all_ecgs['50_hrr_downsample_augment_prediction'].dropna().quantile(0.33)],
+         [0.0, 500.], color='black', linestyle='-.')
+ax.set_ylim([0.0, 500.0])
+ax.set_xlabel('HRR (actual vs predicted) (bpm)')
 ax.legend(loc='upper left')
 plt.tight_layout()
-f.savefig('distribution.png', dpi=500)
+f.savefig('distribution_overlap.png', dpi=500)
 
 # all_ecgs['HRR50'] = all_ecgs['50_hrr_actual']
 # all_ecgs['HR-pretest'] = all_ecgs['resting_hr']
@@ -236,93 +244,7 @@ f.savefig('distribution.png', dpi=500)
 # plt.tight_layout()
 # f.savefig('intercorrlations.png', dpi=500)
 # %%
-from sklearn.linear_model import LogisticRegression
-from sklearn import metrics
-from matplotlib import pyplot as plt
-for quantile in [0.33]:
-    all_ecgs['50_hrr_actual_binary'] = all_ecgs['50_hrr_actual'] <= all_ecgs['50_hrr_actual'].quantile(quantile)
-
-    clf_pred = LogisticRegression(random_state=0).fit(all_ecgs['50_hrr_downsample_augment_prediction'].values.reshape(-1, 1), all_ecgs['50_hrr_actual_binary'].values.reshape(-1, 1))
-    clf_rest = LogisticRegression(random_state=0).fit(all_ecgs['resting_hr'].values.reshape(-1, 1), all_ecgs['50_hrr_actual_binary'].values.reshape(-1, 1))
-    y_score_pred = clf_pred.decision_function(all_ecgs['50_hrr_downsample_augment_prediction'].values.reshape(-1, 1))
-    y_score_rest = clf_rest.decision_function(all_ecgs['resting_hr'].values.reshape(-1, 1))
-    prob_pred = clf_pred.predict_proba(all_ecgs['50_hrr_downsample_augment_prediction'].values.reshape(-1, 1))
-    fpr_pred, tpr_pred, thresholds_pred = metrics.roc_curve(all_ecgs['50_hrr_actual_binary'].values.reshape(-1, 1), y_score_pred)
-    fpr_rest, tpr_rest, thresholds_rest = metrics.roc_curve(all_ecgs['50_hrr_actual_binary'].values.reshape(-1, 1), y_score_rest)
-    auc_pred = metrics.auc(fpr_pred, tpr_pred)
-    auc_rest = metrics.auc(fpr_rest, tpr_rest)
-    f, ax = plt.subplots()
-    ax.plot(fpr_pred, tpr_pred, color='black', linewidth=3, label='HRR$_{pred}$ '+f'AUC = {auc_pred:.2f}')
-    ax.plot(fpr_rest, tpr_rest, color='gray', linewidth=3, label=f'Rest HR AUC = {auc_rest:.2f}')
-    ax.set_aspect('equal')
-    ax.plot([0.0, 1.0], [0.0, 1.0], '--', color='black')
-    ax.set_xlim([0.0, 1.0])
-    ax.set_ylim([0.0, 1.0])
-    ax.set_xticks([0.0, 0.5, 1.0])
-    ax.set_yticks([0.0, 0.5, 1.0])
-    ax.legend()
-
-    optimal_thresholds_idx = np.argmax(tpr_pred * (1-fpr_pred))
-    optimal_idx = np.argmin(abs(y_score_pred - thresholds_pred[optimal_thresholds_idx]))
-    pred_threshold = all_ecgs['50_hrr_downsample_augment_prediction'].values[optimal_idx]
-    f.savefig(f'roc_auc_{quantile}.png', dpi=500)
-    
-
-
 # %%
-quantile = 0.33
-pred_threshold = all_ecgs['50_hrr_downsample_augment_prediction'].quantile(quantile)
-low_actual = all_ecgs['50_hrr_actual'] <= all_ecgs['50_hrr_actual'].quantile(quantile)
-low_pred = all_ecgs['50_hrr_downsample_augment_prediction'] <= all_ecgs['50_hrr_downsample_augment_prediction'].dropna().quantile(quantile)
-low_pred = all_ecgs['50_hrr_downsample_augment_prediction'] <= pred_threshold
-normal_actual = all_ecgs['50_hrr_actual'] > all_ecgs['50_hrr_actual'].quantile(quantile)
-normal_pred = all_ecgs['50_hrr_downsample_augment_prediction'] > pred_threshold
-
-sensitivity = len(all_ecgs[low_actual & low_pred]) / (len(all_ecgs[low_actual & low_pred]) + len(all_ecgs[normal_pred & low_actual]))
-specificity = len(all_ecgs[normal_pred & normal_actual]) / (len(all_ecgs[normal_pred & normal_actual]) + len(all_ecgs[low_pred & normal_actual]))
-precision = len(all_ecgs[low_actual & low_pred]) / (len(all_ecgs[low_actual & low_pred]) + len(all_ecgs[normal_actual & low_pred]))
-print(sensitivity, specificity, precision, 2*precision*sensitivity / (precision+sensitivity))
-
-# %%
-f, ax = plt.subplots()
-quantiles_actual = [all_ecgs['50_hrr_actual'].quantile(i) for i in np.linspace(0.1, 0.9, 200)]
-quantiles_pred = [all_ecgs['50_hrr_downsample_augment_prediction'].quantile(i) for i in np.linspace(0.1, 0.9, 200)]
-for i in np.linspace(0.33, 0.99, 3):
-    ax.plot(all_ecgs['50_hrr_actual'].quantile(i), all_ecgs['50_hrr_downsample_augment_prediction'].quantile(i), 'ko')
-ax.plot([0.0, 50.0], [0.0, 50.0], 'k--')
-ax.set_aspect('equal')
-ax.set_xticks([10.0, 20.0, 30.0, 40.0])
-ax.set_yticks([10.0, 20.0, 30.0, 40.0])
-
-#ax.set_xlim([12.0, 42.0])
-#ax.set_ylim([12.0, 42.0])
-
-# %%
-#ranked_actual = np.argsort(all_ecgs['50_hrr_actual'].values)
-#ranked_pred = np.argsort(all_ecgs['50_hrr_downsample_augment_prediction'].values)
-from sklearn.calibration import calibration_curve
-
-fraction_of_positives, mean_predicted_value = \
-            calibration_curve(all_ecgs['50_hrr_actual'] < all_ecgs['50_hrr_actual'].quantile(quantile), prob_pred[:, 1], 
-            normalize=True, strategy='quantile', n_bins=10)
-
-f, ax = plt.subplots()
-ax.plot(fraction_of_positives, mean_predicted_value)
-ax.plot([0.0, 1.0], [0.0, 1.0])
-
-# %%
-import scipy.stats
-
-scipy.stats.spearmanr(all_ecgs['50_hrr_actual'], all_ecgs['50_hrr_downsample_augment_prediction'])
-
-# %%
-tmp = pd.DataFrame()
-tmp['HRR50'] = all_ecgs['50_hrr_actual']
-tmp['HRR50-pretest'] = all_ecgs['50_hrr_downsample_augment_prediction']
-tmp['HR-pretest'] = all_ecgs['resting_hr']
-tmp.corr().round(2)
-# %%
-all_ecgs['50_hrr_actual_binary'] = (all_ecgs['50_hrr_actual'] < all_ecgs['50_hrr_actual'].quantile(0.33)).apply(float)
 all_ecgs['50_hrr_downsample_augment_prediction_binary'] = (all_ecgs['50_hrr_downsample_augment_prediction'] < all_ecgs['50_hrr_downsample_augment_prediction'].quantile(0.33)).apply(float)
 
 # %%
@@ -397,11 +319,8 @@ all_ecgs = all_ecgs.dropna()
 # %%
 label_dic = {
     
-    '50_hrr_actual_binary': ['low HRR50', ''],
     '50_hrr_downsample_augment_prediction_binary': ['low HRR50-pretest', ''],
-    '50_hrr_actual': ['HRR50', 'beats'],
     '50_hrr_downsample_augment_prediction': ['HRR50-pretest', 'beats'],
-    'resting_hr': ['HR-pretest', 'beats'],
     'age': ['Age', 'yrs'],
     'male': ['Male', ''],
     'nonwhite': ['Nonwhite', ''],
@@ -452,7 +371,7 @@ for pheno in label_dic:
 import matplotlib.pyplot as plt
 import matplotlib
 dis_plot_list = disease_list
-phenos = or_dic['50_hrr_actual'].keys()
+phenos = or_dic['50_hrr_downsample_augment_prediction_binary'].keys()
 for dis, dis_label in disease_list:
     for occ in ['prevalent']: 
         ors = []
@@ -498,7 +417,7 @@ for dis, dis_label in disease_list:
         ax.set_ylim([-1.0, len(ors)])
         ax.set_xlim([0.25, 10.0])
         plt.tight_layout()
-        f.savefig(f'{dis}_{occ}_or_pretest.png', dpi=500)
+        f.savefig(f'{dis}_{occ}_or_rest.png', dpi=500)
 
 # %%
 # scaled
@@ -533,7 +452,7 @@ for pheno in label_dic:
 
 # %%
 dis_plot_list = disease_list
-phenos = hr_dic['50_hrr_actual'].keys()
+phenos = hr_dic['50_hrr_downsample_augment_prediction_binary'].keys()
 for dis, dis_label in disease_list:
     for occ in ['incident']:
         hrs = []
@@ -570,7 +489,7 @@ for dis, dis_label in disease_list:
         ax.set_xlabel('Hazard ratio (per 1-SD increase)')
         ax.set_title(f'{occ} {dis_label}\n n$_+$ = {int(hr_dic[pheno][dis+"_"+occ]["n"])} / {len(all_ecgs)}')
         plt.tight_layout()
-        f.savefig(f'{dis}_{occ}_hr_pretest.png', dpi=500)
+        f.savefig(f'{dis}_{occ}_hr_rest.png', dpi=500)
 
 # %%
 # scaled
@@ -580,7 +499,7 @@ covariates = ['bmi', 'age', 'male', 'cholesterol', 'HDL', 'current_smoker',
               'diastolic_bp', 'systolic_bp', 'c_lipidlowering', 'c_antihypertensive']
 covariates_scale = ['bmi', 'age', 'cholesterol', 'HDL',
                     'diastolic_bp', 'systolic_bp']
-for pheno in ['50_hrr_actual_binary', '50_hrr_downsample_augment_prediction_binary', '50_hrr_actual', '50_hrr_downsample_augment_prediction', 'resting_hr']:
+for pheno in ['50_hrr_downsample_augment_prediction_binary', '50_hrr_downsample_augment_prediction']:
     if pheno in ['FID', 'IID', 'instance0_date']: 
         continue
     or_multi_dic[pheno] = {}
@@ -611,7 +530,7 @@ for pheno in ['50_hrr_actual_binary', '50_hrr_downsample_augment_prediction_bina
 import matplotlib.pyplot as plt
 import matplotlib
 dis_plot_list = disease_list
-phenos = or_multi_dic['50_hrr_actual'].keys()
+phenos = or_multi_dic['50_hrr_downsample_augment_prediction_binary'].keys()
 for dis, dis_label in disease_list:
     for occ in ['prevalent']: 
         ors = []
@@ -655,7 +574,7 @@ for dis, dis_label in disease_list:
         ax.set_ylim([-1.0, len(ors)])
         ax.set_xlim([0.4, 2.0])
         plt.tight_layout()
-        f.savefig(f'{dis}_{occ}_or_multi_pretest.png', dpi=500)
+        f.savefig(f'{dis}_{occ}_or_multi_rest.png', dpi=500)
 
 # %%
 # scaled
@@ -665,7 +584,7 @@ covariates = ['bmi', 'age', 'male', 'cholesterol', 'HDL', 'current_smoker',
               'diastolic_bp', 'systolic_bp', 'c_lipidlowering', 'c_antihypertensive']
 covariates_scale = ['bmi', 'age', 'cholesterol', 'HDL',
                     'diastolic_bp', 'systolic_bp']
-for pheno in ['50_hrr_actual_binary', '50_hrr_downsample_augment_prediction_binary', '50_hrr_actual', '50_hrr_downsample_augment_prediction', 'resting_hr']:
+for pheno in ['50_hrr_downsample_augment_prediction_binary', '50_hrr_downsample_augment_prediction']:
     if pheno in ['FID', 'IID', 'instance0_date']: 
         continue
     hr_multi_dic[pheno] = {}
@@ -697,7 +616,7 @@ for pheno in ['50_hrr_actual_binary', '50_hrr_downsample_augment_prediction_bina
 import matplotlib.pyplot as plt
 import matplotlib
 dis_plot_list = disease_list
-phenos = or_multi_dic['50_hrr_actual'].keys()
+phenos = or_multi_dic['50_hrr_downsample_augment_prediction_binary'].keys()
 for dis, dis_label in disease_list:
     for occ in ['incident']: 
         hrs = []
@@ -742,6 +661,6 @@ for dis, dis_label in disease_list:
         ax.set_ylim([-1.0, len(ors)])
         ax.set_xlim([0.4, 2.0])
         plt.tight_layout()
-        f.savefig(f'{dis}_{occ}_hr_multi_pretest.png', dpi=500)
+        f.savefig(f'{dis}_{occ}_hr_multi_rest.png', dpi=500)
 
 # %%
