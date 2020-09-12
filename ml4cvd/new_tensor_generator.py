@@ -60,13 +60,15 @@ class SampleGetter:
         self._check_states()
 
     def _check_states(self):
-        all_state_names = {state.get_name() for state in self.state_setters}
+        state_setters = {setter.get_name(): setter for setter in self.state_setters}
+        all_state_names = set(state_setters)
         for getter in self.input_tensor_getters + self.output_tensor_getters:
             missing_states = getter.required_states - all_state_names
             if missing_states:
                 raise ValueError(
                     f'TensorGetter {getter.name} is missing required StateGetters {missing_states}.'
                 )
+        self.state_setters = list(state_setters.values())
 
     @contextmanager
     def _evaluate_states(self, sample_id: int) -> Dict[str, Any]:
@@ -82,6 +84,13 @@ class SampleGetter:
                 {tensor_getter.name: tensor_getter.get_tensor(evaluated_states) for tensor_getter in self.input_tensor_getters},
                 {tensor_getter.name: tensor_getter.get_tensor(evaluated_states) for tensor_getter in self.output_tensor_getters},
             )]
+
+    def __add__(self, other: "SampleGetter"):
+        return SampleGetter(
+            self.input_tensor_getters + other.input_tensor_getters,
+            self.output_tensor_getters + other.output_tensor_getters,
+            self.state_setters + other.state_setters,
+        )
 
 
 class HD5StateSetter(StateSetter):
