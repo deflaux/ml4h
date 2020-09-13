@@ -1,5 +1,6 @@
 import os
 import ray
+import math
 import pandas as pd
 from functools import partial
 from typing import Set, Any, Dict, List, Tuple, Callable, Union
@@ -7,14 +8,18 @@ from contextlib import contextmanager, ExitStack
 from abc import ABC, abstractmethod
 import numpy as np
 import h5py
-import tensorflow as tf
 from multiprocessing import Pool
 
 from ml4cvd.TensorMap import TensorMap, Interpretation
 from ml4cvd.defines import SAMPLE_ID
 
-if not ray.is_initialized():
-    ray.init()
+
+def start_ray():
+    if not ray.is_initialized():
+        ray.init()
+
+
+start_ray()
 
 
 Batch = Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]
@@ -176,43 +181,46 @@ def dataset_from_tensor_maps(
         hd5_paths: List[str],
         tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
         augment: bool,
-        epochs: int,
+        num_steps: int,
         num_workers: int,
-        batch_size: int,
         prepare_sample_ids: Callable[[List[int], int], List[int]],
 ) -> DataSet:
     sample_id_to_path = {_hd5_path_to_sample_id(path): path for path in hd5_paths}
     sample_getter = sample_getter_from_tensor_maps(
         sample_id_to_path, tensor_maps_in, tensor_maps_out, augment
     )
-    sample_ids = prepare_sample_ids(list(sample_id_to_path.keys()), epochs)
-    print(f'sample ids {len(sample_ids)}')
+    sample_ids = prepare_sample_ids(list(sample_id_to_path.keys()), num_steps)
     dataset = dataset_from_sample_getter(
         sample_getter, sample_ids, num_workers,
     )
-    return batch_dataset(dataset, batch_size)
+    return dataset
 
 
-def prepare_train_sample_ids(sample_ids: List[int], epochs: int) -> List[int]:
+def prepare_train_sample_ids(sample_ids: List[int], num_steps: int) -> List[int]:
     """Concatenates a list of sample ids shuffled every epoch"""
-    return sum((np.random.permutation(sample_ids).tolist() for _ in range(epochs)), [])
+    return sum(
+        (np.random.permutation(sample_ids).tolist()
+         for _ in range(1 + math.ceil(num_steps // len(sample_ids)))), []
+    )
 
 
 def train_dataset_from_tensor_maps(
         hd5_paths: List[str],
         tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
         epochs: int,
+        batches_per_epoch: int,
         num_workers: int,
         batch_size: int,
 ) -> DataSet:
-    return dataset_from_tensor_maps(
-        hd5_paths,
-        tensor_maps_in, tensor_maps_out,
-        True,
-        epochs,
-        num_workers,
+    return batch_dataset(dataset_from_tensor_maps(
+            hd5_paths,
+            tensor_maps_in, tensor_maps_out,
+            True,
+            epochs * batches_per_epoch * batch_size,
+            num_workers,
+            prepare_train_sample_ids,
+        ),
         batch_size,
-        prepare_train_sample_ids,
     ).gather_async()
 
 
@@ -220,25 +228,30 @@ def valid_dataset_from_tensor_maps(
         hd5_paths: List[str],
         tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
         epochs: int,
+        batches_per_epoch: int,
         num_workers: int,
         batch_size: int,
 ) -> DataSet:
-    return dataset_from_tensor_maps(
-        hd5_paths,
-        tensor_maps_in, tensor_maps_out,
-        False,
-        epochs,
-        num_workers,
+    return batch_dataset(dataset_from_tensor_maps(
+            hd5_paths,
+            tensor_maps_in, tensor_maps_out,
+            False,
+            epochs * batches_per_epoch * batch_size * 2,  # TODO: why *2 necessary?
+            num_workers,
+            prepare_train_sample_ids,
+        ),
         batch_size,
-        prepare_train_sample_ids,
     ).gather_async()
+
+
+def prepare_test_ids(sample_ids: List[int], epochs=None, ids_per_epoch=None):
+    return sorted(sample_ids)
 
 
 def test_dataset_from_tensor_maps(
         hd5_paths: List[str],
         tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
         num_workers: int,
-        batch_size: int,
 ) -> DataSet:
     return dataset_from_tensor_maps(
         hd5_paths,
@@ -246,8 +259,7 @@ def test_dataset_from_tensor_maps(
         False,
         1,
         num_workers,
-        batch_size,
-        lambda ids, _: ids,
+        prepare_test_ids,
     ).gather_sync()
 
 
@@ -293,3 +305,23 @@ def find_working_ids(
         errors.append(error)
         print(f'{(i + 1) / len(sample_ids):.2%} done finding working sample ids', end='\r')
     return pd.DataFrame({SAMPLE_ID: tried_sample_ids, ERROR_COL: errors})
+
+
+def _merge_big_batch_in_or_out(x: List[Dict[str, np.ndarray]]) -> Dict[str, np.ndarray]:
+    keys = x[0].keys()
+    return {key: np.concatenate([x[key] for x in x]) for key in keys}
+
+
+def merge_big_batch(batch: List[Batch]) -> Batch:
+    return (
+        _merge_big_batch_in_or_out([x[0] for x in batch]),
+        _merge_big_batch_in_or_out([x[1] for x in batch])
+    )
+
+
+def big_batch_from_dataset(dataset: DataSet, batches: int) -> Batch:
+    return merge_big_batch(dataset.take(batches))
+
+
+def big_batch_from_test_dataset(dataset: DataSet, steps: int) -> Batch:
+    return merge_batch(dataset.take(steps))

@@ -27,7 +27,7 @@ from typing import List, Dict, Tuple, Set, Optional, Iterator, Callable, Any, Un
 
 from ml4cvd.defines import TENSOR_EXT
 from ml4cvd.TensorMap import TensorMap
-from ml4cvd.new_tensor_generator import dataset_from_tensor_maps
+from ml4cvd.new_tensor_generator import train_dataset_from_tensor_maps, valid_dataset_from_tensor_maps, test_dataset_from_tensor_maps
 
 np.set_printoptions(threshold=np.inf)
 
@@ -833,6 +833,10 @@ def new_test_train_valid_tensor_generators(
         tensor_maps_protected: List[TensorMap],
         tensors: str,  # TODO: rename this to tensor_folder
         batch_size: int,
+        epochs: int,
+        num_workers: int,
+        training_steps: int,
+        validation_steps: int,
         sample_csv: str = None,
         valid_ratio: float = None,
         test_ratio: float = None,
@@ -844,8 +848,8 @@ def new_test_train_valid_tensor_generators(
     tf.data.Dataset, tf.data.Dataset, tf.data.Dataset,
     List[str], List[str], List[str],
 ]:
-    # TODO: implement batch functions, choose how to specify parallelization, integrate non-tmap tensor getters
-    # TODO: use the filtering function to remove the exception throwing tensors
+    # TODO: implement batch functions, integrate non-tmap tensor getters
+    # TODO: Could use the filtering function to remove the exception throwing tensors
     train_paths, valid_paths, test_paths = get_train_valid_test_paths(
         tensors=tensors,
         sample_csv=sample_csv,
@@ -855,19 +859,21 @@ def new_test_train_valid_tensor_generators(
         valid_csv=valid_csv,
         test_csv=test_csv,
     )
-    prefetch = _get_num_prefetch(tensor_maps_in, tensor_maps_out, batch_size)
-    generate_train = dataset_from_tensor_maps(
-        train_paths, tensor_maps_in, tensor_maps_out,
-        augment=True,
-    ).shuffle(len(train_paths)).batch(batch_size).prefetch(prefetch)
-    generate_valid = dataset_from_tensor_maps(
-        valid_paths, tensor_maps_in, tensor_maps_out,
-        augment=False,
-    ).shuffle(len(train_paths)).batch(batch_size).prefetch(prefetch)
-    generate_test = dataset_from_tensor_maps(
-        valid_paths, tensor_maps_in, tensor_maps_out + tensor_maps_protected,
-        augment=False,
-    ).prefetch(prefetch)
+    num_train_workers = max(1, int(training_steps / (training_steps + validation_steps) * num_workers))
+    num_valid_workers = max(1, int(validation_steps / (training_steps + validation_steps) * num_workers))
+
+    generate_train = train_dataset_from_tensor_maps(
+        train_paths, tensor_maps_in, tensor_maps_out, epochs, training_steps,
+        num_workers=num_train_workers, batch_size=batch_size,
+    )
+    generate_valid = valid_dataset_from_tensor_maps(
+        valid_paths, tensor_maps_in, tensor_maps_out, epochs, validation_steps,
+        num_workers=num_valid_workers, batch_size=batch_size,
+    )
+    generate_test = test_dataset_from_tensor_maps(
+        test_paths, tensor_maps_in, tensor_maps_out + tensor_maps_protected,
+        num_workers=num_workers,
+    )
     return (
         generate_train, generate_valid, generate_test,
         train_paths, valid_paths, test_paths,

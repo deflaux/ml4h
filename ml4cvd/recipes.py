@@ -25,8 +25,8 @@ from ml4cvd.explorations import tabulate_correlations_of_tensors, test_labels_to
 from ml4cvd.explorations import plot_heatmap_of_tensors, plot_while_learning, plot_histograms_of_tensors_in_pdf, cross_reference
 from ml4cvd.tensor_generators import test_train_valid_tensor_generators, big_batch_from_minibatch_generator
 from ml4cvd.tensor_generators import BATCH_INPUT_INDEX, BATCH_OUTPUT_INDEX, BATCH_PATHS_INDEX
-from ml4cvd.tensor_generators import new_test_train_valid_tensor_generators
-from ml4cvd.new_tensor_generator import big_batch_from_dataset, dataset_from_tensor_maps, _hd5_path_to_sample_id
+from ml4cvd.tensor_generators import new_test_train_valid_tensor_generators, test_dataset_from_tensor_maps
+from ml4cvd.new_tensor_generator import big_batch_from_test_dataset, _hd5_path_to_sample_id, batch_dataset
 from ml4cvd.models import make_character_model_plus, embed_model_predict, make_siamese_model, make_multimodal_multitask_model
 from ml4cvd.plots import evaluate_predictions, plot_scatters, plot_rocs, plot_precision_recalls, subplot_roc_per_class, plot_tsne, plot_prediction_calibrations
 from ml4cvd.metrics import get_roc_aucs, get_precision_recall_aucs, get_pearson_coefficients, log_aucs, log_pearson_coefficients
@@ -147,7 +147,7 @@ def train_multimodal_multitask(args):
     )
 
     out_path = os.path.join(args.output_folder, args.id)
-    test_data, test_labels = big_batch_from_dataset(generate_test, args.test_steps * args.batch_size)
+    test_data, test_labels = big_batch_from_test_dataset(generate_test, args.test_steps)
     return _predict_and_evaluate(
         model, test_data, test_labels, args.tensor_maps_in, args.tensor_maps_out, args.tensor_maps_protected,
         args.batch_size, args.hidden_layer, out_path, test_paths, args.embed_visualization, args.alpha,
@@ -158,7 +158,7 @@ def test_multimodal_multitask(args):
     _, _, generate_test, _, _, test_paths = new_test_train_valid_tensor_generators(**args.__dict__)
     model = make_multimodal_multitask_model(**args.__dict__)
     out_path = os.path.join(args.output_folder, args.id)
-    test_data, test_labels = big_batch_from_dataset(generate_test, args.test_steps * args.batch_size)
+    test_data, test_labels = big_batch_from_test_dataset(generate_test, args.test_steps * args.batch_size)
     return _predict_and_evaluate(
         model, test_data, test_labels, args.tensor_maps_in, args.tensor_maps_out, args.tensor_maps_protected,
         args.batch_size, args.hidden_layer, out_path, test_paths, args.embed_visualization, args.alpha,
@@ -229,9 +229,10 @@ def infer_multimodal_multitask(args):
     tensor_paths = sorted(tensor_paths, key=_hd5_path_to_sample_id)
     model = make_multimodal_multitask_model(**args.__dict__)
     no_fail_tmaps_out = [_make_tmap_nan_on_fail(tmap) for tmap in args.tensor_maps_out]
-    generate_test = dataset_from_tensor_maps(
+    generate_test = batch_dataset(test_dataset_from_tensor_maps(
         tensor_paths, args.tensor_maps_in, no_fail_tmaps_out,
-    ).batch(1).as_numpy_iterator()
+        args.num_workers,
+    ), 1)
     logging.info(f"Found {len(tensor_paths)} tensor paths.")
     with open(inference_tsv, mode='w') as inference_file:
         # TODO: csv.DictWriter is much nicer for this
@@ -288,15 +289,14 @@ def hidden_inference_file_name(output_folder: str, id_: str) -> str:
 
 def infer_hidden_layer_multimodal_multitask(args):
     stats = Counter()
-    args.num_workers = 0
     inference_tsv = hidden_inference_file_name(args.output_folder, args.id)
     tsv_style_is_genetics = 'genetics' in args.tsv_style
     tensor_paths = [os.path.join(args.tensors, tp) for tp in sorted(os.listdir(args.tensors)) if os.path.splitext(tp)[-1].lower() == TENSOR_EXT]
     tensor_paths = sorted(tensor_paths, key=_hd5_path_to_sample_id)
-    generate_test = dataset_from_tensor_maps(
+    generate_test = batch_dataset(test_dataset_from_tensor_maps(
         tensor_paths, args.tensor_maps_in, [],
-    ).batch(1).as_numpy_iterator()
-    generate_test.set_worker_paths(tensor_paths)
+        args.num_workers,
+    ), 1)
     full_model = make_multimodal_multitask_model(**args.__dict__)
     embed_model = make_hidden_layer_model(full_model, args.tensor_maps_in, args.hidden_layer)
     dummy_input = {tm.input_name(): np.zeros((1,) + full_model.get_layer(tm.input_name()).input_shape[0][1:]) for tm in args.tensor_maps_in}

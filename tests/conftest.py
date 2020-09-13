@@ -32,7 +32,7 @@ def default_arguments(tmpdir_factory):
         '--test_steps', '3',
         '--validation_steps', '2',
         '--epochs', '2',
-        '--num_workers', '0',
+        '--num_workers', '1',
         '--batch_size', '2',
     ]
     args = parse_args()
