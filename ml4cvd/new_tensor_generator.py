@@ -1,7 +1,8 @@
 import os
+import ray
 import pandas as pd
 from functools import partial
-from typing import Set, Any, Dict, List, Tuple, Optional
+from typing import Set, Any, Dict, List, Tuple, Callable, Union
 from contextlib import contextmanager, ExitStack
 from abc import ABC, abstractmethod
 import numpy as np
@@ -11,6 +12,13 @@ from multiprocessing import Pool
 
 from ml4cvd.TensorMap import TensorMap, Interpretation
 from ml4cvd.defines import SAMPLE_ID
+
+if not ray.is_initialized():
+    ray.init()
+
+
+Batch = Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]
+DataSet = Union[ray.util.iter.ParallelIterator[Batch], ray.util.iter.LocalIterator[Batch]]
 
 
 class StateSetter(ABC):
@@ -78,12 +86,12 @@ class SampleGetter:
                 for state in self.state_setters
             }
 
-    def __call__(self, sample_id: int) -> List[Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]]:
+    def __call__(self, sample_id: int) -> Batch:
         with self._evaluate_states(sample_id) as evaluated_states:
-            return [(
+            return (
                 {tensor_getter.name: tensor_getter.get_tensor(evaluated_states) for tensor_getter in self.input_tensor_getters},
                 {tensor_getter.name: tensor_getter.get_tensor(evaluated_states) for tensor_getter in self.output_tensor_getters},
-            )]
+            )
 
     def __add__(self, other: "SampleGetter"):
         return SampleGetter(
@@ -129,34 +137,25 @@ def _hd5_path_to_sample_id(path: str) -> int:
     return int(os.path.basename(path).replace('.hd5', ''))
 
 
-INTERPRETATION_TO_TENSOR_FLOW_TYPE = {  # TODO: what types?
-    Interpretation.CONTINUOUS: tf.float32,
-    Interpretation.CATEGORICAL: tf.int16,
-    Interpretation.EMBEDDING: tf.float32,
-    Interpretation.LANGUAGE: tf.float32,
-    Interpretation.TIME_TO_EVENT: tf.float64,
-    Interpretation.SURVIVAL_CURVE: tf.float64,
-    Interpretation.DISCRETIZED: tf.int32,
-    Interpretation.MESH: tf.float64,
-}
+def dataset_from_sample_getter(
+        sample_getter: SampleGetter,
+        sample_ids: List[int],
+        num_workers: int,
+) -> DataSet:
+    return ray.util.iter.from_items(sample_ids, num_shards=num_workers).for_each(sample_getter)
 
 
-OutputTypes = Tuple[Dict[str, tf.dtypes.DType], Dict[str, tf.dtypes.DType]]
-OutputShapes = Tuple[Dict[str, tf.dtypes.DType], Dict[str, Tuple[Optional[int], ...]]]
+def _merge_batch_in_or_out(x: List[Dict[str, np.ndarray]]) -> Dict[str, np.ndarray]:
+    keys = x[0].keys()
+    return {key: np.stack([x[key] for x in x]) for key in keys}
 
 
-def tensor_maps_to_output_types(tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap]) -> OutputTypes:
-    return (
-        {tmap.input_name(): INTERPRETATION_TO_TENSOR_FLOW_TYPE[tmap.interpretation] for tmap in tensor_maps_in},
-        {tmap.output_name(): INTERPRETATION_TO_TENSOR_FLOW_TYPE[tmap.interpretation] for tmap in tensor_maps_out},
-    )
+def merge_batch(batch: List[Batch]) -> Batch:
+    return _merge_batch_in_or_out([x[0] for x in batch]), _merge_batch_in_or_out([x[1] for x in batch])
 
 
-def tensor_maps_to_output_shapes(tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap]) -> OutputShapes:
-    return (
-        {tmap.input_name(): tmap.shape for tmap in tensor_maps_in},
-        {tmap.output_name(): tmap.shape for tmap in tensor_maps_out},
-    )
+def batch_dataset(dataset: DataSet, batch_size: int) -> DataSet:
+    return dataset.batch(batch_size).for_each(merge_batch)
 
 
 def sample_getter_from_tensor_maps(
@@ -173,35 +172,83 @@ def sample_getter_from_tensor_maps(
     )
 
 
-def dataset_from_sample_getter(
-        sample_getter: SampleGetter,
-        sample_ids: List[int],
-        output_types: OutputTypes,
-        output_shapes: OutputShapes,
-) -> tf.data.Dataset:
-    return tf.data.Dataset.from_tensor_slices(  # TODO: This feels overly complicated
-        sorted(sample_ids)).interleave(
-        lambda sample_id: tf.data.Dataset.from_generator(
-            sample_getter, args=(sample_id,),
-            output_types=output_types,
-            output_shapes=output_shapes,
-        ),
-        num_parallel_calls=tf.data.experimental.AUTOTUNE,
-    )
-
-
 def dataset_from_tensor_maps(
         hd5_paths: List[str],
         tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
-        augment: bool = False,
-) -> tf.data.Dataset:
+        augment: bool,
+        epochs: int,
+        num_workers: int,
+        batch_size: int,
+        prepare_sample_ids: Callable[[List[int], int], List[int]],
+) -> DataSet:
     sample_id_to_path = {_hd5_path_to_sample_id(path): path for path in hd5_paths}
-    sample_getter = sample_getter_from_tensor_maps(sample_id_to_path, tensor_maps_in, tensor_maps_out, augment)
-    output_types = tensor_maps_to_output_types(tensor_maps_in, tensor_maps_out)
-    output_shapes = tensor_maps_to_output_shapes(tensor_maps_in, tensor_maps_out)
-    return dataset_from_sample_getter(
-        sample_getter, list(sample_id_to_path.keys()), output_types, output_shapes,
+    sample_getter = sample_getter_from_tensor_maps(
+        sample_id_to_path, tensor_maps_in, tensor_maps_out, augment
     )
+    sample_ids = prepare_sample_ids(list(sample_id_to_path.keys()), epochs)
+    print(f'sample ids {len(sample_ids)}')
+    dataset = dataset_from_sample_getter(
+        sample_getter, sample_ids, num_workers,
+    )
+    return batch_dataset(dataset, batch_size)
+
+
+def prepare_train_sample_ids(sample_ids: List[int], epochs: int) -> List[int]:
+    """Concatenates a list of sample ids shuffled every epoch"""
+    return sum((np.random.permutation(sample_ids).tolist() for _ in range(epochs)), [])
+
+
+def train_dataset_from_tensor_maps(
+        hd5_paths: List[str],
+        tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
+        epochs: int,
+        num_workers: int,
+        batch_size: int,
+) -> DataSet:
+    return dataset_from_tensor_maps(
+        hd5_paths,
+        tensor_maps_in, tensor_maps_out,
+        True,
+        epochs,
+        num_workers,
+        batch_size,
+        prepare_train_sample_ids,
+    ).gather_async()
+
+
+def valid_dataset_from_tensor_maps(
+        hd5_paths: List[str],
+        tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
+        epochs: int,
+        num_workers: int,
+        batch_size: int,
+) -> DataSet:
+    return dataset_from_tensor_maps(
+        hd5_paths,
+        tensor_maps_in, tensor_maps_out,
+        False,
+        epochs,
+        num_workers,
+        batch_size,
+        prepare_train_sample_ids,
+    ).gather_async()
+
+
+def test_dataset_from_tensor_maps(
+        hd5_paths: List[str],
+        tensor_maps_in: List[TensorMap], tensor_maps_out: List[TensorMap],
+        num_workers: int,
+        batch_size: int,
+) -> DataSet:
+    return dataset_from_tensor_maps(
+        hd5_paths,
+        tensor_maps_in, tensor_maps_out,
+        False,
+        1,
+        num_workers,
+        batch_size,
+        lambda ids, _: ids,
+    ).gather_sync()
 
 
 class DataFrameTensorGetter(TensorGetter):
@@ -224,6 +271,7 @@ def _format_error(error: Exception):
 
 
 def try_sample_id(sample_id: int, sample_getter: SampleGetter) -> Tuple[float, str]:
+    # TODO: this could be part of SampleGetter, and keep track of the getter the error came from
     try:
         sample_getter(sample_id)
     except (IndexError, KeyError, ValueError, OSError, RuntimeError) as error:
@@ -234,6 +282,7 @@ def try_sample_id(sample_id: int, sample_getter: SampleGetter) -> Tuple[float, s
 def find_working_ids(
         sample_getter: SampleGetter, sample_ids: List[int], num_workers: int,
 ) -> pd.DataFrame:
+    # TODO: this should also use ray
     pool = Pool(num_workers)
     tried_sample_ids = []
     errors = []
@@ -244,11 +293,3 @@ def find_working_ids(
         errors.append(error)
         print(f'{(i + 1) / len(sample_ids):.2%} done finding working sample ids', end='\r')
     return pd.DataFrame({SAMPLE_ID: tried_sample_ids, ERROR_COL: errors})
-
-
-Batch = Dict[str, np.ndarray]
-
-
-def big_batch_from_dataset(dataset: tf.data.Dataset, num_samples: int) -> Tuple[Batch, Batch]:
-    """Assumes dataset is not a batched dataset"""
-    return next(dataset.batch(num_samples).as_numpy_iterator())

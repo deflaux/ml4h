@@ -6,7 +6,8 @@ from collections import defaultdict
 
 from ml4cvd.new_tensor_generator import dataset_from_tensor_maps, _hd5_path_to_sample_id, sample_getter_from_tensor_maps
 from ml4cvd.new_tensor_generator import dataset_from_sample_getter, DataFrameTensorGetter, SampleGetter, SampleIdStateSetter
-from ml4cvd.new_tensor_generator import tensor_maps_to_output_shapes, tensor_maps_to_output_types, TensorMapTensorGetter
+from ml4cvd.new_tensor_generator import TensorMapTensorGetter
+from ml4cvd import new_tensor_generator
 from ml4cvd.new_tensor_generator import HD5StateSetter, find_working_ids, ERROR_COL, TensorGetter, _format_error
 from ml4cvd.defines import SAMPLE_ID
 from ml4cvd.test_utils import TMAPS_UP_TO_4D
@@ -23,17 +24,18 @@ def expected_tensors(tmpdir_factory):
 
 def test_tensor_generator_from_tensor_maps(expected_tensors):
     paths = [path for path, _ in expected_tensors]
-    gen = dataset_from_tensor_maps(
+    gen = new_tensor_generator.test_dataset_from_tensor_maps(
         hd5_paths=list(paths),
         tensor_maps_in=TMAPS_UP_TO_4D, tensor_maps_out=TMAPS_UP_TO_4D,
+        num_workers=3,
+        batch_size=1,
     )
-    gen = gen.as_numpy_iterator()
     sample_id_to_path = {_hd5_path_to_sample_id(path): path for path in paths}
     for (inp, out), sample_id in zip(gen, sorted(sample_id_to_path.keys())):
         path = sample_id_to_path[sample_id]
         for tmap in TMAPS_UP_TO_4D:
-            assert np.array_equal(expected_tensors[path, tmap], inp[tmap.input_name()])
-            assert np.array_equal(expected_tensors[path, tmap], out[tmap.output_name()])
+            assert np.array_equal(expected_tensors[path, tmap], inp[tmap.input_name()][0])
+            assert np.array_equal(expected_tensors[path, tmap], out[tmap.output_name()][0])
 
 
 def test_sample_getter_from_tensor_maps(expected_tensors):
@@ -43,16 +45,22 @@ def test_sample_getter_from_tensor_maps(expected_tensors):
     getter = sample_getter_from_tensor_maps(sample_id_to_path, TMAPS_UP_TO_4D, TMAPS_UP_TO_4D, False)
     for (path, tm), value in expected_tensors.items():
         fetched = getter(path_to_sample_id[path])
-        assert (fetched[0][0][tm.input_name()] == value).all()
-        assert (fetched[0][1][tm.output_name()] == value).all()
+        assert (fetched[0][tm.input_name()] == value).all()
+        assert (fetched[1][tm.output_name()] == value).all()
 
 
 def test_model_trains(expected_tensors):
-    paths = [path for path, _ in expected_tensors]
-    gen = dataset_from_tensor_maps(
+    paths = list({path for path, _ in expected_tensors})
+    epochs = 5
+    batch_size = 7
+    tmaps_in, tmaps_out = TMAPS_UP_TO_4D, TMAPS_UP_TO_4D,
+    gen = new_tensor_generator.train_dataset_from_tensor_maps(
         hd5_paths=list(paths),
-        tensor_maps_in=TMAPS_UP_TO_4D, tensor_maps_out=TMAPS_UP_TO_4D,
-    ).batch(7)
+        tensor_maps_in=tmaps_in, tensor_maps_out=tmaps_out,
+        batch_size=7,
+        epochs=epochs,
+        num_workers=1,
+    )
     model_params = {  # TODO: this shouldn't be here
         'activation': 'relu',
         'dense_layers': [4, 2],
@@ -81,11 +89,10 @@ def test_model_trains(expected_tensors):
         'bottleneck_type': BottleneckType.FlattenRestructure,
     }
     m = make_multimodal_multitask_model(
-        TMAPS_UP_TO_4D,
-        TMAPS_UP_TO_4D,
+        tmaps_in, tmaps_out,
         **model_params,
     )
-    m.fit(gen, epochs=10)
+    m.fit(gen, epochs=epochs, steps_per_epoch=len(paths) // batch_size)
 
 
 def test_data_frame_tensor_getter():
