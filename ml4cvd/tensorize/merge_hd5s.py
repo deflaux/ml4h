@@ -59,7 +59,10 @@ def _copy_hd5_datasets(source_hd5, destination_hd5, group_path=HD5_GROUP_CHAR, s
             if '_2_0' not in k:
                 continue
             try:
-                if source_hd5[group_path][k].chunks is None:
+                if k in destination_hd5[group_path]:
+                    data = destination_hd5[group_path][k]
+                    data[:] = source_hd5[group_path][k][:]
+                elif source_hd5[group_path][k].chunks is None:
                     destination_hd5.create_dataset(group_path + k, data=source_hd5[group_path][k])
                 else:
                     destination_hd5.create_dataset(group_path + k, data=source_hd5[group_path][k], compression='gzip')
