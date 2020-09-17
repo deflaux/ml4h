@@ -276,7 +276,7 @@ def process_resample_data(data):
 
     leadnames = config['leadnames'][0:data.shape[0]]
     
-    resampled_data = pd.DataFrame(columns = ['PT_MRN','TEST_ID','filename','lead','signal','y_calibration','x_spacing'])
+    resampled_data = pd.DataFrame(columns = ['PT_MRN','TEST_ID','filename','lead','x','signal','y_calibration','x_spacing'])
 
     for lead_iter in range(len(leadnames)):
         lead_data = data.loc[data.lead == leadnames[lead_iter]]
@@ -293,12 +293,12 @@ def process_resample_data(data):
 
         newy = resample_core(signalx, signaly, sqlen, config['minspacing'])
         newy = newy.astype(np.float32)
-        #newy = signaly
+        newy = signaly
 
         resampled_data.loc[resampled_data.shape[0]] = [lead_data.PT_MRN.values[0], 
                                                        lead_data.TEST_ID.values[0], 
                                                        lead_data.filename.values[0], 
-                                                       leadnames[lead_iter],
+                                                       leadnames[lead_iter], signalx,
                                                        newy, calibration_y,
                                                        lead_data.minspacing.values[0].round()]
 
@@ -341,7 +341,9 @@ def get_data_from_PDF(pdf_path):
 def main():
     data, mrn, ecg_date = get_data_from_PDF(sys.argv[1])
     dest_fname = f'{os.path.dirname(sys.argv[1])}/{mrn}.hd5'
-    shutil.copyfile(f'/data/ecg/mgh/{mrn}.hd5', dest_fname)
+    if not os.path.isfile(dest_fname):
+        print(dest_fname)
+        shutil.copyfile(f'/data/ecg/mgh/{mrn}.hd5', dest_fname)
     with h5py.File(dest_fname, 'r+') as hd5:
         for i, row in data.iterrows():
             try:
