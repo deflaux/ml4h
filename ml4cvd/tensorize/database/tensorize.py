@@ -24,8 +24,8 @@ def tensorize_sql_fields(pipeline: Pipeline, output_path: str, sql_dataset: str,
         query = _get_phecode_query(sql_dataset)
     elif tensor_type == 'death':
         query = _get_death_and_censor_query(sql_dataset)
-    elif tensor_type == 'exome_genotypes':
-        query = _get_exome_genotypes_query(sql_dataset)
+    elif tensor_type == 'exome_genotype':
+        query = _get_exome_genotype_query(sql_dataset)
     else:
         raise ValueError(f"Can tensorize only categorical or continuous fields, got {tensor_type}" )
 
@@ -164,11 +164,10 @@ def _get_disease_query(dataset):
     """
 
 
-def _get_exome_genotypes_query(dataset):
+def _get_exome_genotype_query(dataset):
     return f"""
         SELECT distinct(d.sample_id), d.chromosome, d.position_grc38, d.ref, d.alt, d.rsid, d.genotype
-        FROM `{dataset}.exome_genotypes`
-         ON c.sample_id = d.sample_id ORDER BY d.sample_id;
+        FROM `{dataset}.exome_genotype` d;
     """
 
 
