@@ -24,8 +24,10 @@ def tensorize_sql_fields(pipeline: Pipeline, output_path: str, sql_dataset: str,
         query = _get_phecode_query(sql_dataset)
     elif tensor_type == 'death':
         query = _get_death_and_censor_query(sql_dataset)
+    elif tensor_type == 'exome_genotypes':
+        query = _get_exome_genotypes_query(sql_dataset)
     else:
-        raise ValueError("Can tensorize only categorical or continuous fields, got ", tensor_type)
+        raise ValueError(f"Can tensorize only categorical or continuous fields, got {tensor_type}" )
 
     bigquery_source = beam.io.BigQuerySource(query=query, use_standard_sql=True)
     # Query table in BQ
@@ -95,6 +97,10 @@ def write_tensor_from_sql(sampleid_to_rows, output_path, tensor_type):
                         hd5.create_dataset(d+'enroll_date', (1,), data=str(row['enroll_date']), dtype=h5py.special_dtype(vlen=str))
                         hd5.create_dataset(d+'death_censor', (1,), data=str(row['death_censor_date']), dtype=h5py.special_dtype(vlen=str))
                         hd5.create_dataset(d+'phenotype_censor', (1,), data=str(row['phenotype_censor_date']), dtype=h5py.special_dtype(vlen=str))
+                elif tensor_type == 'exome_genotypes':
+                    for row in rows:
+                        hd5_dataset_name = dataset_name_from_meaning('exome_genotypes', [str(row['chromosome']), row['position_grc38'], str(row['genotype'])])
+                        hd5.create_dataset(hd5_dataset_name, (1,), data=[row['genotype']])
             gcs_blob.upload_from_filename(tensor_path)
     except:
         logging.exception(f"Problem with processing sample id '{sample_id}'")
@@ -155,6 +161,14 @@ def _get_icd_query(dataset):
 def _get_disease_query(dataset):
     return f"""
         SELECT sample_id, disease, has_disease, censor_date FROM `{dataset}.disease` WHERE has_disease=1;
+    """
+
+
+def _get_exome_genotypes_query(dataset):
+    return f"""
+        SELECT distinct(d.sample_id), d.chromosome, d.position_grc38, d.ref, d.alt, d.rsid, d.genotype
+        FROM `{dataset}.exome_genotypes`
+         ON c.sample_id = d.sample_id ORDER BY d.sample_id;
     """
 
 

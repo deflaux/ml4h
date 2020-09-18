@@ -23,7 +23,7 @@ def parse_args():
     parser.add_argument(
         '--tensor_type', default="categorical",
         help='Type of data to be tensorized',
-        choices=['categorical', 'continuous', 'icd', 'disease', 'death', 'phecode_disease'],
+        choices=['categorical', 'continuous', 'icd', 'disease', 'death', 'phecode_disease', 'exome_genotypes'],
     )
     parser.add_argument(
         '--bigquery_dataset', default='ukbb_dev',
