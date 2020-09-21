@@ -26,6 +26,8 @@ def tensorize_sql_fields(pipeline: Pipeline, output_path: str, sql_dataset: str,
         query = _get_death_and_censor_query(sql_dataset)
     elif tensor_type == 'exome_genotype':
         query = _get_exome_genotype_query(sql_dataset)
+    elif tensor_type == 'dev_exome_genotype':
+        query = _get_dev_exome_genotype_query(sql_dataset)
     else:
         raise ValueError(f"Can tensorize only categorical or continuous fields, got {tensor_type}" )
 
@@ -97,9 +99,9 @@ def write_tensor_from_sql(sampleid_to_rows, output_path, tensor_type):
                         hd5.create_dataset(d+'enroll_date', (1,), data=str(row['enroll_date']), dtype=h5py.special_dtype(vlen=str))
                         hd5.create_dataset(d+'death_censor', (1,), data=str(row['death_censor_date']), dtype=h5py.special_dtype(vlen=str))
                         hd5.create_dataset(d+'phenotype_censor', (1,), data=str(row['phenotype_censor_date']), dtype=h5py.special_dtype(vlen=str))
-                elif tensor_type == 'exome_genotypes':
+                elif tensor_type in ['exome_genotype', 'dev_exome_genotype']:
                     for row in rows:
-                        hd5_dataset_name = dataset_name_from_meaning('exome_genotypes', [str(row['chromosome']), row['position_grc38'], str(row['genotype'])])
+                        hd5_dataset_name = f"exome_genotype/{row['chromosome']}/{row['position_grc38']}/{row['rsid']}"
                         hd5.create_dataset(hd5_dataset_name, (1,), data=[row['genotype']])
             gcs_blob.upload_from_filename(tensor_path)
     except:
@@ -166,8 +168,15 @@ def _get_disease_query(dataset):
 
 def _get_exome_genotype_query(dataset):
     return f"""
-        SELECT distinct(d.sample_id), d.chromosome, d.position_grc38, d.ref, d.alt, d.rsid, d.genotype
+        SELECT distinct(d.sample_id), d.chromosome, d.position_grch38, d.ref, d.alt, d.rsid, d.genotype
         FROM `{dataset}.exome_genotype` d;
+    """
+
+
+def _get_dev_exome_genotype_query(dataset):
+    return f"""
+        SELECT distinct(d.sample_id), d.chromosome, d.position_grch38, d.ref, d.alt, d.rsid, d.genotype
+        FROM `{dataset}.dev_exome_genotype` d;
     """
 
 
