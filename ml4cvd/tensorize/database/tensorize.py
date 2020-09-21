@@ -1,5 +1,6 @@
 import logging
 import tempfile
+import traceback
 from typing import Dict, List
 
 import h5py
@@ -101,11 +102,11 @@ def write_tensor_from_sql(sampleid_to_rows, output_path, tensor_type):
                         hd5.create_dataset(d+'phenotype_censor', (1,), data=str(row['phenotype_censor_date']), dtype=h5py.special_dtype(vlen=str))
                 elif tensor_type in ['exome_genotype', 'dev_exome_genotype']:
                     for row in rows:
-                        hd5_dataset_name = f"exome_genotype/{row['chromosome']}/{row['position_grc38']}/{row['rsid']}"
+                        hd5_dataset_name = f"exome_genotype/{row['rsid']}"
                         hd5.create_dataset(hd5_dataset_name, (1,), data=[row['genotype']])
             gcs_blob.upload_from_filename(tensor_path)
     except:
-        logging.exception(f"Problem with processing sample id '{sample_id}'")
+        logging.exception(f"Problem with processing sample id '{sample_id}' trace: {traceback.format_exc()}")
 
 
 def _write_float_or_warn(sample_id, row, hd5_dataset_name, hd5):
