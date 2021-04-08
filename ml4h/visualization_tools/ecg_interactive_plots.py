@@ -32,6 +32,10 @@ EXERCISE_ECG_SIGNAL_DATA_FILE = tempfile.NamedTemporaryFile(
     suffix='.json',
 )
 
+# TODO(deflaux): add logic to discern Jupyter vs. JupyterLab
+# Work around 404 error in JupyterLab.
+# https://github.com/altair-viz/altair/issues/2432
+URL_PREFIX = 'files' + os.getcwd().replace(os.environ['HOME'], '')
 
 def resting_ecg_interactive_plot(
     sample_id: Union[int, str], folder: Optional[str] = None,
@@ -68,7 +72,7 @@ def resting_ecg_interactive_plot(
       init={'lead': tidy_resting_ecg_signal.lead.unique()[0]},
   )
 
-  base = alt.Chart(data_file).mark_line().encode(
+  base = alt.Chart(os.path.join(URL_PREFIX, data_file)).mark_line().encode(
       x='ts_reference:Q',
       y='signal_mV:Q',
       color=alt.Color(
@@ -124,7 +128,7 @@ def exercise_ecg_interactive_plot(
       init={'lead': exercise_ecg_signal.lead.unique()[0]},
   )
 
-  trend = alt.Chart(trend_data_file).mark_point(opacity=0.8, filled=True, size=100).encode(
+  trend = alt.Chart(os.path.join(URL_PREFIX, trend_data_file)).mark_point(opacity=0.8, filled=True, size=100).encode(
       x='time:Q',
       color=alt.Color('phasename:N', legend=alt.Legend(orient='top'), title='Phase names'),
       tooltip=[
@@ -135,7 +139,7 @@ def exercise_ecg_interactive_plot(
       width=900, height=100, title=f'Click on a point to select a {time_interval_seconds} second time interval.',
   ).add_selection(brush)
 
-  signal = alt.Chart(signal_data_file).mark_line().encode(
+  signal = alt.Chart(os.path.join(URL_PREFIX, signal_data_file)).mark_line().encode(
       alt.X('time:Q', axis=alt.Axis(labelAngle=15)),
       y='raw_mV:Q',
       color=alt.Color('lead:N', legend=alt.Legend(orient='top'), title='Lead names'),
